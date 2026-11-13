@@ -10,21 +10,12 @@ from core_pdf import PdfDocument
 
 
 def build_parser(program_name: str = "core-pdf") -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog=program_name,
-        description="High-Performance PDF Engine",
+    parser = argparse.ArgumentParser(prog=program_name, description="High-Performance PDF Engine")
+    parser.add_argument(
+        "paths", type=Path, nargs="+", help="Path to PDF file(s) or directory containing PDF files"
     )
     parser.add_argument(
-        "paths",
-        type=Path,
-        nargs="+",
-        help="Path to PDF file(s) or directory containing PDF files",
-    )
-    parser.add_argument(
-        "-r",
-        "--recursive",
-        action="store_true",
-        help="Recursively scan directories for PDF files",
+        "-r", "--recursive", action="store_true", help="Recursively scan directories for PDF files"
     )
     parser.add_argument(
         "-p",
@@ -34,10 +25,7 @@ def build_parser(program_name: str = "core-pdf") -> argparse.ArgumentParser:
         help="Print extracted content to stdout",
     )
     parser.add_argument(
-        "-w",
-        "--write",
-        action="store_true",
-        help="Emit output Markdown files to disk",
+        "-w", "--write", action="store_true", help="Emit output Markdown files to disk"
     )
     parser.add_argument(
         "-o",

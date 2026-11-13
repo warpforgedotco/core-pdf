@@ -67,9 +67,7 @@ def text_word_tokens(text: str) -> tuple[str, ...]:
 
 
 def reconcile_text_words(
-    text: str,
-    words: tuple[TextWord, ...],
-    source: str = "unknown",
+    text: str, words: tuple[TextWord, ...], source: str = "unknown"
 ) -> tuple[TextWord, ...]:
     """The words of text: the given ones where they spell it, else its tokens, unboxed and
     labelled with source."""

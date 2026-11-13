@@ -14,15 +14,9 @@ from core_pdf.impl.base.geometry import bbox_tuple
 from core_pdf.impl.base.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
 from core_pdf.impl.base.types import GeneratedRecord, field
 from core_pdf.impl.extract.contracts import ObservationBatch
-from core_pdf.impl.extract.selection import (
-    assemble_document,
-    prepare_document_pages,
-)
+from core_pdf.impl.extract.selection import assemble_document, prepare_document_pages
 from core_pdf.impl.output.model import Document
-from core_pdf_ocr.impl.extract.capture import (
-    LearnedUnicodeMap,
-    capture_from_program,
-)
+from core_pdf_ocr.impl.extract.capture import LearnedUnicodeMap, capture_from_program
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, RecognitionResult
 from core_pdf_ocr.impl.extract.ocr.strokes import (
     GlyphSignature,
@@ -74,10 +68,7 @@ def unknown_decoder_counts(capture: PageAnalysis) -> Counter[object]:
             or (
                 not corrupt
                 and glyph_unicode_semantics(glyph.text, glyph.unicode_source)
-                not in {
-                    GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
-                    GlyphUnicodeSemantics.UNSUPPORTED,
-                }
+                not in {GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER, GlyphUnicodeSemantics.UNSUPPORTED}
             )
         ):
             continue
@@ -106,8 +97,7 @@ def document_font_seed_indexes(captures: Sequence[PageAnalysis]) -> tuple[int, .
 
 
 def font_mapping_votes(
-    capture: PageAnalysis,
-    ocr: ObservationBatch,
+    capture: PageAnalysis, ocr: ObservationBatch
 ) -> dict[object, dict[bytes, Counter[str]]]:
     votes: dict[object, dict[bytes, Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
     glyphs = tuple(
@@ -163,10 +153,7 @@ def font_mapping_votes(
             if (
                 decoder is None
                 or glyph_unicode_semantics(glyph.text, glyph.unicode_source)
-                not in {
-                    GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER,
-                    GlyphUnicodeSemantics.UNSUPPORTED,
-                }
+                not in {GlyphUnicodeSemantics.UNKNOWN_IDENTIFIER, GlyphUnicodeSemantics.UNSUPPORTED}
                 or not character.isprintable()
             ):
                 continue
@@ -217,8 +204,7 @@ def prepare_document_font_mappings(
     votes: dict[object, dict[bytes, Counter[str]]] = {}
     for page_index, recognition in recognition_by_index.items():
         merge_font_mapping_votes(
-            votes,
-            font_mapping_votes(captures[page_index], recognition.observations),
+            votes, font_mapping_votes(captures[page_index], recognition.observations)
         )
     return FontEnrichment(
         learned_unicode=resolve_document_font_mappings(votes),
@@ -226,10 +212,7 @@ def prepare_document_font_mappings(
     )
 
 
-def capture_uses_learned_unicode(
-    capture: PageAnalysis,
-    learned_unicode: LearnedUnicodeMap,
-) -> bool:
+def capture_uses_learned_unicode(capture: PageAnalysis, learned_unicode: LearnedUnicodeMap) -> bool:
     return bool(learned_unicode) and any(
         glyph.font_decoder in learned_unicode for glyph in capture.program.glyphs
     )
@@ -304,9 +287,7 @@ def document_stroked_decode_is_sufficient(decoded: StrokedTextDecode) -> bool:
     )
 
 
-def document_stroked_recognition(
-    decoded: StrokedTextDecode,
-) -> RecognitionResult:
+def document_stroked_recognition(decoded: StrokedTextDecode) -> RecognitionResult:
     from core_pdf_ocr.impl.extract.ocr.vector import stroked_vector_decoded_batch
 
     observations = stroked_vector_decoded_batch(decoded.observations)
@@ -342,10 +323,7 @@ def prepare_document_stroked_mappings(
         extraction = extractions[page_index]
         recognition = extraction.recognition_result
         if recognition is None and alphabet and (profile := extraction.stroked_profile) is not None:
-            decoded = decode_stroked_text_profile_with_alphabet(
-                profile,
-                alphabet,
-            )
+            decoded = decode_stroked_text_profile_with_alphabet(profile, alphabet)
             if document_stroked_decode_is_sufficient(decoded):
                 recognition_by_index[page_index] = document_stroked_recognition(decoded)
                 continue
@@ -354,18 +332,13 @@ def prepare_document_stroked_mappings(
             recognition = extraction.recognize(context)
         learned = recognition.stroked_vector_alphabet
         if learned:
-            merge_document_stroked_alphabet(
-                alphabet,
-                ambiguous,
-                learned,
-            )
+            merge_document_stroked_alphabet(alphabet, ambiguous, learned)
         recognition_by_index[page_index] = recognition
     return MappingProxyType(recognition_by_index)
 
 
 def apply_stroked_enrichment(
-    extractions: tuple[PageExtraction, ...],
-    recognition_by_index: Mapping[int, RecognitionResult],
+    extractions: tuple[PageExtraction, ...], recognition_by_index: Mapping[int, RecognitionResult]
 ) -> tuple[PageExtraction, ...]:
     if not recognition_by_index:
         return extractions
@@ -386,8 +359,7 @@ def apply_stroked_enrichment(
 
 
 def capture_document_pages(
-    extractions: tuple[PageExtraction, ...],
-    context: ExtractionScope,
+    extractions: tuple[PageExtraction, ...], context: ExtractionScope
 ) -> tuple[PageAnalysis, ...]:
     captures: list[PageAnalysis] = []
     for extraction in extractions:
@@ -404,17 +376,13 @@ def prepare_selection_state(
     font = prepare_document_font_mappings(extractions, captures, context)
     extractions = apply_font_enrichment(extractions, captures, font)
     stroked = prepare_document_stroked_mappings(
-        extractions,
-        tuple(extraction.capture for extraction in extractions),
-        context,
+        extractions, tuple(extraction.capture for extraction in extractions), context
     )
     return apply_stroked_enrichment(extractions, stroked)
 
 
 def extract_document(
-    document: PdfDocument,
-    context: ExtractionScope,
-    pages: Sequence[PdfPage],
+    document: PdfDocument, context: ExtractionScope, pages: Sequence[PdfPage]
 ) -> Document:
     pages = tuple(pages)
     extractions = prepare_document_pages(document, pages, PageExtraction)

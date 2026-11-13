@@ -20,11 +20,7 @@ from core_pdf.impl.fonts.opentype_cff import (
 )
 from core_pdf.impl.fonts.outline_pens import BoundsSink, draw_decomposed
 from core_pdf.impl.fonts.program_base import GlyphNaming, GlyphProgram
-from core_pdf.impl.fonts.raster_kernel import (
-    Contours,
-    Point,
-    scale_contours,
-)
+from core_pdf.impl.fonts.raster_kernel import Contours, Point, scale_contours
 from core_pdf.impl.fonts.sfnt import (
     GlyphOutlines,
     SfntFont,
@@ -34,10 +30,7 @@ from core_pdf.impl.fonts.sfnt import (
     glyf_glyph,
     placeholder_glyph_id,
 )
-from core_pdf.impl.spec.s_09_fonts.helpers import (
-    is_unicode_scalar,
-    symbol_character_code,
-)
+from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar, symbol_character_code
 lazy from core_pdf_cythonized import truetype_contours
 
 
@@ -52,12 +45,7 @@ def glyph_bbox(glyf: Table, glyph_name: str) -> tuple[float, float, float, float
     glyph = glyf_glyph(glyf, glyph_name)
     if glyph.numberOfContours == 0:
         return None
-    return (
-        float(glyph.xMin),
-        float(glyph.yMin),
-        float(glyph.xMax),
-        float(glyph.yMax),
-    )
+    return (float(glyph.xMin), float(glyph.yMin), float(glyph.xMax), float(glyph.yMax))
 
 
 GLYPH_HEADER = struct.Struct(">hhhhh")
@@ -216,11 +204,7 @@ class TrueTypeFontProgram(GlyphProgram):
     )
 
     def __init__(
-        self,
-        data: bytes,
-        cid_to_gid: bytes | None = None,
-        *,
-        use_cmap: bool = False,
+        self, data: bytes, cid_to_gid: bytes | None = None, *, use_cmap: bool = False
     ) -> None:
         self.data = data
         self.composite_bbox_cache: dict[
@@ -473,9 +457,7 @@ def unicode_text_score(char: str) -> int:
     return 2
 
 
-def recording_to_contours(
-    recording: list[tuple[str, tuple[Any, ...]]],
-) -> list[list[Point]]:
+def recording_to_contours(recording: list[tuple[str, tuple[Any, ...]]]) -> list[list[Point]]:
     contours: list[list[Point]] = []
     contour: list[Point] = []
     current: Point | None = None
@@ -512,10 +494,7 @@ def make_point(value: Any) -> Point:
 
 
 def append_quadratic(
-    contour: list[Point],
-    current: Point,
-    start: Point | None,
-    operands: tuple[Any, ...],
+    contour: list[Point], current: Point, start: Point | None, operands: tuple[Any, ...]
 ) -> Point:
     points = list(operands)
     if not points:

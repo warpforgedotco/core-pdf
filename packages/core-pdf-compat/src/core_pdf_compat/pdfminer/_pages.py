@@ -69,8 +69,7 @@ def fallback_xref_entries(data: PdfByteBuffer) -> XRefTable:
 
 
 def pdfminer_resolvable_pages(  # noqa: C901
-    document: PdfDocument,
-    retyped: Collection[int] = frozenset(),
+    document: PdfDocument, retyped: Collection[int] = frozenset()
 ) -> Iterator[tuple[int, PdfPage]]:
     """Yield the index and page of each page pdfminer's PDFPage.create_pages finds.
 
@@ -122,9 +121,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
         if trailer_match is None:
             raise PdfError("No /Root object")
         trailer_data = re.split(
-            rb"(?m)^trailer\b|startxref|%%EOF",
-            data[trailer_match.end() :],
-            maxsplit=1,
+            rb"(?m)^trailer\b|startxref|%%EOF", data[trailer_match.end() :], maxsplit=1
         )[0]
         if re.search(rb"/Root\b", trailer_data) is None:
             raise PdfError("No /Root object")
@@ -265,10 +262,7 @@ def pdfminer_resolvable_pages(  # noqa: C901
         else:
             yield from fallback_projection()
             return
-    read_section = partial(
-        StrictXRefScanner.recover_section_at,
-        document.raw_data,
-    )
+    read_section = partial(StrictXRefScanner.recover_section_at, document.raw_data)
     revisions: list[XRefRevision] = []
     try:
         # extend keeps the revisions read before one that fails.

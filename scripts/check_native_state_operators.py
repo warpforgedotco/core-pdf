@@ -36,11 +36,7 @@ from typing import Any
 
 from core_pdf import PdfDocument
 from core_pdf.impl.capture import recording as capture_recording
-from core_pdf.impl.capture.recording import (
-    NATIVE_PATH_HANDLERS,
-    NATIVE_STATE_HANDLERS,
-    TextState,
-)
+from core_pdf.impl.capture.recording import NATIVE_PATH_HANDLERS, NATIVE_STATE_HANDLERS, TextState
 from core_pdf.impl.spec.s_07_content.model import GraphicsState
 
 UPSTREAM = Path("tests/upstream")

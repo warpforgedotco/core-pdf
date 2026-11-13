@@ -23,11 +23,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     looks_like_indirect_object_header,
     read_literal_string,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.tokens import (
-    WHITESPACE,
-    LexicalRules,
-    lexical_rules,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.tokens import WHITESPACE, LexicalRules, lexical_rules
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, recognized_version
 lazy from core_pdf_cythonized import ObjectScanner
 
@@ -251,11 +247,7 @@ class StrictPdfLexer(ScannedLexer):
 
 
 class PdfLexer(ScannedLexer):
-    __slots__ = (
-        "mode",
-        "copied_data",
-        "on_irregular_dictionary",
-    )
+    __slots__ = ("mode", "copied_data", "on_irregular_dictionary")
 
     scans_indirect_objects = True
 
@@ -581,11 +573,7 @@ class PdfLexer(ScannedLexer):
 
     def find_object_end(self, data_start: int) -> int:
         candidate, raw_candidate = self.find_keyword_candidate(
-            b"endobj",
-            data_start,
-            self.data_len,
-            reverse=False,
-            require_eol_before=False,
+            b"endobj", data_start, self.data_len, reverse=False, require_eol_before=False
         )
         return candidate if candidate >= 0 else raw_candidate
 

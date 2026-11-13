@@ -38,8 +38,7 @@ MatchFunc = Callable[["PDFStructElement"], bool]
 
 
 def _find_all(
-    elements: Iterable[PDFStructElement],
-    matcher: Union[str, Pattern[str], MatchFunc],
+    elements: Iterable[PDFStructElement], matcher: Union[str, Pattern[str], MatchFunc]
 ) -> Iterator[PDFStructElement]:
     """
     Common code for `find_all()` in trees and elements.

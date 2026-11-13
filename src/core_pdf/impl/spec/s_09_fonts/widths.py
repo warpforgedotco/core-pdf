@@ -9,10 +9,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     require_pdf_number,
     require_pdf_numbers,
 )
-from core_pdf.impl.spec.s_09_fonts.dictionaries import (
-    font_descriptor,
-    get_descendant,
-)
+from core_pdf.impl.spec.s_09_fonts.dictionaries import font_descriptor, get_descendant
 from core_records import GeneratedRecord
 
 
@@ -144,12 +141,7 @@ def parse_font_widths(
                 vertical.update((cid, metric) for cid in range(first, last + 1))
                 index += 5
         return FontMetrics(
-            parse_cid_widths(descendant.get("W")),
-            default,
-            dw is not None,
-            dy,
-            vy,
-            vertical,
+            parse_cid_widths(descendant.get("W")), default, dw is not None, dy, vy, vertical
         )
     descriptor = font_descriptor(font.get("FontDescriptor")) or {}
     missing_width = descriptor.get("MissingWidth")

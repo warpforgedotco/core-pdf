@@ -311,9 +311,7 @@ class LZWDecode:
         limit = get_configuration().lzw_maximum_output_length
         try:
             decoded = apply_lzw(
-                data,
-                FilterParams(early_change=early_change),
-                max_output_length=limit,
+                data, FilterParams(early_change=early_change), max_output_length=limit
             )
         except IncompleteLzwError as error:
             decoded = error.decoded  # pypdf treats running out of data as the end marker.

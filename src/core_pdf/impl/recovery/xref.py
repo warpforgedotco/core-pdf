@@ -30,9 +30,7 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
     key_for,
     new_xref_entry,
 )
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    parse_int_strict,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_int_strict
 from core_pdf.impl.spec.s_07_syntax_primitives.scanning import (
     FindableSizedBuffer,
     full_source_buffer,
@@ -43,8 +41,7 @@ lazy from core_pdf.impl.recovery.objects import PdfObjectStream
 
 
 def parse_object_marker_prefix(
-    data: PdfByteBuffer | memoryview,
-    marker: int,
+    data: PdfByteBuffer | memoryview, marker: int
 ) -> tuple[int, int, int] | None:
     if marker < 0 or data[marker : marker + 3] != b"obj":
         return None
@@ -209,11 +206,7 @@ class XRefScanner(xref.XRefScanner):
 
     @classmethod
     def lexer(cls, data: PdfByteBuffer, semantic_context: SemanticContext | None) -> PdfLexer:
-        return PdfLexer(
-            data,
-            mode=cls.mode,
-            semantic_context=semantic_context,
-        )
+        return PdfLexer(data, mode=cls.mode, semantic_context=semantic_context)
 
     @staticmethod
     def recover_object_stream_entries(
@@ -254,11 +247,7 @@ class XRefScanner(xref.XRefScanner):
                 if embedded_key in entries:
                     continue
                 entries[embedded_key] = PdfXRefEntry(
-                    0,
-                    0,
-                    True,
-                    object_stream=obj_num,
-                    index_in_stream=embedded_index,
+                    0, 0, True, object_stream=obj_num, index_in_stream=embedded_index
                 )
 
     @staticmethod
@@ -326,11 +315,7 @@ class XRefScanner(xref.XRefScanner):
         if data[pos : pos + 4] == b"xref":
             if stream_only:
                 raise PdfParseError("expected xref stream")
-            entries, trailer = cls.parse_table_section(
-                data,
-                pos,
-                semantic_context=semantic_context,
-            )
+            entries, trailer = cls.parse_table_section(data, pos, semantic_context=semantic_context)
             return ParsedXRefSection(pos, "table", entries, trailer)
 
         lexer = cls.lexer(data, semantic_context)
@@ -339,11 +324,7 @@ class XRefScanner(xref.XRefScanner):
             try:
                 obj = lexer.parse_indirect_object()
             except PdfParseError:
-                obj = cls.parse_xref_stream_salvage(
-                    data,
-                    pos,
-                    semantic_context=semantic_context,
-                )
+                obj = cls.parse_xref_stream_salvage(data, pos, semantic_context=semantic_context)
                 if obj is None:
                     raise
         finally:
@@ -353,11 +334,7 @@ class XRefScanner(xref.XRefScanner):
         try:
             entries, trailer = cls.parse_stream(obj)
         except PdfParseError:
-            obj = cls.parse_xref_stream_salvage(
-                data,
-                pos,
-                semantic_context=semantic_context,
-            )
+            obj = cls.parse_xref_stream_salvage(data, pos, semantic_context=semantic_context)
             if obj is None:
                 raise
             entries, trailer = cls.parse_stream(obj)
@@ -365,11 +342,7 @@ class XRefScanner(xref.XRefScanner):
 
     @classmethod
     def parse_xref_stream_salvage(
-        cls,
-        data: PdfByteBuffer,
-        pos: int,
-        *,
-        semantic_context: SemanticContext | None = None,
+        cls, data: PdfByteBuffer, pos: int, *, semantic_context: SemanticContext | None = None
     ) -> PdfStream | None:
         header_marker = data.find(b"obj", pos, min(len(data), pos + 64))
         if header_marker < 0:
@@ -457,11 +430,7 @@ class XRefScanner(xref.XRefScanner):
         return dict_obj, raw_data
 
     @staticmethod
-    def find_nearby_sections(
-        data: PdfByteBuffer,
-        start: int,
-        window: int = 1024,
-    ) -> list[int]:
+    def find_nearby_sections(data: PdfByteBuffer, start: int, window: int = 1024) -> list[int]:
         n = len(data)
         if start < 0:
             return []
@@ -620,10 +589,7 @@ class XRefScanner(xref.XRefScanner):
     ) -> ParsedXRefSection:
         try:
             return cls.parse_section_at(
-                data,
-                start,
-                stream_only=stream_only,
-                semantic_context=semantic_context,
+                data, start, stream_only=stream_only, semantic_context=semantic_context
             )
         except PdfParseError as original_error:
             for nearby in cls.find_nearby_sections(data, start):
@@ -631,10 +597,7 @@ class XRefScanner(xref.XRefScanner):
                     continue
                 try:
                     return cls.parse_section_at(
-                        data,
-                        nearby,
-                        stream_only=stream_only,
-                        semantic_context=semantic_context,
+                        data, nearby, stream_only=stream_only, semantic_context=semantic_context
                     )
                 except PdfParseError:
                     continue
@@ -780,8 +743,7 @@ def decode_xref_stream_rows(
         row_count, row_size
     )
     last_object = max(
-        (start + count for start, count in batched(available_index, 2, strict=True)),
-        default=0,
+        (start + count for start, count in batched(available_index, 2, strict=True)), default=0
     )
     if last_object < XREF_STREAM_KEY_LIMIT:
         return xref_stream_entries(rows, w, available_index, effective_size)

@@ -72,17 +72,10 @@ def make_candidate(
     alphanumeric = 0
     tokens = 0
     utility = 0.0
-    for text, confidence in zip(
-        observations.text,
-        observations.confidence,
-        strict=True,
-    ):
+    for text, confidence in zip(observations.text, observations.confidence, strict=True):
         characters += len(text)
         tokens += len(text.split())
-        nonspace, text_alphanumeric, text_utility = text_utility_stats(
-            text,
-            float(confidence),
-        )
+        nonspace, text_alphanumeric, text_utility = text_utility_stats(text, float(confidence))
         nonspace_characters += nonspace
         alphanumeric += text_alphanumeric
         utility += text_utility

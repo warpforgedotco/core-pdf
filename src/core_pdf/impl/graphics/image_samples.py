@@ -366,10 +366,7 @@ def convert_components(
     process = nchannel_process(space)
     if process is not None:
         return convert_components(
-            process_components(values, process),
-            process.color_space,
-            depth + 1,
-            rendering=rendering,
+            process_components(values, process), process.color_space, depth + 1, rendering=rendering
         )
     converter = COLOR_CONVERTERS.get(space.kind)
     converted = (
@@ -521,9 +518,7 @@ def d50_xyz_to_srgb_matrix() -> ColorSamples:
 def linear_to_srgb(values: ColorSamples) -> ColorSamples:
     clipped = numpy.clip(values, 0.0, None)
     return numpy.where(
-        clipped <= 0.0031308,
-        12.92 * clipped,
-        1.055 * numpy.power(clipped, 1.0 / 2.4) - 0.055,
+        clipped <= 0.0031308, 12.92 * clipped, 1.055 * numpy.power(clipped, 1.0 / 2.4) - 0.055
     ).astype(numpy.float32, copy=False)
 
 
@@ -605,14 +600,7 @@ def mix_nchannel(
         for source, spot in spots:
             mixed *= rgb_appearance(convert(values[:, source : source + 1], spot))
         return quantize(mixed)
-    except (
-        TypeError,
-        ValueError,
-        ArithmeticError,
-        FilterError,
-        PdfParseError,
-        PdfUnsupportedError,
-    ):
+    except TypeError, ValueError, ArithmeticError, FilterError, PdfParseError, PdfUnsupportedError:
         return None
 
 

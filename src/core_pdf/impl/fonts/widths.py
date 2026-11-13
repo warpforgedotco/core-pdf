@@ -12,12 +12,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,
 )
-from core_pdf.impl.spec.s_09_fonts.widths import (
-    MAX_CID,
-    MIN_CID,
-    CompactCIDWidthMap,
-    FontMetrics,
-)
+from core_pdf.impl.spec.s_09_fonts.widths import MAX_CID, MIN_CID, CompactCIDWidthMap, FontMetrics
 
 
 def recover_descendant(font: dict[Any, Any]) -> dict[Any, Any] | None:
@@ -194,10 +189,7 @@ def parse_cid_widths(value: Any) -> Mapping[int, float]:
         contiguous_widths = value[1]
         if isinstance(contiguous_widths, (list, tuple)):
             first = value[0]
-            bounds = clipped_cid_bounds(
-                first,
-                first + len(contiguous_widths) - 1,
-            )
+            bounds = clipped_cid_bounds(first, first + len(contiguous_widths) - 1)
             if bounds is None:
                 return {}
             clipped_first, clipped_last = bounds

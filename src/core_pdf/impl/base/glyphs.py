@@ -540,9 +540,7 @@ def min_optional_confidence(left: float | None, right: float | None) -> float | 
 
 
 def glyph_unicode_confidence(
-    text: str,
-    unicode_source: str,
-    alternates: tuple[str, ...] = (),
+    text: str, unicode_source: str, alternates: tuple[str, ...] = ()
 ) -> float:
     key = (text, unicode_source, alternates)
     try:
@@ -557,9 +555,7 @@ def glyph_unicode_confidence(
 
 
 def compute_glyph_unicode_confidence(
-    text: str,
-    unicode_source: str,
-    alternates: tuple[str, ...],
+    text: str, unicode_source: str, alternates: tuple[str, ...]
 ) -> float:
     if not text:
         confidence = 0.0
@@ -615,9 +611,7 @@ GlyphClusterLike: TypeAlias = GlyphCluster | GlyphObservation
 
 
 def glyph_cluster_from_observations(
-    cluster_id: int,
-    text: str,
-    glyphs: tuple[GlyphObservation, ...],
+    cluster_id: int, text: str, glyphs: tuple[GlyphObservation, ...]
 ) -> GlyphClusterLike | None:
     if not glyphs:
         return None

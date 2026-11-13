@@ -33,11 +33,7 @@ from core_pdf.impl.spec.s_07_content.operations import ContentOperands
 from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 
-from ..pdfminer._capture import (
-    PdfminerContentLexer,
-    PdfminerRecovery,
-    PdfminerTextState,
-)
+from ..pdfminer._capture import PdfminerContentLexer, PdfminerRecovery, PdfminerTextState
 from ..pdfminer._names import pdfminer_named_object
 
 # pdfminer.six's PREDEFINED_COLORSPACE: name -> number of components.

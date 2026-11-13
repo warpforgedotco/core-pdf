@@ -18,11 +18,7 @@ from core_pdf_ocr.impl.extract.contracts import (
     HIDDEN_TEXT_VERIFY_MIN_TOKEN_OVERLAP,
 )
 from core_pdf_ocr.impl.extract.observations import maximum_candidate_coverage
-from core_pdf_ocr.impl.extract.quality import (
-    Candidate,
-    make_candidate,
-    text_utility_stats,
-)
+from core_pdf_ocr.impl.extract.quality import Candidate, make_candidate, text_utility_stats
 
 OCR_TOKEN_TRANSLATION = str.maketrans(
     {
@@ -44,10 +40,7 @@ def normalized_ocr_token_key(text: str) -> str:
     return unicodedata.normalize("NFKC", text).translate(OCR_TOKEN_TRANSLATION).casefold()
 
 
-def hidden_text_verification(
-    hidden: ObservationBatch,
-    preview: ObservationBatch,
-) -> bool:
+def hidden_text_verification(hidden: ObservationBatch, preview: ObservationBatch) -> bool:
     hidden_by_token: dict[str, list[tuple[float, float, float, float]]] = defaultdict(list)
     for text, raw_box in zip(hidden.text, hidden.bbox, strict=True):
         box = bbox_tuple(raw_box)
@@ -85,14 +78,10 @@ def hidden_text_verification(
         hidden_center_x = (hidden_box[0] + hidden_box[2]) * 0.5
         hidden_center_y = (hidden_box[1] + hidden_box[3]) * 0.5
         x_tolerance = max(
-            12.0,
-            (preview_box[2] - preview_box[0]) * 1.5,
-            (hidden_box[2] - hidden_box[0]) * 1.5,
+            12.0, (preview_box[2] - preview_box[0]) * 1.5, (hidden_box[2] - hidden_box[0]) * 1.5
         )
         y_tolerance = max(
-            6.0,
-            (preview_box[3] - preview_box[1]) * 1.5,
-            (hidden_box[3] - hidden_box[1]) * 1.5,
+            6.0, (preview_box[3] - preview_box[1]) * 1.5, (hidden_box[3] - hidden_box[1]) * 1.5
         )
         spatially_matched += int(
             abs(preview_center_x - hidden_center_x) <= x_tolerance
@@ -109,10 +98,7 @@ def hidden_text_verification(
     return spatial_overlap >= HIDDEN_TEXT_VERIFY_MIN_SPATIAL_OVERLAP
 
 
-def candidate_text_containment(
-    left: tuple[str, ...],
-    right: tuple[str, ...],
-) -> bool:
+def candidate_text_containment(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
     shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
     if not shorter or sum(len(token) for token in shorter) < 4:
         return False
@@ -120,9 +106,7 @@ def candidate_text_containment(
     return any(longer[index : index + width] == shorter for index in range(len(longer) - width + 1))
 
 
-def merge_candidate_batches(
-    candidates: tuple[Candidate, ...],
-) -> Candidate:
+def merge_candidate_batches(candidates: tuple[Candidate, ...]) -> Candidate:
     if not candidates:
         return make_candidate(-1, ObservationBatch.empty())
     if len(candidates) == 1:
@@ -152,11 +136,7 @@ def merge_candidate_batches(
         observation_utility = numpy.fromiter(
             (
                 text_utility_stats(text, float(confidence)).utility
-                for text, confidence in zip(
-                    combined.text,
-                    combined.confidence,
-                    strict=True,
-                )
+                for text, confidence in zip(combined.text, combined.confidence, strict=True)
             ),
             dtype=numpy.float32,
             count=len(combined),
@@ -184,8 +164,7 @@ def merge_candidate_batches(
                     for accepted_position in sorted(nearby_positions)
                     if (
                         overlap_ratio_min(
-                            combined.bbox[index],
-                            combined.bbox[deduplicated[accepted_position]],
+                            combined.bbox[index], combined.bbox[deduplicated[accepted_position]]
                         )
                         >= (
                             0.35
@@ -210,8 +189,7 @@ def merge_candidate_batches(
                 continue
             accepted_index = deduplicated[duplicate_index]
             containment = candidate_text_containment(
-                normalized_tokens[accepted_index],
-                normalized_tokens[index],
+                normalized_tokens[accepted_index], normalized_tokens[index]
             )
             if containment and len(normalized_text[index]) != len(normalized_text[accepted_index]):
                 if len(normalized_text[index]) > len(normalized_text[accepted_index]):
@@ -240,10 +218,7 @@ def merge_candidate_batches(
 
 
 def augment_candidate(
-    primary: Candidate,
-    supplement: Candidate,
-    *,
-    minimum_confidence: float,
+    primary: Candidate, supplement: Candidate, *, minimum_confidence: float
 ) -> tuple[Candidate, int]:
     if not len(supplement.observations):
         return primary, 0
@@ -265,19 +240,12 @@ def augment_candidate(
         dtype=numpy.bool_,
         count=len(observations),
     )
-    coverage = maximum_candidate_coverage(
-        observations.bbox,
-        primary.observations.bbox,
-    )
+    coverage = maximum_candidate_coverage(observations.bbox, primary.observations.bbox)
     additions = (
         (confidence >= max(70.0, minimum_confidence)) & informative & useful & (coverage < 0.30)
     )
     added = int(numpy.count_nonzero(additions))
     if not added:
         return primary, 0
-    combined = ObservationBatch.concatenate_selected(
-        primary.observations,
-        observations,
-        additions,
-    )
+    combined = ObservationBatch.concatenate_selected(primary.observations, observations, additions)
     return make_candidate(primary.mode, combined, symbols=primary.symbols), added

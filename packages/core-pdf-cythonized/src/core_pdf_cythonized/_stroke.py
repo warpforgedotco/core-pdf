@@ -167,9 +167,7 @@ def clipped_pixel_box(
 @cython.nogil
 @cython.exceptval(check=False)
 def row_spans(
-    p: cython.pointer[Paint],
-    py: cython.Py_ssize_t,
-    spans: cython.pp_const_longlong,
+    p: cython.pointer[Paint], py: cython.Py_ssize_t, spans: cython.pp_const_longlong
 ) -> cython.Py_ssize_t:
     if py < 0 or py >= p.height:
         return 0
@@ -185,9 +183,7 @@ def row_spans(
 @cython.nogil
 @cython.exceptval(check=False)
 def pixel_in_row(
-    spans: cython.p_const_longlong,
-    count: cython.Py_ssize_t,
-    px: cython.Py_ssize_t,
+    spans: cython.p_const_longlong, count: cython.Py_ssize_t, px: cython.Py_ssize_t
 ) -> cython.bint:
     low: cython.Py_ssize_t = 0
     high: cython.Py_ssize_t = count
@@ -923,8 +919,7 @@ def stroke_polylines(
         if row_offsets[row_offsets.shape[0] - 1] * 2 > row_spans.shape[0]:
             raise ValueError("row offsets run past the spans")
     bounds: cython.pointer[cython.longlong] = cython.cast(
-        cython.pointer[cython.longlong],
-        malloc((3 * count + 1) * cython.sizeof(cython.longlong)),
+        cython.pointer[cython.longlong], malloc((3 * count + 1) * cython.sizeof(cython.longlong))
     )
     if bounds == cython.NULL:
         raise MemoryError

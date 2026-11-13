@@ -78,18 +78,13 @@ def pixel_box_to_page_box(
 
 
 def map_ocr_box(
-    task: OcrTask,
-    bbox: tuple[int, int, int, int],
+    task: OcrTask, bbox: tuple[int, int, int, int]
 ) -> tuple[float, float, float, float]:
     return pixel_box_to_page_box(bbox, task.image.width, task.image.height, task.page_box)
 
 
 def ocr_region_box(
-    box: tuple[float, float, float, float],
-    *,
-    page_width: float,
-    page_height: float,
-    padding: float,
+    box: tuple[float, float, float, float], *, page_width: float, page_height: float, padding: float
 ) -> tuple[float, float, float, float] | None:
     x0, y0, x1, y1 = box
     clipped = (

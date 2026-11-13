@@ -26,10 +26,7 @@ from core_pdf.impl.extract.capture import (
     promoted_hidden_runs,
     run_uses_actual_text,
 )
-from core_pdf.impl.extract.contracts import (
-    GlyphEvidence,
-    ObservationBatch,
-)
+from core_pdf.impl.extract.contracts import GlyphEvidence, ObservationBatch
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
@@ -195,10 +192,7 @@ def stroked_vector_text_evidence(
         maximum_dimension = max(box[2] - box[0], box[3] - box[1])
         if maximum_dimension <= 0.0:
             continue
-        stats = styles.setdefault(
-            style,
-            [0.0, 0.0, math.inf, -math.inf, math.inf, -math.inf],
-        )
+        stats = styles.setdefault(style, [0.0, 0.0, math.inf, -math.inf, math.inf, -math.inf])
         stats[0] += 1.0
         if maximum_dimension <= STROKED_VECTOR_COMPACT_DIMENSION:
             stats[1] += 1.0
@@ -283,10 +277,7 @@ def uncovered_vector_area(
     return uncovered
 
 
-def capture_with_newstroke_text(
-    capture: PageAnalysis,
-    decoded: NewstrokeDecode,
-) -> PageAnalysis:
+def capture_with_newstroke_text(capture: PageAnalysis, decoded: NewstrokeDecode) -> PageAnalysis:
     runs = decoded.runs
     observations = observations_from_runs(runs)
     text = "".join(run.text for run in runs)
@@ -294,8 +285,7 @@ def capture_with_newstroke_text(
     widths = numpy.maximum(0.0, boxes[:, 2] - boxes[:, 0])
     heights = numpy.maximum(0.0, boxes[:, 3] - boxes[:, 1])
     text_coverage = min(
-        1.0,
-        float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area,
+        1.0, float(numpy.sum(widths * heights, dtype=numpy.float64)) / capture.evidence.page_area
     )
     analysis = analyze_text(text)
     text_quality = analysis.quality
@@ -307,9 +297,7 @@ def capture_with_newstroke_text(
         suspicious_characters=analysis.suspicious_characters,
         text_coverage=text_coverage,
         uncovered_vector_area=uncovered_vector_area(
-            capture.program.drawings,
-            observations,
-            page_area=capture.evidence.page_area,
+            capture.program.drawings, observations, page_area=capture.evidence.page_area
         ),
         text_quality=text_quality,
         all_text_quality=text_quality,
@@ -354,9 +342,7 @@ def requires_high_resolution_vector_ocr(capture: PageAnalysis) -> bool:
 
 
 def glyph_evidence_fields(
-    glyphs: tuple[GlyphObservation, ...],
-    runs: tuple[TextRun, ...],
-    replacements: Mapping[int, str],
+    glyphs: tuple[GlyphObservation, ...], runs: tuple[TextRun, ...], replacements: Mapping[int, str]
 ) -> GlyphEvidence:
     return extract_capture.glyph_evidence_fields(
         (
@@ -388,9 +374,7 @@ def enrich_capture(native: extract_contracts.PageAnalysis) -> PageAnalysis:
         vector_complexity=vector_complexity(program.drawings, program.lines),
         image_filters=image_filters,
         uncovered_vector_area=uncovered_vector_area(
-            program.drawings,
-            native.observations,
-            page_area=native.evidence.page_area,
+            program.drawings, native.observations, page_area=native.evidence.page_area
         ),
     )
     captured = native.extended(PageAnalysis, evidence=evidence)
@@ -431,11 +415,7 @@ def capture_from_program(
             apply_learned_unicode_to_run(run, learned_unicode, glyph_replacements=replacements)
             for run in capture_runs(page, program, structure)
         )
-        evidence = glyph_evidence_fields(
-            program.glyphs,
-            runs,
-            replacements,
-        )
+        evidence = glyph_evidence_fields(program.glyphs, runs, replacements)
     return enrich_capture(
         extract_capture.capture_from_program(
             page,

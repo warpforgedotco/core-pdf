@@ -32,17 +32,13 @@ class ExtractionBuilder(Protocol[Extraction]):
 
 
 def prepare_document_pages[Extraction: PageExtraction](
-    document: PdfDocument[Any],
-    pages: Sequence[PdfPage],
-    build: ExtractionBuilder[Extraction],
+    document: PdfDocument[Any], pages: Sequence[PdfPage], build: ExtractionBuilder[Extraction]
 ) -> tuple[Extraction, ...]:
     return tuple(iter_document_pages(document, pages, build))
 
 
 def iter_document_pages[Extraction: PageExtraction](
-    document: PdfDocument[Any],
-    pages: Sequence[PdfPage],
-    build: ExtractionBuilder[Extraction],
+    document: PdfDocument[Any], pages: Sequence[PdfPage], build: ExtractionBuilder[Extraction]
 ) -> Iterator[Extraction]:
     hidden_layers = document.oc_hidden_layers() if pages else frozenset()
     structure_tree = None
@@ -70,9 +66,7 @@ def iter_document_pages[Extraction: PageExtraction](
 
 
 def assemble_document(
-    document: PdfDocument[Any],
-    extractions: Iterable[PageExtraction],
-    context: ExtractionScope,
+    document: PdfDocument[Any], extractions: Iterable[PageExtraction], context: ExtractionScope
 ) -> Document:
     pages: list[Page] = []
     for extraction in extractions:

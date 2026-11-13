@@ -15,10 +15,7 @@ from core_pdf.impl.graphics.color_spec import (
     parse_color_space,
     raw_color_space_paints,
 )
-from core_pdf.impl.graphics.functions import (
-    compile_pdf_function,
-    number_array,
-)
+from core_pdf.impl.graphics.functions import compile_pdf_function, number_array
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
@@ -170,8 +167,4 @@ def shading_color_evaluator(
     return convert, "DeviceRGB"
 
 
-__all__ = (
-    "PreparedShading",
-    "ShadingEvaluatorCache",
-    "prepare_shading",
-)
+__all__ = ("PreparedShading", "ShadingEvaluatorCache", "prepare_shading")

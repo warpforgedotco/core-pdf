@@ -209,12 +209,7 @@ class ObjectScanner:
 
     @cython.cfunc
     def parse(
-        self,
-        pos: cython.Py_ssize_t,
-        dictionary: cython.bint,
-        decipher,
-        object_number,
-        generation,
+        self, pos: cython.Py_ssize_t, dictionary: cython.bint, decipher, object_number, generation
     ) -> object:
         if pos < 0 or self.data == cython.NULL:
             return None
@@ -411,8 +406,7 @@ class ObjectScanner:
                 pos[0] = cursor + 1
                 return self.string(
                     PyBytes_FromStringAndSize(
-                        cython.cast(cython.p_const_char, data) + start,
-                        cursor - start,
+                        cython.cast(cython.p_const_char, data) + start, cursor - start
                     ),
                     True,
                 )
@@ -536,8 +530,7 @@ class ObjectScanner:
         if start > self.length:
             return BAIL
         found: cython.p_const_uchar = cython.cast(
-            cython.p_const_uchar,
-            memchr(data + start, 62, self.length - start),
+            cython.p_const_uchar, memchr(data + start, 62, self.length - start)
         )
         if found == cython.NULL:
             return BAIL
@@ -757,8 +750,7 @@ class ObjectScanner:
         if start > self.length:
             return None
         found: cython.p_const_uchar = cython.cast(
-            cython.p_const_uchar,
-            memchr(data + start, 93, self.length - start),
+            cython.p_const_uchar, memchr(data + start, 93, self.length - start)
         )
         if found == cython.NULL:
             return None

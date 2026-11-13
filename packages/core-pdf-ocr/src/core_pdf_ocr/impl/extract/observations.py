@@ -43,24 +43,17 @@ COVERAGE_VECTORIZED_ELEMENTS = 1_000_000
 
 
 def maximum_candidate_coverage(
-    candidate_boxes: numpy.ndarray,
-    native_boxes: numpy.ndarray,
+    candidate_boxes: numpy.ndarray, native_boxes: numpy.ndarray
 ) -> numpy.ndarray:
     if not len(candidate_boxes) or not len(native_boxes):
         return numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
     output = numpy.zeros(len(candidate_boxes), dtype=numpy.float32)
-    chunk_size = min(
-        COVERAGE_CHUNK,
-        max(1, COVERAGE_VECTORIZED_ELEMENTS // len(native_boxes)),
-    )
+    chunk_size = min(COVERAGE_CHUNK, max(1, COVERAGE_VECTORIZED_ELEMENTS // len(native_boxes)))
     for start, intersections in BoxIndex.from_array(native_boxes).pairwise_intersection(
         candidate_boxes, chunk_size
     ):
         boxes = candidate_boxes[start : start + chunk_size]
-        areas = numpy.maximum(
-            1.0,
-            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]),
-        )
+        areas = numpy.maximum(1.0, (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]))
         output[start : start + len(boxes)] = numpy.max(intersections, axis=1) / areas
     return output
 
@@ -77,11 +70,7 @@ def vector_text_scale(capture: PageAnalysis, vector_complexity: int) -> float:
     return max(4.0, ocr_scale(capture, schematic=True, vector_complexity=vector_complexity))
 
 
-def schematic_page(
-    vector_complexity: int,
-    text_density: float,
-    text_coverage: float,
-) -> bool:
+def schematic_page(vector_complexity: int, text_density: float, text_coverage: float) -> bool:
     return vector_complexity >= 180 and (text_density < 0.0015 or text_coverage < 0.05)
 
 
@@ -304,8 +293,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
             and has_only_simple_vector_rectangles(capture)
         ):
             return WorkPlan(
-                PageRoute.NATIVE,
-                reason=PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS,
+                PageRoute.NATIVE, reason=PagePlanReason.NATIVE_TEXT_WITH_RECTANGULAR_VECTORS
             )
         if vector_native_text_is_trusted(evidence):
             return WorkPlan(PageRoute.NATIVE, reason=PagePlanReason.GLYPH_TRUSTED_VECTOR_TEXT)
@@ -372,11 +360,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
 
     if noisy_native_text(evidence):
         scale = min(
-            4.5,
-            max(
-                3.0,
-                ocr_scale(capture, schematic=True, vector_complexity=vector_complexity),
-            ),
+            4.5, max(3.0, ocr_scale(capture, schematic=True, vector_complexity=vector_complexity))
         )
         return WorkPlan(
             PageRoute.HYBRID,
@@ -581,9 +565,7 @@ def plan_page(capture: PageAnalysis) -> WorkPlan:
 
 
 def duplicate_of_native_text(
-    native_compact: str,
-    native_tokens: frozenset[str],
-    ocr_text: str,
+    native_compact: str, native_tokens: frozenset[str], ocr_text: str
 ) -> bool:
     compact = compact_text(ocr_text)
     if len(compact) >= 8 and compact in native_compact:
@@ -593,9 +575,7 @@ def duplicate_of_native_text(
 
 
 def fuse_observations(
-    native: ObservationBatch,
-    ocr: ObservationBatch,
-    plan: WorkPlan,
+    native: ObservationBatch, ocr: ObservationBatch, plan: WorkPlan
 ) -> ObservationBatch:
     route = plan.route
     if route is PageRoute.NATIVE or not len(ocr):

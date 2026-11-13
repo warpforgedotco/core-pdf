@@ -11,11 +11,7 @@ from core_pdf.impl.adobe_fonts.afm import core14
 from core_pdf.impl.adobe_fonts.afm.core14 import Core14FontMetrics
 from core_pdf.impl.fonts.cmap import CMapDecoder
 from core_pdf.impl.fonts.helpers import LIGATURE_TEXT_OVERRIDES
-from core_pdf.impl.fonts.widths import (
-    effective_descriptor,
-    parse_font_widths,
-    recover_descendant,
-)
+from core_pdf.impl.fonts.widths import effective_descriptor, parse_font_widths, recover_descendant
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
     parse_float_strict,
     parse_int_strict,

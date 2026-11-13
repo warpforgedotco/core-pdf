@@ -50,10 +50,7 @@ def rasterize_contours_python(
         if len(contour) < 3:
             continue
         normalized = [
-            (
-                (px - min_x) / glyph_width * (width - 1),
-                (py - min_y) / glyph_height * (height - 1),
-            )
+            ((px - min_x) / glyph_width * (width - 1), (py - min_y) / glyph_height * (height - 1))
             for px, py in contour
         ]
         previous = normalized[-1]

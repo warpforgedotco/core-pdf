@@ -44,11 +44,7 @@ def text_basis_rect(x0: float, y0: float, x1: float, y1: float, text_basis: Text
 
 
 def transformed_text_line(
-    x0: float,
-    y0: float,
-    x1: float,
-    y1: float,
-    text_basis: TextBasis,
+    x0: float, y0: float, x1: float, y1: float, text_basis: TextBasis
 ) -> tuple[float, float, float, float]:
     base_x, base_y, a, b, c, d = text_basis
     return (
@@ -68,10 +64,7 @@ def glyph_text_space_boxes(
     font_ascent: float,
     font_descent: float,
     position: tuple[float, float] = (0.0, 0.0),
-) -> tuple[
-    Rectangle,
-    tuple[float, float, float, float],
-]:
+) -> tuple[Rectangle, tuple[float, float, float, float]]:
     if is_vertical:
         position_x, position_y = position
         start_y = rise + position_y - offset
@@ -82,16 +75,10 @@ def glyph_text_space_boxes(
         x1 = position_x + (max(dr, ar))
         y0 = min(end_y, start_y)
         y1 = max(start_y, end_y)
-        return (
-            (x0, y0, x1, y1),
-            (0.0, start_y, 0.0, end_y),
-        )
+        return ((x0, y0, x1, y1), (0.0, start_y, 0.0, end_y))
     ar = font_ascent + rise
     dr = font_descent + rise
-    return (
-        (offset, dr, offset + advance, ar),
-        (offset, rise, offset + advance, rise),
-    )
+    return ((offset, dr, offset + advance, ar), (offset, rise, offset + advance, rise))
 
 
 NO_BOX = float("nan")
@@ -225,12 +212,7 @@ class RunGeometry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False,
     ink: Rectangle = (0.0, 0.0, 0.0, 0.0)
     confidence: float | None = None
 
-    def add(
-        self,
-        advance_bbox: Rectangle,
-        ink_bbox: Rectangle,
-        confidence: float | None,
-    ) -> None:
+    def add(self, advance_bbox: Rectangle, ink_bbox: Rectangle, confidence: float | None) -> None:
         if not self.started:
             self.started = True
             self.advance = advance_bbox
@@ -617,9 +599,7 @@ def capture_glyphs(
         cluster_id = cluster_start + index
         cluster_provenance_id = (seqno, cluster_id)
         observation_confidence = glyph_unicode_confidence(
-            chunk_text,
-            glyph.unicode_source,
-            glyph.alternates,
+            chunk_text, glyph.unicode_source, glyph.alternates
         )
 
         if not split_flags[index]:

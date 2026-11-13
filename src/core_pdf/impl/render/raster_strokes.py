@@ -53,23 +53,13 @@ def fill_line(
     if abs(dx) <= 1e-12 or abs(dy) <= 1e-12:
         if abs(dy) <= 1e-12:
             fill_rect(
-                (
-                    min(x0, x1) - cap_extension,
-                    y0 - half,
-                    max(x0, x1) + cap_extension,
-                    y0 + half,
-                ),
+                (min(x0, x1) - cap_extension, y0 - half, max(x0, x1) + cap_extension, y0 + half),
                 rgba,
                 blend_mode,
             )
         else:
             fill_rect(
-                (
-                    x0 - half,
-                    min(y0, y1) - cap_extension,
-                    x0 + half,
-                    max(y0, y1) + cap_extension,
-                ),
+                (x0 - half, min(y0, y1) - cap_extension, x0 + half, max(y0, y1) + cap_extension),
                 rgba,
                 blend_mode,
             )
@@ -193,11 +183,7 @@ def fill_terminal(
     if round_shape:
         self.fill_circle(px, py, radius, rgba, blend_mode)
     else:
-        self.fill_rect(
-            (px - radius, py - radius, px + radius, py + radius),
-            rgba,
-            blend_mode,
-        )
+        self.fill_rect((px - radius, py - radius, px + radius, py + radius), rgba, blend_mode)
 
 
 def stroke_path(

@@ -36,11 +36,7 @@ class IdentityCache[V]:
     ) -> V | D: ...
 
     def get(
-        self,
-        obj: object,
-        *extra: Hashable,
-        pins: tuple[object, ...] = (),
-        default: object = None,
+        self, obj: object, *extra: Hashable, pins: tuple[object, ...] = (), default: object = None
     ) -> object:
         key = (id(obj), *map(id, pins), *extra) if extra or pins else id(obj)
         entry = self.entries.get(key)

@@ -94,10 +94,7 @@ def token(
 
     attributes = [
         {"type": "content_type", "values": [INTEGRITY_INFO_OID]},
-        {
-            "type": "message_digest",
-            "values": [DIGESTS[variant.digest](integrity).digest()],
-        },
+        {"type": "message_digest", "values": [DIGESTS[variant.digest](integrity).digest()]},
     ]
     if variant.protection is not None:
         protected_mac = "sha256" if variant.protection == "match" else "sha512"

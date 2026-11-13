@@ -614,8 +614,7 @@ def type1_glyph_bounds(
     state.subr_count = count
     if count:
         subr_data = cython.cast(
-            cython.pp_const_uchar,
-            PyMem_Malloc(count * cython.sizeof(cython.p_const_uchar)),
+            cython.pp_const_uchar, PyMem_Malloc(count * cython.sizeof(cython.p_const_uchar))
         )
         subr_lengths = cython.cast(
             cython.p_Py_ssize_t, PyMem_Malloc(count * cython.sizeof(cython.Py_ssize_t))
@@ -634,10 +633,7 @@ def type1_glyph_bounds(
         state.subrs = subr_data
         state.subr_lengths = subr_lengths
         status = execute(
-            cython.address(state),
-            cython.cast(cython.p_const_uchar, charstring),
-            len(charstring),
-            0,
+            cython.address(state), cython.cast(cython.p_const_uchar, charstring), len(charstring), 0
         )
     finally:
         PyMem_Free(subr_data)

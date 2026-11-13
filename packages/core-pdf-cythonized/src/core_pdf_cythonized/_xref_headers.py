@@ -26,10 +26,7 @@ LARGEST = cython.declare(cython.longlong, 9223372036854775807)
 @cython.nogil
 @cython.exceptval(check=False)
 def read_number(
-    b: cython.p_const_uchar,
-    p: cython.Py_ssize_t,
-    n: cython.Py_ssize_t,
-    value: cython.p_longlong,
+    b: cython.p_const_uchar, p: cython.Py_ssize_t, n: cython.Py_ssize_t, value: cython.p_longlong
 ) -> cython.Py_ssize_t:
     start: cython.Py_ssize_t = p
     total: cython.longlong = 0

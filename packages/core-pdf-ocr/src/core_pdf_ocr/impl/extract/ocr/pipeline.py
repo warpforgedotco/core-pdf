@@ -39,11 +39,7 @@ from core_pdf_ocr.impl.extract.ocr.rescue import (
     adaptive_rescue_decision,
     primary_text_is_sufficient,
 )
-from core_pdf_ocr.impl.extract.ocr.session import (
-    OcrSession,
-    raster_tasks,
-    region_tasks,
-)
+from core_pdf_ocr.impl.extract.ocr.session import OcrSession, raster_tasks, region_tasks
 from core_pdf_ocr.impl.extract.ocr.strokes import StrokedTextProfile
 from core_pdf_ocr.impl.extract.ocr.types import OcrTask
 from core_pdf_ocr.impl.extract.ocr.vector import (
@@ -113,28 +109,18 @@ class OcrPassState(GeneratedRecord):
             and self.seeded_region_selected
             and ocr_pass.run_if_additions_below is not None
         ):
-            return replace(
-                self,
-                selected=None,
-                selected_tasks=(),
-                seeded_region_selected=False,
-            )
+            return replace(self, selected=None, selected_tasks=(), seeded_region_selected=False)
         return self
 
     def complete(
-        self,
-        ocr_pass: OcrPass,
-        candidate: Candidate,
-        candidate_source_tasks: tuple[OcrTask, ...],
+        self, ocr_pass: OcrPass, candidate: Candidate, candidate_source_tasks: tuple[OcrTask, ...]
     ) -> OcrPassState:
         selected = self.selected
         if ocr_pass.scope is OcrPassScope.WEAK_REGIONS:
             used_native_seed = selected is None
             if selected is not None:
                 candidate, additions = augment_candidate(
-                    selected,
-                    candidate,
-                    minimum_confidence=ocr_pass.minimum_confidence,
+                    selected, candidate, minimum_confidence=ocr_pass.minimum_confidence
                 )
             else:
                 additions = len(candidate.observations)
@@ -150,11 +136,7 @@ class OcrPassState(GeneratedRecord):
         if selected is None or candidate.metrics.utility > (
             selected.metrics.utility * ocr_pass.minimum_utility_gain
         ):
-            return replace(
-                self,
-                selected=candidate,
-                selected_tasks=candidate_source_tasks,
-            )
+            return replace(self, selected=candidate, selected_tasks=candidate_source_tasks)
         return self
 
 
@@ -220,25 +202,18 @@ def recognize_session_page(
             recognize_words=True,
             region_first=False,
         )
-        verification_region = dominant_image_region(
-            capture,
-            max_pixels=HIDDEN_TEXT_VERIFY_PIXELS,
-        )
+        verification_region = dominant_image_region(capture, max_pixels=HIDDEN_TEXT_VERIFY_PIXELS)
         verification_tasks = region_tasks(
             verification_region, verification_pass, compact_image=compact_image
         )
         verification_candidates = session.recognize_tasks(verification_tasks)
         verification_candidate = merge_candidate_batches(verification_candidates)
-        if hidden_text_verification(
-            capture.observations,
-            verification_candidate.observations,
-        ):
+        if hidden_text_verification(capture.observations, verification_candidate.observations):
             return promoted_hidden_observations(capture)
 
     for ocr_pass in plan.ocr_passes:
         prepared_state = pass_state.prepare(
-            ocr_pass,
-            visible_native_characters=capture.evidence.visible_native_characters,
+            ocr_pass, visible_native_characters=capture.evidence.visible_native_characters
         )
         if prepared_state is None:
             continue
@@ -246,11 +221,7 @@ def recognize_session_page(
         selected = pass_state.selected
         selected_tasks = pass_state.selected_tasks
         context.raise_if_cancelled()
-        pass_tasks = session.materialize(
-            ocr_pass,
-            selected=selected,
-            selected_tasks=selected_tasks,
-        )
+        pass_tasks = session.materialize(ocr_pass, selected=selected, selected_tasks=selected_tasks)
         if pass_tasks is None:
             continue
         ocr_pass = pass_tasks.ocr_pass
@@ -269,13 +240,10 @@ def recognize_session_page(
             task_candidates = tuple(item[0] for item in remapped_with_counts)
             packed_candidate = merge_candidate_batches(task_candidates)
             packed_decode = decode_stroked_vector_text(
-                stroked_profile,
-                packed_candidate.observations,
-                packed_candidate.symbols,
+                stroked_profile, packed_candidate.observations, packed_candidate.symbols
             )
             packed_accepted = packed_stroked_vector_decode_gate(
-                packed_decode,
-                len(packed_stroked.cells),
+                packed_decode, len(packed_stroked.cells)
             )
             if packed_accepted:
                 isolated_packed = stroked_vector_text_raster(
@@ -303,9 +271,7 @@ def recognize_session_page(
                 if isolated_tasks and isolated_packed is not None:
                     isolated_remapped = tuple(
                         remap_stroked_vector_candidate(
-                            candidate,
-                            isolated_packed,
-                            digit_bearing_only=True,
+                            candidate, isolated_packed, digit_bearing_only=True
                         )
                         for candidate in session.recognize_tasks(isolated_tasks)
                     )
@@ -316,9 +282,7 @@ def recognize_session_page(
                     packed_candidate = merge_candidate_batches(task_candidates)
             else:
                 fallback_region = full_stroked_vector_text_raster(
-                    capture,
-                    ocr_pass.scale,
-                    max_pixels=ocr_pass.pixel_budget,
+                    capture, ocr_pass.scale, max_pixels=ocr_pass.pixel_budget
                 )
                 fallback_tasks = region_tasks(
                     fallback_region,
@@ -340,11 +304,7 @@ def recognize_session_page(
             and ocr_pass.scope is OcrPassScope.PAGE
             and not capture.evidence.vector_complexity >= 180
         ):
-            candidate, _ = augment_candidate(
-                selected,
-                candidate,
-                minimum_confidence=70.0,
-            )
+            candidate, _ = augment_candidate(selected, candidate, minimum_confidence=70.0)
         median_height = candidate.metrics.median_text_height
         rescue_eligible = bool(
             ocr_pass.adaptive_scale
@@ -357,11 +317,7 @@ def recognize_session_page(
         run_rescue = False
         if rescue_eligible:
             adaptive_rescue_used = True
-            run_rescue = adaptive_rescue_decision(
-                candidate,
-                candidate_source_tasks,
-                ocr_pass,
-            )
+            run_rescue = adaptive_rescue_decision(candidate, candidate_source_tasks, ocr_pass)
         if run_rescue:
             factor = 1.5 if median_height <= 0.0 else min(2.5, max(1.25, 32.0 / median_height))
             adaptive_retry_scale = min(8.0, max(ocr_pass.scale + 0.5, ocr_pass.scale * factor))
@@ -395,9 +351,7 @@ def recognize_session_page(
                     max_regions=max(8, retry_pass.max_regions),
                 )
                 retry_regions = session.high_resolution_weak_region_tasks(
-                    tasks,
-                    retry_pass,
-                    candidate.observations,
+                    tasks, retry_pass, candidate.observations
                 )
                 retry_tasks = retry_regions
             if retry_tasks:
@@ -405,9 +359,7 @@ def recognize_session_page(
                 retry_candidates = session.recognize_tasks(retry_tasks)
                 retry_candidate = merge_candidate_batches(retry_candidates)
                 augmented_candidate, _rescue_additions = augment_candidate(
-                    candidate,
-                    retry_candidate,
-                    minimum_confidence=ocr_pass.minimum_confidence,
+                    candidate, retry_candidate, minimum_confidence=ocr_pass.minimum_confidence
                 )
                 if retry_candidate.metrics.utility > augmented_candidate.metrics.utility * 1.05:
                     candidate = retry_candidate
@@ -419,10 +371,7 @@ def recognize_session_page(
     if selected is None:
         return ObservationBatch.empty()
     selected_tasks = pass_state.selected_tasks
-    source_task = max(
-        selected_tasks,
-        key=lambda task: task.rectangle[2] * task.rectangle[3],
-    )
+    source_task = max(selected_tasks, key=lambda task: task.rectangle[2] * task.rectangle[3])
     grid = detect_ruling_grid(source_task.image)
     if grid is not None and grid_is_regular_table(grid, selected.observations, source_task):
         x_lines, y_lines, source_samples, slope = grid

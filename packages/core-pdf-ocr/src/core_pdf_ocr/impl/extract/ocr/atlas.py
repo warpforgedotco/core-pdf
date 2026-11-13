@@ -12,10 +12,7 @@ from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind
 
 
 def rasterize_packed_stroked_paths(
-    items: tuple[DisplayItem, ...],
-    width: float,
-    height: float,
-    scale: float,
+    items: tuple[DisplayItem, ...], width: float, height: float, scale: float
 ) -> RasterImage:
     raster_scale = max(0.01, float(scale))
     raster_width = max(1, int(round(width * raster_scale)))

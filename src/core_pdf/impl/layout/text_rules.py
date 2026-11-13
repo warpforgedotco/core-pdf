@@ -64,10 +64,7 @@ class WordRankIndex(Mapping[str, int]):
             if isinstance(mapped, mmap.mmap):
                 mapped.close()
             raise ValueError("word-rank index has an unsupported format")
-        final_offset = UINT32.unpack_from(
-            mapped,
-            WORD_RANK_HEADER.size + count * UINT32.size,
-        )[0]
+        final_offset = UINT32.unpack_from(mapped, WORD_RANK_HEADER.size + count * UINT32.size)[0]
         if data_start + final_offset != len(mapped):
             if isinstance(mapped, mmap.mmap):
                 mapped.close()
@@ -77,10 +74,7 @@ class WordRankIndex(Mapping[str, int]):
         self._data_start = data_start
 
     def offset(self, index: int) -> int:
-        return UINT32.unpack_from(
-            self._mmap,
-            WORD_RANK_HEADER.size + index * UINT32.size,
-        )[0]
+        return UINT32.unpack_from(self._mmap, WORD_RANK_HEADER.size + index * UINT32.size)[0]
 
     def entry(self, index: int) -> tuple[bytes, int]:
         start = self.offset(index)
@@ -335,9 +329,7 @@ def is_tracked_glyph_run_line(non_space_runs: list[TextRun]) -> bool:
 
 
 def explicit_spaces_should_control_glyph_gaps(
-    non_space_runs: list[TextRun],
-    *,
-    explicit_space_count: int,
+    non_space_runs: list[TextRun], *, explicit_space_count: int
 ) -> bool:
     if explicit_space_count < 2 or len(non_space_runs) < 8:
         return False
@@ -373,12 +365,7 @@ def column_gap_threshold_for_runs(
 
     gaps = positive_run_gaps(non_space_runs)
     typical_gap = median_low(gaps) if gaps else 0.0
-    return max(
-        typical_gap * 4.0,
-        typical_space * 5.0,
-        typical_height * 1.55,
-        12.0,
-    )
+    return max(typical_gap * 4.0, typical_space * 5.0, typical_height * 1.55, 12.0)
 
 
 def estimated_char_width_for_suspect_line(sorted_runs: list[TextRun]) -> float | None:
@@ -504,12 +491,7 @@ def should_join_plausible_split_word(
 
 
 def digit_fragments_are_tightly_joined(
-    previous: str,
-    current: str,
-    *,
-    x_gap: float,
-    height: float,
-    space_width: float,
+    previous: str, current: str, *, x_gap: float, height: float, space_width: float
 ) -> bool:
     prev = previous.strip()
     text = current.strip()
@@ -519,12 +501,7 @@ def digit_fragments_are_tightly_joined(
 
 
 def should_insert_tight_word_space(
-    *,
-    prev_text: str,
-    text: str,
-    x_gap: float,
-    height: float,
-    space_width: float,
+    *, prev_text: str, text: str, x_gap: float, height: float, space_width: float
 ) -> bool:
     if not prev_text or not text:
         return False
@@ -626,10 +603,7 @@ def collapse_repeated_spaces(text: str) -> str:
     return text
 
 
-def baseline_midpoint(
-    baseline: tuple[float, float, float, float],
-    rotation_angle: int,
-) -> float:
+def baseline_midpoint(baseline: tuple[float, float, float, float], rotation_angle: int) -> float:
     if rotation_angle in (90, 270):
         return (baseline[0] + baseline[2]) * 0.5
     return (baseline[1] + baseline[3]) * 0.5
@@ -671,10 +645,7 @@ def reorder_stacked_formula_numerators(runs: list[TextRun]) -> list[TextRun]:
 
 
 def stacked_formula_denominator(
-    denominator: TextRun,
-    numerator: TextRun,
-    *,
-    following: TextRun | None = None,
+    denominator: TextRun, numerator: TextRun, *, following: TextRun | None = None
 ) -> bool:
     if not denominator.has_text or not numerator.has_text:
         return False
@@ -716,12 +687,7 @@ def inline_marker_text(text: str) -> bool:
 
 
 def compact_unit_suffix_should_join(
-    previous: str,
-    current: str,
-    *,
-    x_gap: float,
-    height: float,
-    space_width: float,
+    previous: str, current: str, *, x_gap: float, height: float, space_width: float
 ) -> bool:
     prev = previous.strip()
     text = current.strip()

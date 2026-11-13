@@ -22,11 +22,7 @@ def outline_edges(xs: cython.double[::1], ys: cython.double[::1], spans):
 
 
 @cython.cfunc
-def _outline_edges(
-    xs: cython.p_const_double,
-    ys: cython.p_const_double,
-    spans,
-) -> tuple:
+def _outline_edges(xs: cython.p_const_double, ys: cython.p_const_double, spans) -> tuple:
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
     i: cython.Py_ssize_t

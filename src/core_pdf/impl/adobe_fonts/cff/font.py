@@ -93,9 +93,7 @@ def cff_offset(values: list[float] | None, context: str) -> int:
     return int(value)
 
 
-def cff_font_matrix(
-    font_dict: dict[int | tuple[int, int], list[float]],
-) -> CffFontMatrix | None:
+def cff_font_matrix(font_dict: dict[int | tuple[int, int], list[float]]) -> CffFontMatrix | None:
     values = font_dict.get((12, 7))
     if values is None:
         return None
@@ -265,26 +263,17 @@ class CFFFont:
         if b0 == 28:
             if pos + 3 > len(item):
                 raise ValueError("invalid CFF number")
-            return (
-                float(int.from_bytes(item[pos + 1 : pos + 3], "big", signed=True)),
-                pos + 3,
-            )
+            return (float(int.from_bytes(item[pos + 1 : pos + 3], "big", signed=True)), pos + 3)
         if b0 == 29 and dict_number:
             if pos + 5 > len(item):
                 raise ValueError("invalid CFF number")
-            return (
-                float(int.from_bytes(item[pos + 1 : pos + 5], "big", signed=True)),
-                pos + 5,
-            )
+            return (float(int.from_bytes(item[pos + 1 : pos + 5], "big", signed=True)), pos + 5)
         if b0 == 30 and dict_number:
             return CFFFont.parse_real_number(item, pos + 1)
         if b0 == 255 and not dict_number:
             if pos + 5 > len(item):
                 raise ValueError("invalid Type 2 number")
-            return (
-                int.from_bytes(item[pos + 1 : pos + 5], "big", signed=True) / 65536.0,
-                pos + 5,
-            )
+            return (int.from_bytes(item[pos + 1 : pos + 5], "big", signed=True) / 65536.0, pos + 5)
         raise ValueError("invalid CFF number")
 
     @staticmethod

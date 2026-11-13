@@ -92,10 +92,7 @@ class ClipRegion(GeneratedRecord):
         return self.pixel_box is None
 
 
-def intersect_spans(
-    left: RowSpans,
-    right: RowSpans,
-) -> RowSpans:
+def intersect_spans(left: RowSpans, right: RowSpans) -> RowSpans:
     left_index = 0
     right_index = 0
     intersections: list[PixelSpan] = []
@@ -179,21 +176,13 @@ class ClipState:
     def current_region(self) -> ClipRegion | None:
         return self.regions[-1] if self.regions else None
 
-    def rect_row_spans(
-        self,
-        pixel_box: tuple[int, int, int, int] | None,
-        py: int,
-    ) -> RowSpans:
+    def rect_row_spans(self, pixel_box: tuple[int, int, int, int] | None, py: int) -> RowSpans:
         if pixel_box is None:
             return ()
         ix0, iy0, ix1, iy1 = pixel_box
         return ((ix0, ix1),) if iy0 <= py < iy1 else ()
 
-    def region_row_spans(
-        self,
-        region: ClipRegion | None,
-        py: int,
-    ) -> RowSpans:
+    def region_row_spans(self, region: ClipRegion | None, py: int) -> RowSpans:
         if region is None:
             return ((0, self.width),)
         if region.rows is None:

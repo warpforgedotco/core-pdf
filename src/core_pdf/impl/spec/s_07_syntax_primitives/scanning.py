@@ -66,11 +66,7 @@ def full_source_buffer(data: memoryview, data_len: int) -> bytes | FindableSized
 
 
 def skip_pdf_ignored(
-    data: bytes | memoryview,
-    position: int,
-    data_len: int,
-    *,
-    rules: LexicalRules | None = None,
+    data: bytes | memoryview, position: int, data_len: int, *, rules: LexicalRules | None = None
 ) -> int:
     rules = lexical_rules() if rules is None else rules
     ws_table = rules.whitespace_table

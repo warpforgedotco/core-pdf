@@ -11,9 +11,7 @@ from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf.impl.spec.s_08_graphics import pdf_function
-from core_pdf.impl.spec.s_08_graphics.pdf_function import (
-    PdfFunctionEvaluator,
-)
+from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 
 
 def number_array(value: Any, *, python_syntax: bool = True) -> tuple[float, ...]:
@@ -157,11 +155,7 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
                 encode[index] if index < len(encode) else float(index % 2)
                 for index in range(2 * count)
             )
-            dictionary.update(
-                Functions=functions,
-                Bounds=bounds,
-                Encode=encode,
-            )
+            dictionary.update(Functions=functions, Bounds=bounds, Encode=encode)
             domain = number_array(dictionary["Domain"])
             if (
                 len(domain) == 2

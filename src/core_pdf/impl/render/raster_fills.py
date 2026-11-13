@@ -93,10 +93,7 @@ def fill_rect(
     normal_target = self.pixel_array if normal_fast else None
     if rectangular_clip and normal_fast and ix1 > ix0 and iy1 > iy0:
         assert normal_target is not None
-        blend_normal_solid_array_numpy(
-            normal_target[iy0:iy1, ix0:ix1],
-            rgba,
-        )
+        blend_normal_solid_array_numpy(normal_target[iy0:iy1, ix0:ix1], rgba)
         self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
         return
     width = self.width
@@ -205,15 +202,12 @@ def draw_glyph_bitmap(
             cell_pixel_width = int(round(cell_pixel_width))
             cell_pixel_height = int(round(cell_pixel_height))
             row_values = numpy.asarray(
-                rows[:bitmap_h] + [0] * max(0, bitmap_h - len(rows)),
-                dtype=numpy.uint64,
+                rows[:bitmap_h] + [0] * max(0, bitmap_h - len(rows)), dtype=numpy.uint64
             )
             columns = numpy.arange(bitmap_w, dtype=numpy.uint64)
             bits = ((row_values[:, None] >> columns[None, :]) & 1).astype(bool)
             expanded = numpy.repeat(
-                numpy.repeat(bits, cell_pixel_height, axis=0),
-                cell_pixel_width,
-                axis=1,
+                numpy.repeat(bits, cell_pixel_height, axis=0), cell_pixel_width, axis=1
             )
             target_pixels = self.pixel_array
             target_region = target_pixels[iy0:iy1, ix0:ix1]
@@ -233,12 +227,7 @@ def draw_glyph_bitmap(
                 run_length = (~shifted & (shifted + 1)).bit_length() - 1
                 run_end = min(bitmap_w, run_start + run_length)
                 fill_rect(
-                    (
-                        x0 + run_start * cell_w,
-                        cell_y0,
-                        x0 + run_end * cell_w,
-                        cell_y1,
-                    ),
+                    (x0 + run_start * cell_w, cell_y0, x0 + run_end * cell_w, cell_y1),
                     rgba,
                     blend_mode,
                 )
@@ -420,8 +409,7 @@ def fill_path_scanlines(
                     and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
                 ):
                     blend_normal_solid_array_numpy(
-                        normal_target[py, visible_start:visible_end],
-                        rgba,
+                        normal_target[py, visible_start:visible_end], rgba
                     )
                     self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
                     continue
@@ -482,10 +470,7 @@ def fast_fill_path(
             if not (edge_low <= scan_y < edge_high):
                 continue
             intersections.append(
-                (
-                    ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0),
-                    1 if ey1 > ey0 else -1,
-                )
+                (ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0), 1 if ey1 > ey0 else -1)
             )
         intersections.sort()
         winding = 0
@@ -621,14 +606,7 @@ def fill_path(
         edge_segments = bounded_edges(edges, skip_horizontal=True)
     else:
         edge_segments = [
-            (
-                ex0,
-                ey0,
-                ex1,
-                ey1,
-                min(ey1, ey0),
-                max(ey0, ey1),
-            )
+            (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1))
             for ex0, ey0, ex1, ey1 in edges
             if ey0 != ey1
         ]

@@ -101,10 +101,7 @@ def resolve_cmap_decoder(name: str) -> CMapDecoder | None:
     if cmap_data is None:
         return None
     try:
-        return CMapDecoder(
-            cmap_data,
-            usecmap_resolver=resolve_cmap_resource,
-        )
+        return CMapDecoder(cmap_data, usecmap_resolver=resolve_cmap_resource)
     except ValueError:
         return None
 
@@ -169,9 +166,7 @@ def decode_utf16be_text(data: bytes) -> str:
         return buffer.decode("utf-16-be", "replace")
 
 
-def parse_codespace_ranges(
-    blocks: Iterable[list[bytes]],
-) -> tuple[tuple[bytes, bytes], ...]:
+def parse_codespace_ranges(blocks: Iterable[list[bytes]]) -> tuple[tuple[bytes, bytes], ...]:
     code_space_ranges: list[tuple[bytes, bytes]] = []
     saw_codespace_block = False
     valid_range_count = 0
@@ -419,9 +414,7 @@ def parse_to_unicode_program(program: CMapProgram) -> ParsedToUnicodeCMap:
 
 
 def to_unicode_cmap(
-    mappings: dict[bytes, str],
-    codespace_blocks: Iterable[list[bytes]],
-    usecmap_name: str | None,
+    mappings: dict[bytes, str], codespace_blocks: Iterable[list[bytes]], usecmap_name: str | None
 ) -> ParsedToUnicodeCMap:
     try:
         code_space_ranges = parse_codespace_ranges(codespace_blocks)
@@ -430,9 +423,7 @@ def to_unicode_cmap(
             raise
         code_space_ranges = ()
     return ParsedToUnicodeCMap(
-        code_space_ranges=code_space_ranges,
-        mappings=mappings,
-        usecmap_name=usecmap_name,
+        code_space_ranges=code_space_ranges, mappings=mappings, usecmap_name=usecmap_name
     )
 
 

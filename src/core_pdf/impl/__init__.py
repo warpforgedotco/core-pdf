@@ -8,8 +8,7 @@ from typing import Any
 
 
 def install_lazy_module_exports(
-    module_globals: dict[str, Any],
-    exports: Mapping[str, tuple[str, str]],
+    module_globals: dict[str, Any], exports: Mapping[str, tuple[str, str]]
 ) -> None:
     module_name = module_globals.get("__name__", "?")
 

@@ -17,12 +17,7 @@ __all__ = ("PdfStream",)
 
 
 class PdfStream:
-    __slots__ = (
-        "dictionary",
-        "raw_data",
-        "spec",
-        "decoder",
-    )
+    __slots__ = ("dictionary", "raw_data", "spec", "decoder")
 
     dictionary: PdfStreamDictionary
     raw_data: bytes | memoryview
@@ -72,8 +67,4 @@ class PdfStream:
 
     @property
     def data(self) -> bytes:
-        return self.decoder(
-            self.raw_data,
-            self.spec,
-            parent_dictionary=self.dictionary,
-        )
+        return self.decoder(self.raw_data, self.spec, parent_dictionary=self.dictionary)

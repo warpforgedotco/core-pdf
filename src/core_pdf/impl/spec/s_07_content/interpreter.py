@@ -34,9 +34,7 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.resources import resolve_resource_dict
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    parse_float,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf.impl.spec.s_08_graphics.color import (
     initial_color_components,

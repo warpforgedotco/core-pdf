@@ -47,10 +47,7 @@ def code_in_ranges(code: bytes, ranges: typing.Iterable[tuple[bytes, bytes]]) ->
     return any(code_in_range(code, start, end) for start, end in ranges)
 
 
-def ranges_overlap(
-    left: tuple[bytes, bytes],
-    right: tuple[bytes, bytes],
-) -> bool:
+def ranges_overlap(left: tuple[bytes, bytes], right: tuple[bytes, bytes]) -> bool:
     left_start, left_end = left
     right_start, right_end = right
     return len(left_start) == len(right_start) and all(

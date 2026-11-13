@@ -6,10 +6,7 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 
 
-def resolve_resource_dict(
-    value: object,
-    resolver: PdfValueResolver,
-) -> PdfDict | None:
+def resolve_resource_dict(value: object, resolver: PdfValueResolver) -> PdfDict | None:
     resolved = resolver.resolve(value)
     if resolved is None:
         return None

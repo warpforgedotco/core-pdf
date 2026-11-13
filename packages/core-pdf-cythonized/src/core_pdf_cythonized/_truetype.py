@@ -29,10 +29,7 @@ __all__ = ("truetype_contours",)
 MAX_DEPTH = cython.declare(cython.int, 32)
 
 
-Num = cython.struct(
-    v=cython.double,
-    integer=cython.bint,
-)
+Num = cython.struct(v=cython.double, integer=cython.bint)
 
 
 @cython.cfunc
@@ -77,9 +74,7 @@ def add(a: Num, b: Num) -> Num:
     return as_float(a.v + b.v)
 
 
-Transform = cython.struct(
-    t=Num[6],
-)
+Transform = cython.struct(t=Num[6])
 
 
 @cython.cfunc
@@ -266,10 +261,7 @@ def flatten_quadratic(
 @cython.nogil
 @cython.exceptval(check=False)
 def q_curve_to(
-    r: cython.pointer[Recording],
-    xs: cython.p_double,
-    ys: cython.p_double,
-    n: cython.Py_ssize_t,
+    r: cython.pointer[Recording], xs: cython.p_double, ys: cython.p_double, n: cython.Py_ssize_t
 ) -> cython.void:
     if not r.have_current or n == 0:
         return
@@ -323,9 +315,7 @@ Font = cython.struct(
 @cython.nogil
 @cython.exceptval(check=False)
 def read_u16(
-    data: cython.p_const_uchar,
-    length: cython.Py_ssize_t,
-    pos: cython.Py_ssize_t,
+    data: cython.p_const_uchar, length: cython.Py_ssize_t, pos: cython.Py_ssize_t
 ) -> cython.int:
     if pos < 0 or pos + 2 > length:
         return -1

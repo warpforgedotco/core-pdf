@@ -7,11 +7,7 @@ from typing import Any, TypeAlias
 
 lazy import numpy
 
-from core_pdf.impl.graphics.color_spec import (
-    GRAY_RGB_KINDS,
-    ColorSpace,
-    parse_color_space,
-)
+from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS, ColorSpace, parse_color_space
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 lazy from core_pdf.impl.base.arrays import ByteBuffer, uint8_view
 lazy from core_pdf.impl.graphics.image_samples import (
@@ -85,10 +81,7 @@ def convert_image_data(
 
 
 def simple_device_color_fast_path(
-    raw: ByteBuffer,
-    spec: ColorSpace,
-    header: ImageHeader,
-    bits_per_component: int,
+    raw: ByteBuffer, spec: ColorSpace, header: ImageHeader, bits_per_component: int
 ) -> ByteBuffer | None:
     if bits_per_component != 8:
         return None
@@ -106,12 +99,9 @@ def simple_device_color_fast_path(
     return raw
 
 
-def convert_cmyk(
-    raw: ByteBuffer,
-) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
+def convert_cmyk(raw: ByteBuffer) -> numpy.ndarray[Any, numpy.dtype[numpy.uint8]]:
     if len(raw) % 4:
         raise ValueError("invalid color sample data")
     return convert_components(
-        uint8_view(raw).reshape(-1, 4).astype(numpy.float64) / 255,
-        parse_color_space("DeviceCMYK"),
+        uint8_view(raw).reshape(-1, 4).astype(numpy.float64) / 255, parse_color_space("DeviceCMYK")
     ).reshape(-1)

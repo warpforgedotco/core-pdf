@@ -23,11 +23,7 @@ from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 
-from ._fonts import (
-    EMPTY_GLYPH_TEXT,
-    pdfminer_embedded_cmap_is_unusable,
-    pdfminer_normalized_width,
-)
+from ._fonts import EMPTY_GLYPH_TEXT, pdfminer_embedded_cmap_is_unusable, pdfminer_normalized_width
 from ._parsing import pdfminer_content_error
 from .pdfexceptions import PDFKeyError
 

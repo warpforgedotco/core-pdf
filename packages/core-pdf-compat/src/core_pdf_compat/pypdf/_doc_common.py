@@ -41,13 +41,8 @@ from datetime import datetime
 from typing import Any, cast
 
 from core_pdf_compat.pypdf._configuration import get_configuration
-from core_pdf_compat.pypdf.constants import (
-    CheckboxRadioButtonAttributes,
-    Core,
-)
-from core_pdf_compat.pypdf.constants import (
-    FieldDictionaryAttributes as FA,  # noqa: N814
-)
+from core_pdf_compat.pypdf.constants import CheckboxRadioButtonAttributes, Core
+from core_pdf_compat.pypdf.constants import FieldDictionaryAttributes as FA  # noqa: N814
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,

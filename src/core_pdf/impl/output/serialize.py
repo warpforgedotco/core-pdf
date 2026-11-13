@@ -68,11 +68,7 @@ def extend_records[RecordT](
 
 
 def node_to_json_dict(
-    node: ContentNode,
-    *,
-    node_id: str,
-    page_id: str,
-    target_id: str,
+    node: ContentNode, *, node_id: str, page_id: str, target_id: str
 ) -> dict[str, JsonValue]:
     return {
         "id": node_id,
@@ -125,11 +121,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
                 if identity not in line_ids:
                     line_ids[identity] = ids.record("line", len(line_ids))
                     lines.append(
-                        {
-                            "id": line_ids[identity],
-                            "page_id": page_id,
-                            **line_to_json_dict(line),
-                        }
+                        {"id": line_ids[identity], "page_id": page_id, **line_to_json_dict(line)}
                     )
 
         blocks.extend(
@@ -155,10 +147,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             page_node_ids.append(node_id)
             nodes.append(
                 node_to_json_dict(
-                    node,
-                    node_id=node_id,
-                    page_id=page_id,
-                    target_id=target_ids[id(node.payload)],
+                    node, node_id=node_id, page_id=page_id, target_id=target_ids[id(node.payload)]
                 )
             )
 
@@ -297,11 +286,7 @@ def table_row_band_to_json_dict(band: TableRowBand) -> dict[str, JsonValue]:
 
 
 def table_column_band_to_json_dict(band: TableColumnBand) -> dict[str, JsonValue]:
-    return {
-        "index": band.index,
-        "bbox": bbox_to_json(band.bbox),
-        "confidence": band.confidence,
-    }
+    return {"index": band.index, "bbox": bbox_to_json(band.bbox), "confidence": band.confidence}
 
 
 def table_cell_to_json_dict(cell: TableCell) -> dict[str, JsonValue]:

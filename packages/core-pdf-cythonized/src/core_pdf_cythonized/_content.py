@@ -635,10 +635,7 @@ class ContentScanner:
         for i in range(self.pending):
             if self.pending_integer[i]:
                 word = PyBytes_FromStringAndSize(
-                    cython.cast(
-                        cython.p_const_char,
-                        (self.buf + self.pending_start[i]),
-                    ),
+                    cython.cast(cython.p_const_char, (self.buf + self.pending_start[i])),
                     self.pending_end[i] - self.pending_start[i],
                 )
                 value = PyLong_FromString(word, cython.NULL, 10)
@@ -845,8 +842,7 @@ class ContentScanner:
                 if c == 0x29:
                     end_out[0] = q + 1
                     data = PyBytes_FromStringAndSize(
-                        cython.cast(cython.p_const_char, (b + p + 1)),
-                        q - p - 1,
+                        cython.cast(cython.p_const_char, (b + p + 1)), q - p - 1
                     )
                     return self.string_type(data, is_literal=True)
                 if c == 0x28 or c == 0x5C or c == 0x0D or c == 0x0A:
@@ -863,8 +859,7 @@ class ContentScanner:
         out = PyBytes_AS_STRING(data)
         for i in range((q - p - 1) // 2):
             out[i] = cython.cast(
-                cython.char,
-                ((HEX_NIBBLE[b[p + 1 + 2 * i]] << 4) | HEX_NIBBLE[b[p + 2 + 2 * i]]),
+                cython.char, ((HEX_NIBBLE[b[p + 1 + 2 * i]] << 4) | HEX_NIBBLE[b[p + 2 + 2 * i]])
             )
         end_out[0] = q + 1
         return self.string_type(data, is_literal=False)
@@ -925,15 +920,12 @@ class ContentScanner:
                 PyList_Append(
                     values,
                     PyOS_string_to_double(
-                        cython.cast(cython.p_const_char, (b + start)),
-                        cython.address(end),
-                        None,
+                        cython.cast(cython.p_const_char, (b + start)), cython.address(end), None
                     ),
                 )
             else:
                 word = PyBytes_FromStringAndSize(
-                    cython.cast(cython.p_const_char, (b + start)),
-                    p - start,
+                    cython.cast(cython.p_const_char, (b + start)), p - start
                 )
                 PyList_Append(values, PyLong_FromString(word, cython.NULL, 10))
 
@@ -1062,9 +1054,7 @@ class ContentScanner:
                     self.pending_integer[slot] = not has_dot
                     if has_dot:
                         self.pending_value[slot] = PyOS_string_to_double(
-                            cython.cast(cython.p_const_char, (b + start)),
-                            cython.address(end),
-                            None,
+                            cython.cast(cython.p_const_char, (b + start)), cython.address(end), None
                         )
                     else:
                         negative = b[start] == 0x2D
@@ -1085,8 +1075,7 @@ class ContentScanner:
                 if p < n and not IS_DELIM[b[p]]:
                     return start
                 word = PyBytes_FromStringAndSize(
-                    cython.cast(cython.p_const_char, (b + start)),
-                    p - start,
+                    cython.cast(cython.p_const_char, (b + start)), p - start
                 )
                 self.cursor = p
                 value = self.names.get(word)
@@ -1143,8 +1132,7 @@ class ContentScanner:
                     self.pending = 0
                     continue
             word = PyBytes_FromStringAndSize(
-                cython.cast(cython.p_const_char, (b + start)),
-                p - start,
+                cython.cast(cython.p_const_char, (b + start)), p - start
             )
             if word in self.keywords:
                 return start

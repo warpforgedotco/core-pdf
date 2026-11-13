@@ -25,11 +25,7 @@ lazy from core_pdf.impl.spec.s_07_syntax.serialize import (
     serialize_name,
     serialize_spaced_real,
 )
-lazy from core_pdf_compat.pypdf.errors import (
-    LimitReachedError,
-    PdfReadError,
-    PdfStreamError,
-)
+lazy from core_pdf_compat.pypdf.errors import LimitReachedError, PdfReadError, PdfStreamError
 
 logger = logging.getLogger(__name__)
 
@@ -969,12 +965,7 @@ def _decoded_text(text: str, original: bytes) -> TextStringObject:
 
 
 def _fast_text_string(
-    text: str,
-    original: bytes,
-    *,
-    pdfdoc: bool = False,
-    utf16: bool = False,
-    bom: bytes = b"",
+    text: str, original: bytes, *, pdfdoc: bool = False, utf16: bool = False, bom: bytes = b""
 ) -> TextStringObject:
     output = str.__new__(TextStringObject, text)
     output._original_bytes = original

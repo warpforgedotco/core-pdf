@@ -6,9 +6,7 @@ import typing
 from collections.abc import Callable
 from typing import Any
 
-from core_pdf.impl.adobe_fonts.cmap.ranges import (
-    code_in_ranges,
-)
+from core_pdf.impl.adobe_fonts.cmap.ranges import code_in_ranges
 from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.glyphs import UnicodeSource
 from core_pdf.impl.base.types import RecordType, Rectangle

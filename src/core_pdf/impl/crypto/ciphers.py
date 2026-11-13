@@ -25,11 +25,7 @@ def aes_algorithm(key: bytes) -> algorithms.AES:
 
 
 def aes_cbc_encrypt(
-    key: bytes,
-    initialization_vector: bytes,
-    plaintext: bytes,
-    *,
-    use_padding: bool,
+    key: bytes, initialization_vector: bytes, plaintext: bytes, *, use_padding: bool
 ) -> bytes:
     algorithm = aes_algorithm(key)
     if use_padding:
@@ -40,11 +36,7 @@ def aes_cbc_encrypt(
 
 
 def aes_cbc_decrypt(
-    key: bytes,
-    initialization_vector: bytes,
-    ciphertext: bytes,
-    *,
-    use_padding: bool,
+    key: bytes, initialization_vector: bytes, ciphertext: bytes, *, use_padding: bool
 ) -> bytes:
     algorithm = aes_algorithm(key)
     try:

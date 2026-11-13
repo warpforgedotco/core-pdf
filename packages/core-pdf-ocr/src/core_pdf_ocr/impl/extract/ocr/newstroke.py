@@ -123,10 +123,7 @@ def make_templates() -> TemplateSet:
                 stroke = []
             else:
                 stroke.append(
-                    (
-                        float(ord(pair[0]) - ord("R") - start_x),
-                        float(ord(pair[1]) - ord("R") - 8),
-                    )
+                    (float(ord(pair[0]) - ord("R") - start_x), float(ord(pair[1]) - ord("R") - 8))
                 )
         if stroke:
             strokes.append(stroke)
@@ -340,15 +337,7 @@ def fixed_template_match(
     )
     if error > FIXED_ERROR:
         return None
-    return Match(
-        template.char,
-        start,
-        start + size,
-        template.width,
-        transform,
-        translation,
-        error,
-    )
+    return Match(template.char, start, start + size, template.width, transform, translation, error)
 
 
 def fixed_match(
@@ -376,14 +365,7 @@ def fixed_match(
     candidates: list[Match] = []
     for template in templates.by_first_delta.get((rounded_dx, rounded_dy), ()):
         candidate = fixed_template_match(
-            segments,
-            continuity,
-            template,
-            start,
-            transform,
-            style,
-            point_data,
-            style_data,
+            segments, continuity, template, start, transform, style, point_data, style_data
         )
         if candidate is not None:
             candidates.append(candidate)
@@ -630,13 +612,7 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
         candidates: list[tuple[tuple[int, int, float], tuple[Match, ...]]] = []
         for seed in seeds:
             decoded = decode_around(
-                segments,
-                continuity,
-                templates,
-                seed,
-                available_start,
-                point_data,
-                style_data,
+                segments, continuity, templates, seed, available_start, point_data, style_data
             )
             span = decoded[-1].stop - decoded[0].start
             candidates.append(
@@ -669,10 +645,7 @@ def decode_newstroke_drawings(drawings: tuple[CapturedDrawing, ...]) -> Newstrok
         sequence_run(sequence, segments, styles, order) for order, sequence in enumerate(sequences)
     )
     characters = sum(not character.isspace() for run in runs for character in run.text)
-    maximum_error = max(
-        (match.error for sequence in sequences for match in sequence),
-        default=0.0,
-    )
+    maximum_error = max((match.error for sequence in sequences for match in sequence), default=0.0)
     return NewstrokeDecode(
         runs=runs,
         candidate_segments=candidate_count,

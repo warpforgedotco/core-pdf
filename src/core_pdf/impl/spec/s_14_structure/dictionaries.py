@@ -62,9 +62,4 @@ def marked_content_id(value: object) -> int:
     return value
 
 
-__all__ = (
-    "parse_role_map",
-    "StructureAttribute",
-    "attribute_entries",
-    "marked_content_id",
-)
+__all__ = ("parse_role_map", "StructureAttribute", "attribute_entries", "marked_content_id")

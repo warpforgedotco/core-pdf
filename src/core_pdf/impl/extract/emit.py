@@ -41,8 +41,7 @@ from core_pdf.impl.output.model import (
 
 
 def caption_for(
-    caption_blocks: tuple[Block, ...],
-    target_bbox: tuple[float, float, float, float] | None,
+    caption_blocks: tuple[Block, ...], target_bbox: tuple[float, float, float, float] | None
 ) -> Block | None:
     if target_bbox is None:
         return None
@@ -67,9 +66,7 @@ def caption_for(
 
 
 def attach_semantic_context(
-    blocks: tuple[Block, ...],
-    tables: list[Table],
-    figures: list[Figure],
+    blocks: tuple[Block, ...], tables: list[Table], figures: list[Figure]
 ) -> tuple[list[Table], list[Figure]]:
     captions = tuple(block for block in blocks if block.kind is BlockKind.CAPTION)
     headings = tuple(block for block in blocks if block.kind is BlockKind.HEADING)
@@ -147,8 +144,7 @@ DECORATION_KINDS = frozenset(("fill", "fillstroke", "stroke"))
 
 
 def normalize_blocks(
-    parsed_blocks: tuple[ParsedBlock, ...],
-    drawings: tuple[CapturedDrawing, ...],
+    parsed_blocks: tuple[ParsedBlock, ...], drawings: tuple[CapturedDrawing, ...]
 ) -> list[Block]:
     candidates: list[tuple[float, float, float]] = []
     append_candidate = candidates.append
@@ -231,11 +227,7 @@ def assemble_page(
     drawings: tuple[CapturedDrawing, ...],
 ) -> Page:
     normalized_blocks = normalize_blocks(state.blocks, drawings)
-    normalized_blocks = remove_off_page_blocks(
-        normalized_blocks,
-        frame.width,
-        frame.height,
-    )
+    normalized_blocks = remove_off_page_blocks(normalized_blocks, frame.width, frame.height)
     normalized_blocks, projected_tables = project_text_and_tables(normalized_blocks, state.tables)
     return compose_page(
         state,
@@ -338,8 +330,7 @@ def compose_page(
 
 
 def remove_block_duplicate_table_rows(
-    blocks: list[Block],
-    tables: tuple[Table, ...],
+    blocks: list[Block], tables: tuple[Table, ...]
 ) -> tuple[Table, ...]:
     if not blocks or not tables:
         return tables
@@ -430,10 +421,7 @@ class TableIndex(GeneratedRecord):
                     boxes.append(cell.bbox)
             rows.append(
                 IndexedRow(
-                    cells,
-                    texts,
-                    tuple(content_tokens(text) for text in texts),
-                    tuple(indexes),
+                    cells, texts, tuple(content_tokens(text) for text in texts), tuple(indexes)
                 )
             )
         frame = BoxIndex.from_boxes(boxes) if boxes else None
@@ -506,10 +494,7 @@ def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
     )
 
 
-def remove_table_duplicate_blocks(
-    blocks: list[Block],
-    tables: tuple[Table, ...],
-) -> list[Block]:
+def remove_table_duplicate_blocks(blocks: list[Block], tables: tuple[Table, ...]) -> list[Block]:
     if not blocks or not tables:
         return blocks
     located_tables = [table for table in tables if table.bbox is not None]
@@ -542,8 +527,7 @@ def remove_table_duplicate_blocks(
 
 
 def project_text_and_tables(
-    blocks: list[Block],
-    parsed_tables: tuple[Table, ...],
+    blocks: list[Block], parsed_tables: tuple[Table, ...]
 ) -> tuple[list[Block], tuple[Table, ...]]:
     text_blocks = remove_table_duplicate_blocks(blocks, parsed_tables)
     projected_tables = remove_block_duplicate_table_rows(text_blocks, parsed_tables)

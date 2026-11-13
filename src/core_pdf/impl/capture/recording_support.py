@@ -164,12 +164,7 @@ def flatten_path(
     line_width: float = 0.0,
 ) -> CapturedPath:
     xs, ys, spans, bbox, has_segments = flatten_path_commands(
-        source.ops,
-        source.coords,
-        matrix,
-        hypot,
-        None if lines is None else lines.rows,
-        line_width,
+        source.ops, source.coords, matrix, hypot, None if lines is None else lines.rows, line_width
     )
     return CapturedPath.deferred_flattened(xs, ys, spans, bbox, has_segments)
 

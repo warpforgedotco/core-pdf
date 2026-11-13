@@ -46,11 +46,7 @@ def resolve_page_tree_node_type(resolver: PdfValueResolver, node: PdfDict) -> st
     return None
 
 
-def infer_page_tree_node_type(
-    node: PdfDict,
-    *,
-    include_page_properties: bool = True,
-) -> str | None:
+def infer_page_tree_node_type(node: PdfDict, *, include_page_properties: bool = True) -> str | None:
     if node.get("Kids") is not None:
         return "Pages"
     if node.get("Count") is not None:
@@ -125,8 +121,7 @@ class PageLookup[LookupPageT: PdfPage]:
                 return index
         signature_of = self.document.recovered_page_signature
         signature_indexes = self.memo.get(
-            "signatures",
-            lambda: first_indexes(signature_of(node.dictionary) for node in nodes),
+            "signatures", lambda: first_indexes(signature_of(node.dictionary) for node in nodes)
         )
         return self.first_index(
             signature_indexes,
@@ -172,10 +167,7 @@ def build_pages(self: PdfDocument[PageT], nodes: Iterable[PageNode]) -> tuple[Pa
     factory = cast("type[PageT]", self.page_class)
     return tuple(
         factory(
-            self,
-            page_node.dictionary,
-            page_number,
-            inherited_values=page_node.inherited_values,
+            self, page_node.dictionary, page_number, inherited_values=page_node.inherited_values
         )
         for page_number, page_node in enumerate(nodes, 1)
     )
@@ -210,9 +202,7 @@ def build_page_labels(self: PdfDocument[Any], *, page_count: int | None = None) 
     specs = [
         (page_index, spec)
         for page_index, spec in iter_number_tree_items(
-            labels_root,
-            self.resolve,
-            on_malformed=self.recovery.malformed,
+            labels_root, self.resolve, on_malformed=self.recovery.malformed
         )
         if isinstance(spec, dict)
     ]
@@ -258,10 +248,7 @@ def discover_page_nodes(self: PdfDocument[Any]) -> Iterator[PageNode]:
     seen_objects: set[int] = set()
     for key, entry in sorted(
         self.xref.items(),
-        key=lambda item: (
-            item[1].offset if item[1].object_stream is None else 0,
-            item[0] >> 16,
-        ),
+        key=lambda item: (item[1].offset if item[1].object_stream is None else 0, item[0] >> 16),
     ):
         if not entry.in_use:
             continue
@@ -289,10 +276,7 @@ def discover_page_nodes(self: PdfDocument[Any]) -> Iterator[PageNode]:
         if signature in seen_signatures:
             continue
         seen_signatures.add(signature)
-        yield PageNode(
-            page_dict,
-            self.recovered_page_values(page_dict, inherited_sources),
-        )
+        yield PageNode(page_dict, self.recovered_page_values(page_dict, inherited_sources))
 
 
 def page_candidate_score(self: PdfDocument[Any], obj: PdfDict, node_type: str | None) -> int:

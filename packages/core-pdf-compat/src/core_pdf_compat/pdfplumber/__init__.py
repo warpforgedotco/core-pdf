@@ -17,17 +17,8 @@ from typing import Any, TypeAlias, cast
 from core_pdf import PdfDocument
 from core_pdf.impl.base.collector import pauses_collector
 from core_pdf.impl.base.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
-from core_pdf.impl.base.geometry import (
-    bbox_contains,
-    bbox_union,
-    flip_rect_vertical,
-)
-from core_pdf.impl.base.types import (
-    GeneratedRecord,
-    PdfName,
-    PdfReference,
-    PdfString,
-)
+from core_pdf.impl.base.geometry import bbox_contains, bbox_union, flip_rect_vertical
+from core_pdf.impl.base.types import GeneratedRecord, PdfName, PdfReference, PdfString
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.capture.glyphs import plumber_char_dicts
 from core_pdf.impl.capture.program import CapturedProgram, CaptureOptions
@@ -82,11 +73,7 @@ PAGE_ERRORS = (PdfError, PSException, KeyError, AssertionError)
 def _source(value: PdfInput, password: str = "") -> PdfDocument:
     try:
         try:
-            document = PdfDocument.open(
-                value,
-                password=password,
-                recovery_scan_all_revisions=False,
-            )
+            document = PdfDocument.open(value, password=password, recovery_scan_all_revisions=False)
         except PdfPasswordError as error:
             raise PDFPasswordIncorrect from error
         except PdfEmptySourceError as error:
@@ -248,10 +235,7 @@ class EnginePageAdapter:
         def font_name(decoder: Any) -> Any:
             known = font_names.get(id(decoder))
             if known is None or known[0] is not decoder:
-                known = font_names[id(decoder)] = (
-                    decoder,
-                    miner_font_name(resolver, decoder.font),
-                )
+                known = font_names[id(decoder)] = (decoder, miner_font_name(resolver, decoder.font))
             return known[1]
 
         marks = self._text_marks
@@ -1260,11 +1244,9 @@ class CroppedPage(Page):
 
     @property
     def _selector(self) -> Callable[[Iterable[ObjectDict], BBox], list[ObjectDict]]:
-        return {
-            "within": within_bbox,
-            "outside": outside_bbox,
-            "intersects": crop_to_bbox,
-        }[self._crop_mode]
+        return {"within": within_bbox, "outside": outside_bbox, "intersects": crop_to_bbox}[
+            self._crop_mode
+        ]
 
     def _crop_fn(self, objects: list[ObjectDict]) -> list[ObjectDict]:
         return self._selector(objects, self._filter_bbox)
@@ -1442,10 +1424,7 @@ class PageImage:
         scale_y = self.height / max(self.bbox[3] - self.bbox[1], 1e-9)
 
         def point(x: float, y: float) -> tuple[int, int]:
-            return (
-                round((x - self.bbox[0]) * scale_x),
-                round((y - self.bbox[1]) * scale_y),
-            )
+            return (round((x - self.bbox[0]) * scale_x), round((y - self.bbox[1]) * scale_y))
 
         def set_pixel(x: int, y: int, color: tuple[int, int, int]) -> None:
             if not (0 <= x < self.width and 0 <= y < self.height):
@@ -1477,11 +1456,7 @@ class PageImage:
             steps = max(abs(x1 - x0), abs(y1 - y0), 1)
             for index in range(steps + 1):
                 fraction = index / steps
-                set_pixel(
-                    round(x0 + (x1 - x0) * fraction),
-                    round(y0 + (y1 - y0) * fraction),
-                    ink,
-                )
+                set_pixel(round(x0 + (x1 - x0) * fraction), round(y0 + (y1 - y0) * fraction), ink)
 
         for kind, (value, options) in self._drawings:
             if kind in {"line", "rect"}:
@@ -2035,9 +2010,6 @@ __all__ = (
 # Upstream exposes these as attributes after a bare `import pdfplumber`.
 lazy import core_pdf_compat.pdfplumber.page  # noqa: E402, F401
 
-from . import (  # noqa: E402
-    structure,
-    utils,
-)
+from . import structure, utils  # noqa: E402
 from .table import Table, TableFinder, TableSettings  # noqa: E402
 from .utils.text import extract_words  # noqa: E402

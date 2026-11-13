@@ -648,10 +648,7 @@ class Page(ViewCache, GeneratedRecord):
     def iter_nodes(self, start_id: int = 0) -> Iterator[ContentNode]:
         for index, element in enumerate(self.elements, start=start_id):
             yield ContentNode(
-                node_id=index,
-                kind=element.node_kind,
-                payload=element,
-                page_number=self.page_number,
+                node_id=index, kind=element.node_kind, payload=element, page_number=self.page_number
             )
 
     @property

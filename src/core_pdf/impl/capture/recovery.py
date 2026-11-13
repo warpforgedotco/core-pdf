@@ -23,9 +23,7 @@ lazy from core_pdf_cythonized import ContentScanner
 
 
 def recover_inline_image_position(
-    lexer: PdfLexer,
-    position: int,
-    is_valid_operator: Callable[[bytes], bool] | None = None,
+    lexer: PdfLexer, position: int, is_valid_operator: Callable[[bytes], bool] | None = None
 ) -> int | None:
     data = lexer.raw_data
     data_len = lexer.data_len
@@ -184,13 +182,7 @@ class ContentFallback:
                 if prefix.startswith(b"[")
                 else "token"
             )
-            resumed = self.recovery.resume(
-                lexer,
-                error,
-                kind,
-                start,
-                self.is_operator,
-            )
+            resumed = self.recovery.resume(lexer, error, kind, start, self.is_operator)
             if resumed is None:
                 raise
             lexer.pos = resumed

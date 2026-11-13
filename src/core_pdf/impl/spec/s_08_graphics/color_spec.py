@@ -88,10 +88,7 @@ def device_n_names(names: tuple[str, ...], subtype: str) -> None:
 
 
 def parse_device_n_attributes(
-    value: object,
-    colorants: tuple[str, ...],
-    *,
-    context: SemanticContext | None = None,
+    value: object, colorants: tuple[str, ...], *, context: SemanticContext | None = None
 ) -> DeviceNAttributes:
     version = require_recognized_version(
         context, "color-space semantics require a recognized PDF version"
@@ -155,10 +152,7 @@ def device_n_process(
 
 
 def parse_device_n_attributes_for(
-    value: object,
-    names: tuple[str, ...],
-    active: set[int],
-    version: PdfVersion | None,
+    value: object, names: tuple[str, ...], active: set[int], version: PdfVersion | None
 ) -> DeviceNAttributes:
     if not isinstance(value, dict):
         raise ValueError("invalid DeviceN attributes")

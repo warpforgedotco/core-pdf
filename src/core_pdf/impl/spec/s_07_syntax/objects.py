@@ -11,9 +11,7 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import ObjectCache, PdfDict
-from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
-    decoded_name,
-)
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name
 from core_pdf.impl.spec.s_07_syntax_primitives.numbers import is_integer_token
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfReference
@@ -178,8 +176,4 @@ def parse_object_stream_header(
         lexer.close()
 
 
-__all__ = (
-    "PdfObjectStream",
-    "parse_object_stream_header",
-    "parse_object_stream_pair",
-)
+__all__ = ("PdfObjectStream", "parse_object_stream_header", "parse_object_stream_pair")

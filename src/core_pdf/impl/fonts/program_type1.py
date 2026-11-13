@@ -8,11 +8,7 @@ from core_pdf.impl.base.types import Rectangle
 from core_pdf.impl.fonts.outline_pens import BoundsSink, Recording, Type1Outline, draw_decomposed
 from core_pdf.impl.fonts.program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts.program_truetype import recording_to_contours
-from core_pdf.impl.fonts.raster_kernel import (
-    Contours,
-    Point,
-    transform_contours,
-)
+from core_pdf.impl.fonts.raster_kernel import Contours, Point, transform_contours
 lazy from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")

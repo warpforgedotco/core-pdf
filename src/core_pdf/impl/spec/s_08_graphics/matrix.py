@@ -45,8 +45,4 @@ def multiply_affine(left: Sequence[int | float], right: Sequence[int | float]) -
     )
 
 
-__all__ = (
-    "Matrix",
-    "IDENTITY_MATRIX",
-    "multiply_affine",
-)
+__all__ = ("Matrix", "IDENTITY_MATRIX", "multiply_affine")

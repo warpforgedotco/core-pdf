@@ -475,12 +475,7 @@ def _option_text(option: Any) -> str:
 
 
 def _sync_font(
-    writer: Any,
-    font_name: str,
-    font: _Font,
-    resource: Any,
-    form: DictionaryObject,
-    page: Any,
+    writer: Any, font_name: str, font: _Font, resource: Any, form: DictionaryObject, page: Any
 ) -> Any:
     """Make sure the form's resources, and the page's when flattening, have the font."""
     if "/DR" not in form:

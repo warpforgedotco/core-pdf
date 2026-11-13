@@ -22,11 +22,7 @@ SUBBYTE_PREDICTOR_BITS = frozenset({1, 2, 4})
 
 
 def png_predict(
-    data: bytes | memoryview,
-    *,
-    columns: int,
-    colors: int,
-    bits_per_component: int,
+    data: bytes | memoryview, *, columns: int, colors: int, bits_per_component: int
 ) -> bytes:
     if bits_per_component not in SUPPORTED_PREDICTOR_BITS:
         raise PredictorError(f"invalid PNG predictor bits {bits_per_component}")
@@ -68,11 +64,7 @@ def png_predict(
             for i in range(first):
                 row_bytes[i] = (row_bytes[i] + previous[i]) & 0xFF
             for i in range(bpp, row_length):
-                left, up, up_left = (
-                    row_bytes[i - bpp],
-                    previous[i],
-                    previous[i - bpp],
-                )
+                left, up, up_left = (row_bytes[i - bpp], previous[i], previous[i - bpp])
                 p = left + up - up_left
                 pa, pb, pc = abs(p - left), abs(p - up), abs(p - up_left)
                 if pa <= pb and pa <= pc:
@@ -134,9 +126,7 @@ def tiff_predict_bits_with(
     if complete_rows == 0:
         return b""
     encoded = numpy.frombuffer(
-        data,
-        dtype=numpy.uint8,
-        count=complete_rows * row_byte_length,
+        data, dtype=numpy.uint8, count=complete_rows * row_byte_length
     ).reshape(complete_rows, row_byte_length)
     samples = unpack(encoded, sample_count, bits).reshape(complete_rows, columns, colors)
     decoded = accumulate(samples) & numpy.uint8((1 << bits) - 1)

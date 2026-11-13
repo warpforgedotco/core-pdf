@@ -446,12 +446,7 @@ def show_text(
     y1 = max(c0_y, c1_y, c2_y, c3_y)
 
     effective_space_width = layout.space_width * scale_factor
-    baseline = (
-        E,
-        F,
-        E + adv_x * A + adv_y * C,
-        F + adv_x * B + adv_y * D,
-    )
+    baseline = (E, F, E + adv_x * A + adv_y * C, F + adv_x * B + adv_y * D)
     provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
     advance_bbox = (x0, y0, x1, y1)
 
@@ -485,9 +480,7 @@ def show_text(
     if actual_text_span is not None:
         new_run.confidence = 1.0
         actual_text_span.add_run(
-            new_run,
-            font_decoder=font_decoder,
-            effective_font_height=effective_font_height,
+            new_run, font_decoder=font_decoder, effective_font_height=effective_font_height
         )
     else:
         assert captured is not None

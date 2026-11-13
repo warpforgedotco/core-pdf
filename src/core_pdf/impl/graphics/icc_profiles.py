@@ -43,18 +43,9 @@ def cms_options(rendering: ColorRendering) -> tuple[int, int]:
     return INTENT_CODES[rendering.intent], flags
 
 
-INTERNAL_COLOR_SPACE_NAMES = {
-    "gray": "GRAY",
-    "rgb": "RGB",
-    "cmyk": "CMYK",
-    "xyz": "XYZ",
-}
+INTERNAL_COLOR_SPACE_NAMES = {"gray": "GRAY", "rgb": "RGB", "cmyk": "CMYK", "xyz": "XYZ"}
 INTERNAL_PCS_NAMES = {"xyz", "lab"}
-INTERNAL_ALTERNATE_COLOR_SPACES = {
-    "GRAY": "DeviceGray",
-    "RGB": "DeviceRGB",
-    "CMYK": "DeviceCMYK",
-}
+INTERNAL_ALTERNATE_COLOR_SPACES = {"GRAY": "DeviceGray", "RGB": "DeviceRGB", "CMYK": "DeviceCMYK"}
 
 
 @cache
@@ -121,11 +112,7 @@ DISTINCT_ROWS_MINIMUM = 1 << 16
 
 
 def memoized_cms_transform(
-    profile: bytes,
-    color_space: str,
-    intent: int,
-    flags: int,
-    samples: numpy.ndarray[Any, Any],
+    profile: bytes, color_space: str, intent: int, flags: int, samples: numpy.ndarray[Any, Any]
 ) -> ByteSamples:
     key = (profile, color_space, intent, flags)
     memo = row_memos.get(key)
@@ -154,11 +141,7 @@ def cms_thread_count() -> int:
 
 
 def cms_transform(
-    profile: bytes,
-    color_space: str,
-    intent: int,
-    flags: int,
-    samples: numpy.ndarray[Any, Any],
+    profile: bytes, color_space: str, intent: int, flags: int, samples: numpy.ndarray[Any, Any]
 ) -> ByteSamples:
     rows = samples.shape[0]
     workers = cms_thread_count() if rows >= PARALLEL_ROWS else 1
@@ -176,11 +159,7 @@ def cms_transform(
 
 
 def cms_transform_block(
-    profile: bytes,
-    color_space: str,
-    intent: int,
-    flags: int,
-    samples: numpy.ndarray[Any, Any],
+    profile: bytes, color_space: str, intent: int, flags: int, samples: numpy.ndarray[Any, Any]
 ) -> ByteSamples:
     rows, channels = samples.shape
     try:

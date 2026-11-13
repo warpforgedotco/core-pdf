@@ -51,9 +51,7 @@ from core_pdf_compat.pypdf.constants import (
     OutlineFontFlag,
     TypFitArguments,
 )
-from core_pdf_compat.pypdf.constants import (
-    TypArguments as TA,  # noqa: N817
-)
+from core_pdf_compat.pypdf.constants import TypArguments as TA  # noqa: N817
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
     BooleanObject,

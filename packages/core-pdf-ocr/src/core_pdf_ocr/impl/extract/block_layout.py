@@ -9,10 +9,7 @@ lazy import numpy
 from core_pdf.impl.extract.block_layout import LayoutHooks
 from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource, PageFrame
 
-SOURCE_LABELS = {
-    int(ObservationSource.NATIVE): "native",
-    int(ObservationSource.OCR): "ocr",
-}
+SOURCE_LABELS = {int(ObservationSource.NATIVE): "native", int(ObservationSource.OCR): "ocr"}
 OCR_SOURCE = int(ObservationSource.OCR)
 
 

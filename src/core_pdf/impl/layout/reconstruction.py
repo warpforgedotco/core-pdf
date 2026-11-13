@@ -56,8 +56,7 @@ def reconstruct_layout_line_text(
         if not text:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(
-            text,
-            (LayoutLineTextSegment(text, "", run.advance_bbox, run.rotation_angle),),
+            text, (LayoutLineTextSegment(text, "", run.advance_bbox, run.rotation_angle),)
         )
 
     angle = runs[0].rotation_angle
@@ -182,12 +181,7 @@ def rotated_table_run_gap(previous: TextRun, current: TextRun) -> float:
     return current.y0 - previous.y1
 
 
-def is_short_digit_run(
-    run: TextRun,
-    *,
-    max_length: int,
-    require_baseline: bool = True,
-) -> bool:
+def is_short_digit_run(run: TextRun, *, max_length: int, require_baseline: bool = True) -> bool:
     stripped = run.stripped_text
     return bool(
         stripped
@@ -331,11 +325,7 @@ class GlyphLineBuilder:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(text, tuple(segments))
 
-    def text_atoms(
-        self,
-        run: TextRun,
-        text: str,
-    ) -> tuple[LayoutLineTextAtom, ...]:
+    def text_atoms(self, run: TextRun, text: str) -> tuple[LayoutLineTextAtom, ...]:
         clusters = run.glyph_clusters
         if (
             clusters
@@ -627,11 +617,7 @@ class GlyphLineBuilder:
         return False
 
     def should_drop_explicit_space(
-        self,
-        index: int,
-        run: TextRun,
-        prev_run: TextRun,
-        prev_last_char: str,
+        self, index: int, run: TextRun, prev_run: TextRun, prev_last_char: str
     ) -> bool:
         next_text = (
             self.next_non_space_texts[index] if index < len(self.next_non_space_texts) else ""
@@ -658,11 +644,7 @@ class GlyphLineBuilder:
             and min(leading_gap, following_gap) <= max(2.0, run.height * 0.1)
         )
 
-    def atom_separator(
-        self,
-        previous: LayoutLineTextAtom,
-        atom: LayoutLineTextAtom,
-    ) -> str:
+    def atom_separator(self, previous: LayoutLineTextAtom, atom: LayoutLineTextAtom) -> str:
         prev_run = previous.run
         run = atom.run
         prev_text = previous.text
@@ -851,20 +833,14 @@ class GlyphLineBuilder:
             if prev_run is run and x_gap <= max(0.5, min(space_width, height) * 0.2):
                 return ""
             if text_rules.compact_unit_suffix_should_join(
-                prev_stripped,
-                stripped,
-                x_gap=spacing_gap,
-                height=height,
-                space_width=space_width,
+                prev_stripped, stripped, x_gap=spacing_gap, height=height, space_width=space_width
             ):
                 return ""
             return " "
         return ""
 
     def is_formula_script_atom(
-        self,
-        previous: LayoutLineTextAtom,
-        atom: LayoutLineTextAtom,
+        self, previous: LayoutLineTextAtom, atom: LayoutLineTextAtom
     ) -> bool:
         text = atom.text.strip()
         if len(text) != 1 or not text.isalpha():
@@ -880,9 +856,7 @@ class GlyphLineBuilder:
         return x_gap <= max(2.0, previous_height * 0.25)
 
     def is_formula_numeric_atom(
-        self,
-        previous: LayoutLineTextAtom,
-        atom: LayoutLineTextAtom,
+        self, previous: LayoutLineTextAtom, atom: LayoutLineTextAtom
     ) -> bool:
         text = atom.text.strip()
         if len(text) != 1 or text not in "0123456789" or not previous.text.strip()[-1:].isalpha():
@@ -898,9 +872,7 @@ class GlyphLineBuilder:
         return x_gap <= max(2.0, previous_height * 0.25)
 
     def is_formula_fraction_denominator(
-        self,
-        previous: LayoutLineTextAtom,
-        atom: LayoutLineTextAtom,
+        self, previous: LayoutLineTextAtom, atom: LayoutLineTextAtom
     ) -> bool:
         text = atom.text.strip()
         if not text:
@@ -932,20 +904,10 @@ class GlyphLineBuilder:
         x_gap = atom.advance_bbox[0] - previous.advance_bbox[2]
         return x_gap <= max(2.0, previous_height * 0.25)
 
-    def is_column_gap(
-        self,
-        spacing_gap: float,
-        height: float,
-        space_width: float,
-    ) -> bool:
+    def is_column_gap(self, spacing_gap: float, height: float, space_width: float) -> bool:
         if spacing_gap <= 0.0:
             return False
-        threshold = max(
-            self.column_gap_threshold,
-            space_width * 5.0,
-            height * 1.55,
-            12.0,
-        )
+        threshold = max(self.column_gap_threshold, space_width * 5.0, height * 1.55, 12.0)
         return spacing_gap >= threshold
 
     def should_join_word_fragments(
@@ -992,18 +954,12 @@ class GlyphLineBuilder:
         return threshold
 
     @staticmethod
-    def atom_baseline_delta(
-        left: LayoutLineTextAtom,
-        right: LayoutLineTextAtom,
-    ) -> float | None:
+    def atom_baseline_delta(left: LayoutLineTextAtom, right: LayoutLineTextAtom) -> float | None:
         left_baseline = left.baseline
         right_baseline = right.baseline
         if left_baseline is None or right_baseline is None:
             return None
-        if left.run.rotation_angle in (90, 270) or right.run.rotation_angle in (
-            90,
-            270,
-        ):
+        if left.run.rotation_angle in (90, 270) or right.run.rotation_angle in (90, 270):
             left_mid = (left_baseline[0] + left_baseline[2]) * 0.5
             right_mid = (right_baseline[0] + right_baseline[2]) * 0.5
         else:

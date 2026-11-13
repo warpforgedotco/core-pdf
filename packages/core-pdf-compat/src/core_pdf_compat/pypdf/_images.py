@@ -10,10 +10,7 @@ from collections.abc import Callable, Iterator, Sequence
 from io import BytesIO
 from typing import Any
 
-from core_pdf_compat.pypdf.constants import (
-    _INLINE_IMAGE_KEY_MAPPING,
-    _INLINE_IMAGE_VALUE_MAPPING,
-)
+from core_pdf_compat.pypdf.constants import _INLINE_IMAGE_KEY_MAPPING, _INLINE_IMAGE_VALUE_MAPPING
 from core_pdf_compat.pypdf.errors import PdfReadError
 from core_pdf_compat.pypdf.generic import (
     ArrayObject,
@@ -40,9 +37,7 @@ def _pillow() -> Any:
 
 
 def xobject_image(
-    x_object: Any,
-    pillow_parameters: dict[str, Any] | None = None,
-    visited: set[int] | None = None,
+    x_object: Any, pillow_parameters: dict[str, Any] | None = None, visited: set[int] | None = None
 ) -> tuple[str | None, bytes, Any]:
     """The file extension, file bytes and Pillow image for an image XObject, as pypdf makes
     them: core-pdf decodes the filters and pypdf's conversion builds the image.
@@ -150,10 +145,7 @@ def _inline_value(page: Any, key: str, value: Any) -> Any:
 
 
 def _inline_object(page: Any, operand: dict[str, Any]) -> StreamObject:
-    fields: dict[str, Any] = {
-        "__streamdata__": operand["data"],
-        "/Length": len(operand["data"]),
-    }
+    fields: dict[str, Any] = {"__streamdata__": operand["data"], "/Length": len(operand["data"])}
     for key, value in operand["settings"].items():
         if key in {"/Length", "/L"}:
             continue
@@ -182,11 +174,7 @@ def content_stream_images(page: Any) -> dict[str, ImageFile | None]:
     for number, operand in enumerate(inline):
         extension, data, image = xobject_image(_inline_object(page, operand))
         files[f"~{number}~"] = ImageFile(
-            name=f"~{number}~{extension}",
-            data=data,
-            image=image,
-            is_inline=True,
-            is_displayed=True,
+            name=f"~{number}~{extension}", data=data, image=image, is_inline=True, is_displayed=True
         )
     return files
 

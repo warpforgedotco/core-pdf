@@ -238,10 +238,7 @@ class DisplayList:
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
         return self.__class__(
-            width,
-            height,
-            items,
-            preserve_object_boundaries=preserve_object_boundaries,
+            width, height, items, preserve_object_boundaries=preserve_object_boundaries
         )
 
     def track_group_boundary(self, kind: str, data: dict[str, Any]) -> None:
@@ -469,7 +466,4 @@ class DisplayList:
         )
 
 
-__all__ = (
-    "DisplayList",
-    "image_quad",
-)
+__all__ = ("DisplayList", "image_quad")

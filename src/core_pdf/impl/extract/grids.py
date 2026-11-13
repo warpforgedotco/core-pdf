@@ -23,9 +23,7 @@ GRID_CROSSING_MASK_ELEMENTS = 1 << 20
 TABLE_REGION_GAP = 22.0
 
 
-def axis_segments(
-    capture: PageAnalysis,
-) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
+def axis_segments(capture: PageAnalysis) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
     page_width = capture.width
     page_height = capture.height
     lines = capture.program.lines
@@ -52,8 +50,7 @@ def axis_segments(
 
 
 def grid_components(
-    horizontal: numpy.ndarray[Any, Any],
-    vertical: numpy.ndarray[Any, Any],
+    horizontal: numpy.ndarray[Any, Any], vertical: numpy.ndarray[Any, Any]
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
     if len(horizontal) < 2 or len(vertical) < 2:
         return ()
@@ -97,8 +94,7 @@ def grid_components(
 
 
 def split_grid_component(
-    horizontal: numpy.ndarray[Any, Any],
-    vertical: numpy.ndarray[Any, Any],
+    horizontal: numpy.ndarray[Any, Any], vertical: numpy.ndarray[Any, Any]
 ) -> tuple[tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]], ...]:
     positions = numpy.unique(horizontal[:, 2])
     if len(positions) < 3:
@@ -141,11 +137,7 @@ def cluster_positions(values: numpy.ndarray[Any, Any]) -> numpy.ndarray[Any, Any
 
 
 def merge_collinear_segments(
-    segments: numpy.ndarray[Any, Any],
-    *,
-    coordinate: int,
-    start: int,
-    end: int,
+    segments: numpy.ndarray[Any, Any], *, coordinate: int, start: int, end: int
 ) -> numpy.ndarray[Any, Any]:
     if len(segments) < 2:
         return segments

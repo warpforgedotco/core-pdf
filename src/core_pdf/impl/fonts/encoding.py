@@ -25,21 +25,12 @@ from core_pdf.impl.spec.standards import SemanticContext
 lazy from core_pdf.impl.fonts.program_type1 import parse_type1_font_program_encoding
 
 TEX_MATH_GLYPH_OVERRIDES: dict[str, dict[str, str]] = {
-    "TeX_Times_Math_Italic": {
-        "C14": "δ",
-    },
-    "TeX_Times_Math_Symbol": {
-        "C14": "°",
-    },
+    "TeX_Times_Math_Italic": {"C14": "δ"},
+    "TeX_Times_Math_Symbol": {"C14": "°"},
 }
 
 
-COMPUTER_MODERN_MATH_PREFIXES = (
-    "CMEX",
-    "CMMI",
-    "CMMIB",
-    "CMSY",
-)
+COMPUTER_MODERN_MATH_PREFIXES = ("CMEX", "CMMI", "CMMIB", "CMSY")
 
 
 LIGATURE_GLYPH_TEXT = {
@@ -142,10 +133,7 @@ def parse_encoding(
     match encoding_obj:
         case PdfStream():
             try:
-                cmap = CMapDecoder(
-                    encoding_obj.data,
-                    usecmap_resolver=resolve_cmap_resource,
-                )
+                cmap = CMapDecoder(encoding_obj.data, usecmap_resolver=resolve_cmap_resource)
             except PdfParseError, ValueError:
                 cmap = None
         case dict():
@@ -213,13 +201,9 @@ class FontEncoding:
         base_font_name: str | None,
         semantic_context: SemanticContext | None,
     ) -> None:
-        (
-            cmap,
-            base_encoding,
-            differences,
-            builtin_encoding,
-            builtin_encoding_authoritative,
-        ) = parse_encoding(font, program)
+        (cmap, base_encoding, differences, builtin_encoding, builtin_encoding_authoritative) = (
+            parse_encoding(font, program)
+        )
         simple_encoding_glyph_names = build_simple_encoding_glyph_names(
             base_encoding if base_encoding in BASE_ENCODING_GLYPH_NAMES else "StandardEncoding",
             builtin_encoding,

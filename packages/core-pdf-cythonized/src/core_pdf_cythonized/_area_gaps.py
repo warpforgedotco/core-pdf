@@ -6,10 +6,7 @@ from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc, PyMem_Realloc
 # One queued pair: (skip_between, distance, first id, second id), as pdfminer's
 # group_textboxes keeps it in a Python tuple.
 Entry = cython.struct(
-    skip=cython.int,
-    distance=cython.double,
-    first=cython.Py_ssize_t,
-    second=cython.Py_ssize_t,
+    skip=cython.int, distance=cython.double, first=cython.Py_ssize_t, second=cython.Py_ssize_t
 )
 
 # CPython's heapq turns to its cache-friendly heapify above this many items.

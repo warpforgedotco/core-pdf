@@ -243,8 +243,7 @@ def main() -> int:
         problems += [f"helpers {path} {problem}"[:400] for problem in helpers[:1]]
     for source in ODD_SOURCES:
         same, _, difference = compare(
-            outcome(by_source, real, source),
-            outcome(by_source, facade, source),
+            outcome(by_source, real, source), outcome(by_source, facade, source)
         )
         counts["odd sources: same error" if same else "odd sources: DIFFER"] += 1
         if not same:

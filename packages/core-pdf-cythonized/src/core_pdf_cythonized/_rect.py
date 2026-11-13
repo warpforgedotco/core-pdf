@@ -67,8 +67,7 @@ def fill_rect_pixels(
     opaque[2] = opaque_channel(blue)
     opaque[3] = 255
     columns: cython.p_double = cython.cast(
-        cython.p_double,
-        malloc(width * (cython.sizeof(cython.double) + 1)),
+        cython.p_double, malloc(width * (cython.sizeof(cython.double) + 1))
     )
     if columns == cython.NULL:
         return -1
@@ -212,8 +211,7 @@ def fill_rect_coverage(
     opaque_green: cython.uchar = opaque_channel(green)
     opaque_blue: cython.uchar = opaque_channel(blue)
     columns: cython.p_double = cython.cast(
-        cython.p_double,
-        PyMem_Malloc(width * (cython.sizeof(cython.double) + 2)),
+        cython.p_double, PyMem_Malloc(width * (cython.sizeof(cython.double) + 2))
     )
     if columns == cython.NULL:
         raise MemoryError

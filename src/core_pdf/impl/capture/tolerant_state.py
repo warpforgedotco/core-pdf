@@ -16,10 +16,7 @@ from core_pdf.impl.fonts.helpers import recover_strip_subset_tag
 from core_pdf.impl.graphics.color_spec import parse_color_space
 from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
 from core_pdf.impl.spec.s_07_content.model import ContentSink
-from core_pdf.impl.spec.s_07_content.operations import (
-    ContentOperands,
-    OperationHandler,
-)
+from core_pdf.impl.spec.s_07_content.operations import ContentOperands, OperationHandler
 from core_pdf.impl.spec.s_07_content.streams import ContentStreamFrame
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
@@ -40,9 +37,7 @@ FontCompanionsCache = IdentityCache[FontCompanions]
 
 
 def font_companions(
-    fonts: dict[str, object],
-    resolve: typing.Callable[[object], object],
-    cache: FontCompanionsCache,
+    fonts: dict[str, object], resolve: typing.Callable[[object], object], cache: FontCompanionsCache
 ) -> FontCompanions:
     entry = cache.get(fonts)
     if entry is not None:
@@ -144,11 +139,7 @@ class RecoveringTextState(ContentInterpreter):
         self.caches = CaptureCaches() if caches is None else caches
         self.normalized_colors = BoundedDict(COLOR_CACHE_LIMIT)
         super().__init__(
-            resolver,
-            sink,
-            font_provider,
-            lexer_factory,
-            semantic_context=semantic_context,
+            resolver, sink, font_provider, lexer_factory, semantic_context=semantic_context
         )
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
@@ -159,12 +150,7 @@ class RecoveringTextState(ContentInterpreter):
         cached = cache.get_key(value, key, MISSING)
         if not isinstance(cached, MissingObject):
             return cached
-        mask = parse_soft_mask(
-            value,
-            self.resolver,
-            ctm=ctm,
-            compile_function=compile_pdf_function,
-        )
+        mask = parse_soft_mask(value, self.resolver, ctm=ctm, compile_function=compile_pdf_function)
         return cache.put_key(value, key, mask, (resources,))
 
     def operation_table(self) -> Mapping[str, OperationHandler]:

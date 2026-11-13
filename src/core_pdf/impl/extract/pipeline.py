@@ -17,23 +17,10 @@ from core_pdf.impl.extract.block_layout import (
     layout_blocks_with_evidence,
 )
 from core_pdf.impl.extract.capture import STRUCTURE_UNSET, capture_page
-from core_pdf.impl.extract.contracts import (
-    PageAnalysis,
-    PageFrame,
-    PageState,
-    ReadingOrderPolicy,
-)
-from core_pdf.impl.extract.emit import (
-    assemble_page,
-)
+from core_pdf.impl.extract.contracts import PageAnalysis, PageFrame, PageState, ReadingOrderPolicy
+from core_pdf.impl.extract.emit import assemble_page
 from core_pdf.impl.extract.table_detection import NATIVE_TABLES, TableDetector
-from core_pdf.impl.output.model import (
-    Annotation,
-    Figure,
-    FormField,
-    Link,
-    Page,
-)
+from core_pdf.impl.output.model import Annotation, Figure, FormField, Link, Page
 
 if TYPE_CHECKING:
     from core_pdf.impl.base.raw_records import RawAnnotation, RawFormField
@@ -43,8 +30,7 @@ if TYPE_CHECKING:
 
 
 def collected_records[Record, T](
-    fetch: Callable[[], Iterable[Record]],
-    build: Callable[[int, Record], T],
+    fetch: Callable[[], Iterable[Record]], build: Callable[[int, Record], T]
 ) -> tuple[T, ...]:
     records: Iterable[Record]
     try:
@@ -235,10 +221,7 @@ class PageExtraction:
         links = collected_records(
             lambda: self.page.get_links(resolved_annotation_dicts),
             lambda _index, record: Link(
-                bbox=record.bbox,
-                url=record.url,
-                link_type=record.link_type,
-                text="",
+                bbox=record.bbox, url=record.url, link_type=record.link_type, text=""
             ),
         )
         source_fields = capture.fields

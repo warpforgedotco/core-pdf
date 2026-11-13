@@ -24,10 +24,7 @@ def calculator_bounds(value: object, kind: str) -> tuple[tuple[float, float], ..
 
 
 def with_pdf_function_range(
-    evaluate: PdfFunctionEvaluator,
-    range_values: Any,
-    *,
-    output_count: int | None = None,
+    evaluate: PdfFunctionEvaluator, range_values: Any, *, output_count: int | None = None
 ) -> PdfFunctionEvaluator:
     if range_values is None:
         return evaluate
@@ -293,8 +290,4 @@ def compile_pdf_function(
     raise ValueError(f"unsupported PDF function type: {function_type}")
 
 
-__all__ = (
-    "PdfFunctionEvaluator",
-    "with_pdf_function_range",
-    "compile_pdf_function",
-)
+__all__ = ("PdfFunctionEvaluator", "with_pdf_function_range", "compile_pdf_function")

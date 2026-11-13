@@ -6,10 +6,7 @@ from collections.abc import Callable
 from typing import ClassVar
 
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import require_pdf_number_array
-from core_pdf.impl.spec.s_08_graphics.pdf_function import (
-    PdfFunctionEvaluator,
-    compile_pdf_function,
-)
+from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_records import GeneratedRecord
 
 
@@ -109,7 +106,4 @@ def parse_shading(
     )
 
 
-__all__ = (
-    "ShadingSpec",
-    "parse_shading",
-)
+__all__ = ("ShadingSpec", "parse_shading")

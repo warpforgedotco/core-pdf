@@ -16,9 +16,7 @@ lazy from importlib.resources.abc import Traversable
 
 from core_pdf.impl.base.exceptions import PdfParseError
 from core_pdf.impl.base.glyphs import UnicodeSource
-from core_pdf.impl.base.types import (
-    GeneratedRecord,
-)
+from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.fonts.cmap import (
     CMapDecoder,
@@ -31,9 +29,7 @@ from core_pdf.impl.fonts.encoding import FontEncoding
 from core_pdf.impl.fonts.program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts.program_base import GlyphProgram
 from core_pdf.impl.fonts.program_cff import CFFFont
-from core_pdf.impl.fonts.widths import (
-    recover_descendant,
-)
+from core_pdf.impl.fonts.widths import recover_descendant
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 lazy from core_pdf.impl.fonts.cff_repair import (
     CFFUnicodeRepairIndex,
@@ -198,10 +194,7 @@ def packaged_cid_unicode_table(registry: str, ordering: str, *, vertical: bool) 
 
 @cache
 def resolve_cid_unicode_map(
-    registry: str,
-    ordering: str,
-    *,
-    vertical: bool = False,
+    registry: str, ordering: str, *, vertical: bool = False
 ) -> CIDUnicodeMap | None:
     # Both names come from the PDF, so they are matched against the packaged
     # tables and never reach a path unchecked.
@@ -225,12 +218,7 @@ def has_invalid_unicode_mapping(text: str) -> bool:
     return "\ufffd" in text or "\x00" in text
 
 
-def should_prefer_glyph_name_mapping(
-    current: str,
-    mapped: str,
-    *,
-    authoritative: bool,
-) -> bool:
+def should_prefer_glyph_name_mapping(current: str, mapped: str, *, authoritative: bool) -> bool:
     if not mapped or current == mapped:
         return False
     if authoritative:
@@ -260,11 +248,7 @@ def replace_unicode_from_glyph_names(
             return text
         if not (
             fallback_mapping
-            or should_prefer_glyph_name_mapping(
-                text,
-                mapped,
-                authoritative=authoritative,
-            )
+            or should_prefer_glyph_name_mapping(text, mapped, authoritative=authoritative)
         ):
             return text
         return mapped
@@ -278,11 +262,7 @@ def replace_unicode_from_glyph_names(
             continue
         if not (
             fallback_mapping
-            or should_prefer_glyph_name_mapping(
-                current,
-                mapped,
-                authoritative=authoritative,
-            )
+            or should_prefer_glyph_name_mapping(current, mapped, authoritative=authoritative)
         ):
             continue
         if out is None:
@@ -305,19 +285,13 @@ to_unicode_cache_bytes = 0
 def cached_to_unicode_cmap(data: bytes) -> ToUnicodeCMap:
     global to_unicode_cache_bytes
     if len(data) > MAX_CACHED_TO_UNICODE_STREAM_BYTES:
-        return ToUnicodeCMap(
-            data,
-            usecmap_resolver=resolve_cmap_resource,
-        )
+        return ToUnicodeCMap(data, usecmap_resolver=resolve_cmap_resource)
     with TO_UNICODE_CMAP_CACHE_LOCK:
         cached = TO_UNICODE_CMAP_CACHE.get(data)
         if cached is not None:
             TO_UNICODE_CMAP_CACHE.move_to_end(data)
             return cached[0]
-    cmap = ToUnicodeCMap(
-        data,
-        usecmap_resolver=resolve_cmap_resource,
-    )
+    cmap = ToUnicodeCMap(data, usecmap_resolver=resolve_cmap_resource)
     mapping_count = len(cmap.mappings)
     entry_bytes = len(data) + mapping_count * TO_UNICODE_MAPPING_ENTRY_OVERHEAD
     if mapping_count > MAX_CACHED_TO_UNICODE_MAPPINGS or entry_bytes > MAX_TO_UNICODE_CACHE_BYTES:
@@ -449,8 +423,7 @@ class UnicodeResolver:
 
         if to_unicode_text is not None and not has_invalid_unicode_mapping(to_unicode_text):
             visual_punctuation = self.visual_punctuation_for_code(
-                to_unicode_text,
-                fallback_code=fallback_code,
+                to_unicode_text, fallback_code=fallback_code
             )
             if visual_punctuation is not None:
                 return choose(visual_punctuation, UnicodeSource.TRUETYPE_GLYPH_SHAPE)
@@ -536,9 +509,7 @@ class UnicodeResolver:
                     and (
                         choice.source in UNRESOLVED_UNICODE_SOURCES
                         or should_prefer_glyph_name_mapping(
-                            text,
-                            mapped,
-                            authoritative=encoding.glyph_decode_table_authoritative,
+                            text, mapped, authoritative=encoding.glyph_decode_table_authoritative
                         )
                     )
                 ):

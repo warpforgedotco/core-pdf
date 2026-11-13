@@ -423,10 +423,7 @@ class PdfPage:
         )
 
     def extract_images(
-        self,
-        *,
-        include_inline: bool = True,
-        include_xobjects: bool = True,
+        self, *, include_inline: bool = True, include_xobjects: bool = True
     ) -> tuple[ImageRecord, ...]:
         if not include_inline and not include_xobjects:
             return ()
@@ -437,11 +434,7 @@ class PdfPage:
         )
 
     def extract_program_images(
-        self,
-        program: PageProgram,
-        *,
-        include_inline: bool = True,
-        include_xobjects: bool = True,
+        self, program: PageProgram, *, include_inline: bool = True, include_xobjects: bool = True
     ) -> tuple[ImageRecord, ...]:
         images: list[ImageRecord] = []
         if include_xobjects:

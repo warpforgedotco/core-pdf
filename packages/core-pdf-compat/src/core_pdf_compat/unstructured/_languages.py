@@ -235,9 +235,7 @@ def detected_languages(text: str) -> list[str] | None:
 
 
 def text_languages(
-    text: str,
-    languages: Sequence[str],
-    fallback: LanguageFallback | None,
+    text: str, languages: Sequence[str], fallback: LanguageFallback | None
 ) -> list[str] | None:
     if languages[0] == "" or not text.strip():
         return None

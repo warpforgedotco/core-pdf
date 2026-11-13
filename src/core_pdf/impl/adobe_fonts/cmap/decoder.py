@@ -240,20 +240,13 @@ class CMapDecoder:
                     self.parse_char_block(block, self.notdef_mappings)
                 case b"beginnotdefrange":
                     self.parse_range_block(
-                        block,
-                        self.notdef_mappings,
-                        self.notdef_ranges,
-                        NotdefRange,
+                        block, self.notdef_mappings, self.notdef_ranges, NotdefRange
                     )
 
     def reject_mapping(self, reason: str, cause: BaseException | None = None) -> None:
         raise ValueError(reason) from cause
 
-    def parse_char_block(
-        self,
-        block: CMapBlock,
-        mappings: dict[bytes, int],
-    ) -> None:
+    def parse_char_block(self, block: CMapBlock, mappings: dict[bytes, int]) -> None:
         items = block.token_values(include_words=True)
         if len(items) % 2 != 0:
             self.reject_mapping("invalid CMap character mapping operands")
@@ -308,11 +301,7 @@ class CMapDecoder:
                 continue
             if make_range is CIDRange:
                 last_cid = cid + range_offset(
-                    end_bytes,
-                    start_bytes,
-                    end_bytes,
-                    validate_range=False,
-                    validate_code=False,
+                    end_bytes, start_bytes, end_bytes, validate_range=False, validate_code=False
                 )
                 if not valid_cid(last_cid):
                     self.reject_mapping("invalid CMap mapping")
@@ -357,10 +346,7 @@ class CMapDecoder:
             if start == b"\x00\x00" and end == b"\xff\xff" and self.decode_lengths == (2,):
                 limit = len(data) - (len(data) & 1)
                 identity_result = [
-                    (
-                        data[pos : pos + 2],
-                        (data[pos] << 8) | data[pos + 1],
-                    )
+                    (data[pos : pos + 2], (data[pos] << 8) | data[pos + 1])
                     for pos in range(0, limit, 2)
                 ]
                 if limit != len(data):

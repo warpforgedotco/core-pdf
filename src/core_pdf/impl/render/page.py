@@ -8,27 +8,16 @@ from typing import TYPE_CHECKING, Any
 
 lazy import numpy
 
-from core_pdf.impl.base.arrays import (
-    uint8_image_view,
-)
+from core_pdf.impl.base.arrays import uint8_image_view
 from core_pdf.impl.base.exceptions import PdfRasterTooLargeError
 from core_pdf.impl.base.geometry import rect_tuple
 from core_pdf.impl.base.types import RecordType, ReplaceFields, ReprFields, field
 from core_pdf.impl.capture.program import PageProgram
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
+from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
 from core_pdf.impl.render.commands import append_captured_program
-from core_pdf.impl.render.display import (
-    DisplayList,
-)
-from core_pdf.impl.render.model import (
-    DisplayItem,
-    DisplayListItem,
-    RasterImage,
-    RenderOptions,
-)
+from core_pdf.impl.render.display import DisplayList
+from core_pdf.impl.render.model import DisplayItem, DisplayListItem, RasterImage, RenderOptions
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.standards import SemanticContext
@@ -68,10 +57,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
     __hash__ = None  # type: ignore[assignment]
 
     def render_items(
-        self,
-        crop: tuple[float, float, float, float] | None,
-        *,
-        scale: float = 1.0,
+        self, crop: tuple[float, float, float, float] | None, *, scale: float = 1.0
     ) -> list[DisplayItem] | tuple[DisplayItem, ...]:
         if crop is None:
             return self.display_list.items
@@ -89,8 +75,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         return selected
 
     def resolve_effective_crop(
-        self,
-        crop: tuple[float, float, float, float] | None = None,
+        self, crop: tuple[float, float, float, float] | None = None
     ) -> tuple[float, float, float, float] | None:
         value: object = crop if crop is not None else self.metadata.get("crop")
         if value is None:
@@ -103,10 +88,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         return None
 
     def unrotated_raster_size(
-        self,
-        scale: float = 1.0,
-        *,
-        crop: tuple[float, float, float, float] | None = None,
+        self, scale: float = 1.0, *, crop: tuple[float, float, float, float] | None = None
     ) -> tuple[int, int]:
         scale = raster_scale(scale)
         effective_crop = self.resolve_effective_crop(crop)
@@ -115,10 +97,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
             width = pixel_dimension(effective_crop[2] - effective_crop[0], device_scale)
             height = pixel_dimension(effective_crop[3] - effective_crop[1], device_scale)
             return width, height
-        return (
-            pixel_dimension(self.width, scale),
-            pixel_dimension(self.height, scale),
-        )
+        return (pixel_dimension(self.width, scale), pixel_dimension(self.height, scale))
 
     def validate_raster_size(
         self,
@@ -198,11 +177,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
             "user_unit": self.user_unit,
             "rotate": self.rotate,
             "display_list": [
-                {
-                    "kind": item.kind,
-                    "seqno": item.seqno,
-                    "data": item.to_data(),
-                }
+                {"kind": item.kind, "seqno": item.seqno, "data": item.to_data()}
                 for item in self.display_list.items
             ],
             "metadata": dict(self.metadata),

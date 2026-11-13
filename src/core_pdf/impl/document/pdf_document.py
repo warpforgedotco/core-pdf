@@ -172,11 +172,7 @@ class PdfDocument(Generic[PageT]):
         return root
 
     def get_metadata(self) -> MetadataRecord:
-        return resolve_metadata(
-            self.resolver,
-            self.trailer_dict,
-            recover=self.recovery,
-        )
+        return resolve_metadata(self.resolver, self.trailer_dict, recover=self.recovery)
 
     def get_standards(self) -> DocumentStandards:
         with self.resolver.lock:
@@ -229,8 +225,7 @@ class PdfDocument(Generic[PageT]):
             return self.get_standards()
 
     def scoped_pending[RecordT](
-        self,
-        pending: Iterable[tuple[int, RecordT]],
+        self, pending: Iterable[tuple[int, RecordT]]
     ) -> tuple[PageScoped[RecordT], ...]:
         pending = tuple(pending)
         if not pending:
@@ -248,10 +243,7 @@ class PdfDocument(Generic[PageT]):
 
     @pauses_collector
     def extract(
-        self,
-        *,
-        pages: PageSelection | None = None,
-        adapters: Iterable[DocumentAdapter] = (),
+        self, *, pages: PageSelection | None = None, adapters: Iterable[DocumentAdapter] = ()
     ) -> Document:
         with self.acquire_operation() as operation:
             selected_pages = tuple(page for _index, page in self.iter_selected_pages(pages))
@@ -281,8 +273,7 @@ class PdfDocument(Generic[PageT]):
             (page_index, record)
             for page_index, page in self.iter_selected_pages(pages)
             for record in page.extract_images(
-                include_inline=include_inline,
-                include_xobjects=include_xobjects,
+                include_inline=include_inline, include_xobjects=include_xobjects
             )
         )
 

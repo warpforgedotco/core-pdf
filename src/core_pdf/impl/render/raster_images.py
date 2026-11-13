@@ -155,11 +155,7 @@ def blit_affine_image(
         source_u = (page_x - p00[0]) * inv_ux
         source_samples = uint8_view(converted)
         valid_x = (source_u >= 0.0) & (source_u <= 1.0)
-        safe_x = numpy.clip(
-            (source_u * width_px).astype(numpy.intp),
-            0,
-            width_px - 1,
-        )
+        safe_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
         axis_page_y = y_centers(iy0, iy1)
         source_y_array = ((1.0 - (axis_page_y - p00[1]) * inv_vy) * height_px).astype(numpy.intp)
         valid_y = (axis_page_y - p00[1]) * inv_vy >= 0.0
@@ -167,18 +163,10 @@ def blit_affine_image(
         safe_y = numpy.clip(source_y_array, 0, height_px - 1)
         target_region = self.pixel_array[iy0:iy1, ix0:ix1]
         source_pixels = source_samples[: width_px * height_px * comps].reshape(
-            height_px,
-            width_px,
-            comps,
+            height_px, width_px, comps
         )
         blit_opaque_sampled_tiles(
-            source_pixels,
-            target_region,
-            safe_y,
-            safe_x,
-            valid_y,
-            valid_x,
-            target_origin=(ix0, iy0),
+            source_pixels, target_region, safe_y, safe_x, valid_y, valid_x, target_origin=(ix0, iy0)
         )
         return True
     u_from_x = abs(uy) <= rect_tolerance and abs(ux) > rect_tolerance
@@ -205,15 +193,9 @@ def blit_affine_image(
             source_v = (page_y - p00[1]) * inv_vy
             valid_x = (source_u >= 0.0) & (source_u <= 1.0)
             valid_y = (source_v >= 0.0) & (source_v <= 1.0)
-            source_x = numpy.clip(
-                (source_u * width_px).astype(numpy.intp),
-                0,
-                width_px - 1,
-            )
+            source_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
             source_y = numpy.clip(
-                ((1.0 - source_v) * height_px).astype(numpy.intp),
-                0,
-                height_px - 1,
+                ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
             )
         else:
             inv_uy = 1.0 / uy
@@ -225,15 +207,9 @@ def blit_affine_image(
             valid_x = (source_v >= 0.0) & (source_v <= 1.0)
             valid_y = (source_u >= 0.0) & (source_u <= 1.0)
             source_y = numpy.clip(
-                ((1.0 - source_v) * height_px).astype(numpy.intp),
-                0,
-                height_px - 1,
+                ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
             )
-            source_x = numpy.clip(
-                (source_u * width_px).astype(numpy.intp),
-                0,
-                width_px - 1,
-            )
+            source_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
         target_region = target_pixels[iy0:iy1, ix0:ix1]
         blit_opaque_sampled_tiles(
             source_samples,
@@ -298,10 +274,7 @@ def blit_affine_image(
                 numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
                 numpy.copyto(target[:, :, 3], 255, where=visible)
                 self.record_source_coverage(
-                    slice(row_start, row_end),
-                    slice(column_start, column_end),
-                    255,
-                    visible=visible,
+                    slice(row_start, row_end), slice(column_start, column_end), 255, visible=visible
                 )
                 continue
             alpha_grid = (
@@ -426,10 +399,7 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
 
 
 def blit_image_mask(
-    self: RasterTarget,
-    item: ImagePaintItem,
-    prepared: PreparedImage,
-    blend_mode: str | None,
+    self: RasterTarget, item: ImagePaintItem, prepared: PreparedImage, blend_mode: str | None
 ) -> None:
     quad = image_placement(item)
     raster = prepared.raster

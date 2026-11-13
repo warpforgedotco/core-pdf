@@ -21,9 +21,7 @@ lazy import numpy
 from core_pdf import PdfDocument
 from core_pdf.impl.base.collector import pauses_collector
 from core_pdf.impl.base.exceptions import PdfPasswordError, PdfUnsupportedError
-from core_pdf.impl.base.geometry import (
-    bbox_intersects,
-)
+from core_pdf.impl.base.geometry import bbox_intersects
 from core_pdf.impl.base.text import collapse_ws
 from core_pdf.impl.base.types import PdfReference, RecordType, ReplaceFields, ReprFields
 from core_pdf.impl.capture.page import capture_annotation_appearances
@@ -432,9 +430,7 @@ def _recover_font(page: Any, font_name: str) -> _RecoveredFont | None:
             if not isinstance(first_char, int) or not isinstance(widths, list):
                 continue
             return _RecoveredFont(
-                ToUnicodeCMap(stream.data),
-                first_char,
-                tuple(float(width) for width in widths),
+                ToUnicodeCMap(stream.data), first_char, tuple(float(width) for width in widths)
             )
         except TypeError, ValueError:
             continue
@@ -728,12 +724,7 @@ def _page_redactions(page: Any, recovery: _DocumentRecovery) -> list[dict[str, o
                 break
         if later_nonrect_overlay:
             continue
-        redactions.append(
-            {
-                "bbox": fitz_box,
-                "text": text,
-            }
-        )
+        redactions.append({"bbox": fitz_box, "text": text})
     return redactions
 
 

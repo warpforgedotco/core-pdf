@@ -52,16 +52,7 @@ END_NUMBER = re.compile(rb"[^0-9]")
 END_KEYWORD = re.compile(rb"[#/%\[\]()<>{}\s]")
 END_STRING = re.compile(rb"[()\134]")
 OCT_STRING = re.compile(rb"[0-7]")
-ESC_STRING = {
-    b"b": 8,
-    b"t": 9,
-    b"n": 10,
-    b"f": 12,
-    b"r": 13,
-    b"(": 40,
-    b")": 41,
-    b"\\": 92,
-}
+ESC_STRING = {b"b": 8, b"t": 9, b"n": 10, b"f": 12, b"r": 13, b"(": 40, b")": 41, b"\\": 92}
 LINE = re.compile(rb"[^\r\n]*(?:\r\n?|\n)")
 # PDFXRefFallback matches it against a line decoded as Latin-1, so \d and \s are Unicode's.
 PDFOBJ_CUE = re.compile(r"^(\d+)\s+(\d+)\s+obj\b")
@@ -563,10 +554,7 @@ class Parser:
             return len(s)
         j = m.start(0)
         self._curtoken += s[i:j]
-        token = HEX_PAIR.sub(
-            lambda m: bytes((int(m.group(0), 16),)),
-            SPC.sub(b"", self._curtoken),
-        )
+        token = HEX_PAIR.sub(lambda m: bytes((int(m.group(0), 16),)), SPC.sub(b"", self._curtoken))
         self._add_token(token)
         self._parse1 = self._parse_main
         return j

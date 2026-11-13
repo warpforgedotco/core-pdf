@@ -12,11 +12,7 @@ from core_pdf.impl.base.geometry import (
     rect_tuple,
 )
 from core_pdf.impl.base.spatial import BoxIndex
-from core_pdf.impl.extract.grids import (
-    axis_segments,
-    grid_components,
-    split_grid_component,
-)
+from core_pdf.impl.extract.grids import axis_segments, grid_components, split_grid_component
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,
@@ -28,11 +24,7 @@ from core_pdf_ocr.impl.extract.ocr.raster import (
     direct_image_orientation,
     orient_direct_image_raster,
 )
-from core_pdf_ocr.impl.extract.ocr.types import (
-    OcrRegion,
-    RasterRegion,
-    ocr_region_box,
-)
+from core_pdf_ocr.impl.extract.ocr.types import OcrRegion, RasterRegion, ocr_region_box
 
 
 def page_image_regions(
@@ -50,10 +42,7 @@ def page_image_regions(
     for image in capture.program.drawings:
         if image.kind != "image":
             continue
-        orientation = direct_image_orientation(
-            image,
-            maximum_axis_deviation=maximum_axis_deviation,
-        )
+        orientation = direct_image_orientation(image, maximum_axis_deviation=maximum_axis_deviation)
         if orientation is None:
             continue
         box = rect_tuple(image.rect)
@@ -82,31 +71,16 @@ def page_image_regions(
             upscale=upscale,
         )
         if raster is not None:
-            oriented = orient_direct_image_raster(
-                image,
-                raster,
-                orientation=orientation,
-            )
-            regions.append(
-                RasterRegion(
-                    oriented,
-                    clipped,
-                )
-            )
+            oriented = orient_direct_image_raster(image, raster, orientation=orientation)
+            regions.append(RasterRegion(oriented, clipped))
     return tuple(regions)
 
 
 def dominant_image_region(
-    capture: PageAnalysis,
-    *,
-    max_pixels: int = MAX_OCR_PIXELS,
-    upscale: bool = True,
+    capture: PageAnalysis, *, max_pixels: int = MAX_OCR_PIXELS, upscale: bool = True
 ) -> RasterRegion | None:
     regions = page_image_regions(
-        capture,
-        minimum_area_ratio=0.65,
-        max_pixels=max_pixels,
-        upscale=upscale,
+        capture, minimum_area_ratio=0.65, max_pixels=max_pixels, upscale=upscale
     )
     substantial = tuple(
         region for region in regions if region.raster.width * region.raster.height >= 4_096
@@ -175,10 +149,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
     for evidence_box in capture.evidence.image_boxes:
         image_box = bbox_tuple(evidence_box)
         padded = ocr_region_box(
-            image_box,
-            page_width=page_width,
-            page_height=page_height,
-            padding=padding,
+            image_box, page_width=page_width, page_height=page_height, padding=padding
         )
         if padded is not None:
             candidates.append(OcrRegion(padded, 5.0, ("image",)))
@@ -203,10 +174,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         uncovered = native_overlap(box) < 0.25
         if uncovered and drawing.kind in {"fill", "fillstroke"}:
             padded = ocr_region_box(
-                box,
-                page_width=page_width,
-                page_height=page_height,
-                padding=padding,
+                box, page_width=page_width, page_height=page_height, padding=padding
             )
             if padded is not None:
                 candidates.append(OcrRegion(padded, 3.5, ("uncovered-vector",)))
@@ -218,8 +186,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         x1 = max(float(component_horizontal[:, 1].max()), float(component_vertical[:, 0].max()))
         y1 = max(float(component_horizontal[:, 2].max()), float(component_vertical[:, 2].max()))
         for split_horizontal, split_vertical in split_grid_component(
-            component_horizontal,
-            component_vertical,
+            component_horizontal, component_vertical
         ):
             split_box = (
                 min(float(split_horizontal[:, 0].min()), float(split_vertical[:, 0].min())),
@@ -228,10 +195,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
                 max(float(split_horizontal[:, 2].max()), float(split_vertical[:, 2].max())),
             )
             padded = ocr_region_box(
-                split_box,
-                page_width=page_width,
-                page_height=page_height,
-                padding=padding,
+                split_box, page_width=page_width, page_height=page_height, padding=padding
             )
             if padded is not None and (
                 (padded[2] - padded[0]) * (padded[3] - padded[1]) < page_area * 0.45
@@ -241,10 +205,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         component_area = (x1 - x0) * (y1 - y0)
         if component_area < page_area * 0.45 and native_overlap(component_box) < 0.25:
             padded = ocr_region_box(
-                component_box,
-                page_width=page_width,
-                page_height=page_height,
-                padding=padding,
+                component_box, page_width=page_width, page_height=page_height, padding=padding
             )
             if padded is not None:
                 candidates.append(OcrRegion(padded, 3.0, ("grid-labels",)))
@@ -277,10 +238,9 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
             rows - 1,
         )
         vector_density += (
-            numpy.bincount(
-                line_rows * columns + line_columns,
-                minlength=rows * columns,
-            ).astype(numpy.float32)
+            numpy.bincount(line_rows * columns + line_columns, minlength=rows * columns).astype(
+                numpy.float32
+            )
             * 0.5
         )
 
@@ -308,10 +268,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         if not sparse and not header_band:
             continue
         padded = ocr_region_box(
-            cell_box,
-            page_width=page_width,
-            page_height=page_height,
-            padding=padding,
+            cell_box, page_width=page_width, page_height=page_height, padding=padding
         )
         if padded is not None:
             reasons = ["vector-density"]
@@ -320,11 +277,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
             if header_band:
                 reasons.append("header-band")
             candidates.append(
-                OcrRegion(
-                    padded,
-                    1.5 + min(2.0, float(density) / 8.0),
-                    tuple(reasons),
-                )
+                OcrRegion(padded, 1.5 + min(2.0, float(density) / 8.0), tuple(reasons))
             )
 
     if (
@@ -333,10 +286,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
         and (len(native_boxes) == 0 or len(native_boxes) >= 8)
     ):
         label_columns = 12
-        label_rows = max(
-            4,
-            min(12, int(round(label_columns * page_height / max(1.0, page_width)))),
-        )
+        label_rows = max(4, min(12, int(round(label_columns * page_height / max(1.0, page_width)))))
         label_density = numpy.zeros(label_rows * label_columns, dtype=numpy.float32)
         label_boxes: list[list[tuple[float, float, float, float]]] = [
             [] for _ in range(label_rows * label_columns)
@@ -350,13 +300,9 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
             center_x = (box[0] + box[2]) * 0.5
             center_y = (box[1] + box[3]) * 0.5
             column = min(
-                label_columns - 1,
-                max(0, int(center_x * label_columns / max(1.0, page_width))),
+                label_columns - 1, max(0, int(center_x * label_columns / max(1.0, page_width)))
             )
-            row = min(
-                label_rows - 1,
-                max(0, int(center_y * label_rows / max(1.0, page_height))),
-            )
+            row = min(label_rows - 1, max(0, int(center_y * label_rows / max(1.0, page_height))))
             label_density[row * label_columns + column] += 1.0
             label_boxes[row * label_columns + column].append(box)
 
@@ -375,10 +321,7 @@ def candidate_ocr_regions(capture: PageAnalysis) -> tuple[OcrRegion, ...]:
             assert optional_component_box is not None
             component_box = optional_component_box
             component_area = bbox_area(component_box)
-            label_padding = max(
-                padding,
-                min(72.0, min(page_width, page_height) * 0.03),
-            )
+            label_padding = max(padding, min(72.0, min(page_width, page_height) * 0.03))
             candidate_box = component_box if component_area <= page_area * 0.08 else cell_box
             padded = ocr_region_box(
                 candidate_box,
@@ -433,10 +376,7 @@ def has_distributed_outline_text(capture: PageAnalysis) -> bool:
 
 
 def ocr_region_batch(
-    regions: tuple[OcrRegion, ...],
-    ocr_pass: OcrPass,
-    *,
-    page_area: float,
+    regions: tuple[OcrRegion, ...], ocr_pass: OcrPass, *, page_area: float
 ) -> tuple[OcrRegion, ...]:
     count_limit = max(ocr_pass.max_regions, OCR_REGION_INITIAL_COUNT)
     area_limit = OCR_REGION_INITIAL_AREA_RATIO

@@ -6,16 +6,7 @@ import pathlib
 import string
 from collections.abc import Callable, Iterable, Iterator
 from html import escape
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    BinaryIO,
-    Generic,
-    TextIO,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, TextIO, TypeVar, Union, cast
 
 from .pdfexceptions import PDFTypeError, PDFValueError
 
@@ -85,9 +76,7 @@ def shorten_str(s: str, size: int) -> str:
 
 
 def compatible_encode_method(
-    bytesorstring: bytes | str,
-    encoding: str = "utf-8",
-    erraction: str = "ignore",
+    bytesorstring: bytes | str, encoding: str = "utf-8", erraction: str = "ignore"
 ) -> str:
     """When Py2 str.encode is called, it often means bytes.encode in Py3.
 
@@ -143,11 +132,7 @@ def apply_tiff_predictor(colors: int, columns: int, bitspercomponent: int, data:
 
 
 def apply_png_predictor(
-    pred: int,
-    colors: int,
-    columns: int,
-    bitspercomponent: int,
-    data: bytes,
+    pred: int, colors: int, columns: int, bitspercomponent: int, data: bytes
 ) -> bytes:
     """Reverse the effect of the PNG predictor
 
@@ -377,11 +362,7 @@ def get_bound(pts: Iterable[Point]) -> Rect:
     return x0, y0, x1, y1
 
 
-def pick(
-    seq: Iterable[_T],
-    func: Callable[[_T], float],
-    maxobj: _T | None = None,
-) -> _T | None:
+def pick(seq: Iterable[_T], func: Callable[[_T], float], maxobj: _T | None = None) -> _T | None:
     """Picks the object obj where func(obj) has the highest value."""
     maxscore = None
     for obj in seq:

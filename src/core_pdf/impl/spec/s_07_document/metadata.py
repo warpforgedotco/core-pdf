@@ -23,7 +23,4 @@ def catalog_metadata_stream(resolver: PdfValueResolver, catalog: object) -> PdfS
     return metadata
 
 
-__all__ = (
-    "catalog_metadata_stream",
-    "info_dictionary",
-)
+__all__ = ("catalog_metadata_stream", "info_dictionary")

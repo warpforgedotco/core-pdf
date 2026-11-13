@@ -160,9 +160,7 @@ def security_marker_present(data: cython.const[cython.uchar][::1]) -> bool:
 @cython.nogil
 @cython.exceptval(check=False)
 def region_of(
-    starts: cython.p_const_Py_ssize_t,
-    count: cython.Py_ssize_t,
-    position: cython.Py_ssize_t,
+    starts: cython.p_const_Py_ssize_t, count: cython.Py_ssize_t, position: cython.Py_ssize_t
 ) -> cython.Py_ssize_t:
     # The last region starting at or before position.
     low: cython.Py_ssize_t = 0
@@ -178,10 +176,7 @@ def region_of(
 
 
 def regions_with_markers(
-    data: cython.const[cython.uchar][::1],
-    needles: tuple,
-    starts,
-    data_len: cython.Py_ssize_t,
+    data: cython.const[cython.uchar][::1], needles: tuple, starts, data_len: cython.Py_ssize_t
 ):
     """For each needle, the indexes of the regions [starts[i], next start or data_len)
     that hold a whole occurrence of it. starts must be ascending."""

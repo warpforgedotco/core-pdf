@@ -10,10 +10,7 @@ lazy import numpy
 from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.spec.s_07_filters import registry
-from core_pdf.impl.spec.s_07_filters.registry import (
-    FilterDecoder,
-    FilterDescriptor,
-)
+from core_pdf.impl.spec.s_07_filters.registry import FilterDecoder, FilterDescriptor
 
 FILTER_DESCRIPTORS = (
     *registry.FILTER_DESCRIPTORS,
@@ -55,9 +52,7 @@ JPX_IMAGE = NativeImageSpec(
     color_names=frozenset({None, "DeviceGray", "DeviceRGB"}),
 )
 CCITT_IMAGE = NativeImageSpec(
-    channels={},
-    color_names=frozenset({None, "DeviceGray"}),
-    bits=frozenset({None, 1}),
+    channels={}, color_names=frozenset({None, "DeviceGray"}), bits=frozenset({None, 1})
 )
 
 type FilterFn = Callable[[bytes, object], bytes]

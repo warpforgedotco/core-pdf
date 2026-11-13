@@ -40,12 +40,10 @@ class BoxIndex(GeneratedRecord):
     def intersection_areas(self, box: Sequence[float]) -> numpy.ndarray[Any, Any]:
         boxes = self.boxes
         widths = numpy.maximum(
-            0.0,
-            numpy.minimum(boxes[:, 2], box[2]) - numpy.maximum(boxes[:, 0], box[0]),
+            0.0, numpy.minimum(boxes[:, 2], box[2]) - numpy.maximum(boxes[:, 0], box[0])
         )
         heights = numpy.maximum(
-            0.0,
-            numpy.minimum(boxes[:, 3], box[3]) - numpy.maximum(boxes[:, 1], box[1]),
+            0.0, numpy.minimum(boxes[:, 3], box[3]) - numpy.maximum(boxes[:, 1], box[1])
         )
         return widths * heights
 
@@ -60,9 +58,7 @@ class BoxIndex(GeneratedRecord):
         )
 
     def overlap_of(
-        self,
-        box: Rectangle,
-        intersections: numpy.ndarray[Any, Any] | None = None,
+        self, box: Rectangle, intersections: numpy.ndarray[Any, Any] | None = None
     ) -> numpy.ndarray[Any, Any]:
         if intersections is None:
             intersections = self.intersection_areas(box)
@@ -75,9 +71,7 @@ class BoxIndex(GeneratedRecord):
         return numpy.flatnonzero(self.overlap_min(box) >= minimum)
 
     def pairwise_intersection(
-        self,
-        queries: numpy.ndarray[Any, Any],
-        rows_per_chunk: int,
+        self, queries: numpy.ndarray[Any, Any], rows_per_chunk: int
     ) -> Iterator[tuple[int, numpy.ndarray[Any, Any]]]:
         boxes = self.boxes
         x0 = boxes[:, 0][None, :]
@@ -87,12 +81,10 @@ class BoxIndex(GeneratedRecord):
         for start in range(0, len(queries), rows_per_chunk):
             chunk = queries[start : start + rows_per_chunk]
             widths = numpy.maximum(
-                0.0,
-                numpy.minimum(chunk[:, None, 2], x1) - numpy.maximum(chunk[:, None, 0], x0),
+                0.0, numpy.minimum(chunk[:, None, 2], x1) - numpy.maximum(chunk[:, None, 0], x0)
             )
             heights = numpy.maximum(
-                0.0,
-                numpy.minimum(chunk[:, None, 3], y1) - numpy.maximum(chunk[:, None, 1], y0),
+                0.0, numpy.minimum(chunk[:, None, 3], y1) - numpy.maximum(chunk[:, None, 1], y0)
             )
             numpy.multiply(widths, heights, out=widths)
             yield start, widths
