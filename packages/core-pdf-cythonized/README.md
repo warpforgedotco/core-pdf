@@ -149,6 +149,9 @@ odd digit count inside a hex string, `cidrange` blocks, an unterminated token,
 a `bfrange` block that would be rejected -- returns None, and
 `core_pdf.impl.fonts.cmap` parses the same bytes with the tokenizer and block
 parsers it always used.
+`scripts/check_to_unicode_cmaps.py` parses every ToUnicode stream of the upstream
+test files, and CMaps generated around what it declines, both ways and fails on
+any difference.
 
 `type1_glyph_bounds` keeps its Python on the same terms. It interprets a Type 1
 charstring and measures it the way fontTools' `T1CharString.draw` into a
@@ -159,7 +162,9 @@ Python would resolve differently (negative, fractional, out of range), division
 by zero and truncated numbers return None, and
 `core_pdf.impl.fonts.program_type1` draws the same glyph with core's Python Type 1
 interpreter (`core_pdf.impl.fonts.outline_pens`), which follows fontTools to the same
-doubles.
+doubles. `scripts/check_font_programs.py` measures every sampled Type 1 glyph of the
+upstream test files both ways, and against fontTools, and fails on any bounds whose
+bits differ.
 
 ## What belongs here
 
