@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""TJ arrays shown in one loop.
+"""TJ arrays shown in one loop, and the accumulator that merges the runs they show.
 
 show_text_array does what the content interpreter's append_tj_array does for a capture
 state, with append_text, append_decoded_text and the state's show_text and text_boundary
@@ -8,6 +8,11 @@ inlined, so the strings of an array kerned between every pair of characters do n
 cost a chain of Python calls. It computes what they compute in the same order, so each
 string gets the same glyphs, run and sequence number. A string it cannot show exactly
 goes to the state's own methods, and an array it cannot walk is declined untouched.
+
+RunAccumulator is core's only run accumulator: a capture state appends each shown run to
+it, and it merges a run into the pending one when it continues it. show_text_array tries
+that merge with a string's values first, and makes a TextRun only for a string that
+starts a run.
 """
 
 import cython
@@ -78,6 +83,254 @@ def max4(a: cython.double, b: cython.double, c: cython.double, d: cython.double)
     return result
 
 
+# gap_separator's punctuation: no space before a closing mark, nor after an opening one.
+NO_SPACE_BEFORE = cython.declare(frozenset, frozenset(".,;:!?)]}%"))
+NO_SPACE_AFTER = cython.declare(frozenset, frozenset("([{"))
+
+# The edge a merge widens the pending run on.
+WIDEN_X0 = cython.declare(cython.int, 0)
+WIDEN_X1 = cython.declare(cython.int, 1)
+WIDEN_Y1 = cython.declare(cython.int, 2)
+
+
+@cython.cfunc
+@cython.exceptval(-1, check=False)
+def can_merge_cross_font_word(left: str, right: str) -> cython.int:
+    # Whether a word continues across a font change: a word character on both sides.
+    if not left or not right:
+        return 0
+    last: cython.Py_UCS4 = left[len(left) - 1]
+    first: cython.Py_UCS4 = right[0]
+    return (last.isalnum() or last == "_") and (first.isalnum() or first == "_")
+
+
+@cython.cfunc
+@cython.inline
+def last_char(text: str) -> str:
+    # text[-1:], spelled without a negative index: the package compiles with wraparound off.
+    return text[len(text) - 1 :] if text else ""
+
+
+@cython.cfunc
+@cython.inline
+def first_max(a: object, b: object) -> object:
+    # max(a, b): b only when it is greater, as Python's max keeps the first of equals.
+    return b if b > a else a
+
+
+@cython.cfunc
+@cython.inline
+def first_min(a: object, b: object) -> object:
+    return b if b < a else a
+
+
+@cython.cclass
+class RunAccumulator:
+    """The runs a capture state shows, each merged into the pending run when it continues
+    it on the same line in the same style, and every finished run put in output.
+
+    word_gap_threshold(space_width, font_size) is core's word gap, past which a merge
+    puts a space between the two texts.
+    """
+
+    output = cython.declare(list, visibility="readonly")
+    word_gap_threshold: object
+    # The pending run, its texts and glyph clusters merged before it (nearest last) and
+    # after it (its own first), and the first and last characters of its joined text.
+    run: object
+    before: list
+    after: list
+    clusters_before: list
+    clusters_after: list
+    head: str
+    tail: str
+
+    def __init__(self, output: list, word_gap_threshold: object) -> None:
+        self.output = output
+        self.word_gap_threshold = word_gap_threshold
+        self.run = None
+
+    def append(self, run: object) -> None:
+        """Merge run into the pending run, or flush that and make run the pending one."""
+        if self.run is not None and self.try_merge(
+            run.text,
+            run.x0,
+            run.y0,
+            run.x1,
+            run.y1,
+            run.font_size,
+            run.rotation_angle,
+            run.visible,
+            run.line_break_before,
+            run.font_name,
+            run.fill_color,
+            run.ink_bbox,
+            run.glyph_clusters,
+        ):
+            return
+        self.start(run)
+
+    def flush(self) -> None:
+        """Put the pending run, its merged text and glyph clusters joined, in output."""
+        run = self.run
+        if run is None:
+            return
+        if len(self.before) + len(self.after) > 1:
+            self.before.reverse()
+            run.set_text("".join(self.before + self.after))
+            clusters: list = []
+            part: object
+            for part in reversed(self.clusters_before):
+                clusters.extend(part)
+            for part in self.clusters_after:
+                clusters.extend(part)
+            run.glyph_clusters = tuple(clusters)
+        self.output.append(run)
+        self.run = None
+
+    @cython.cfunc
+    def start(self, run: object) -> cython.void:
+        # Flush the pending run and make run the pending one.
+        self.flush()
+        text: str = run.text
+        self.run = run
+        self.before = []
+        self.after = [text]
+        self.clusters_before = []
+        self.clusters_after = [run.glyph_clusters]
+        self.head = text[:1]
+        self.tail = last_char(text)
+
+    @cython.cfunc
+    def gap_separator(self, left: str, right: str, gap: object) -> str:
+        # The space a merge puts between left and right across gap, if any.
+        run = self.run
+        if gap <= self.word_gap_threshold(run.space_width, run.font_size):
+            return ""
+        if not left or not right:
+            return ""
+        last = last_char(left)
+        first = right[:1]
+        if last.isspace() or first.isspace():
+            return ""
+        if first in NO_SPACE_BEFORE or last in NO_SPACE_AFTER:
+            return ""
+        return " "
+
+    @cython.cfunc
+    @cython.exceptval(-1, check=False)
+    def merge(
+        self,
+        text: str,
+        clusters: object,
+        ink_bbox: object,
+        x0: object,
+        x1: object,
+        y1: object,
+        gap: object,
+        threshold: object,
+        widen: cython.int,
+        reverse: cython.bint,
+    ) -> cython.int:
+        # Merge a run with these values into the pending one across gap, after it or,
+        # reversed, before it, when the gap is from -2 up to the threshold.
+        if not (-2.0 <= gap and gap < threshold):
+            return 0
+        added: str
+        if reverse:
+            added = text + self.gap_separator(text, self.head, gap)
+            self.before.append(added)
+            self.clusters_before.append(clusters)
+            if added:
+                self.head = added[:1]
+            if not self.tail:
+                self.tail = last_char(added)
+        else:
+            added = self.gap_separator(self.tail, text, gap) + text
+            self.after.append(added)
+            self.clusters_after.append(clusters)
+            if not self.head:
+                self.head = added[:1]
+            if added:
+                self.tail = last_char(added)
+        run = self.run
+        run.union_ink_bbox(ink_bbox)
+        if widen == WIDEN_X1:
+            run.x1 = first_max(x1, run.x1)
+        elif widen == WIDEN_X0:
+            run.x0 = first_min(x0, run.x0)
+        else:
+            run.y1 = first_max(y1, run.y1)
+        return 1
+
+    @cython.cfunc
+    @cython.exceptval(-1, check=False)
+    def try_merge(
+        self,
+        text: str,
+        x0: object,
+        y0: object,
+        x1: object,
+        y1: object,
+        font_size: object,
+        rotation_angle: object,
+        visible: object,
+        line_break_before: object,
+        font_name: object,
+        fill_color: object,
+        ink_bbox: object,
+        clusters: object,
+    ) -> cython.int:
+        """Merge a run with these values into the pending run when it continues it: the
+        same rotation, visibility, size, font (or a word going on across fonts) and fill,
+        no line break before it, on the pending run's line, within the merge gap."""
+        pending = self.run
+        pending_size = pending.font_size
+        space_width = pending.space_width
+        rotation = pending.rotation_angle
+        threshold = first_max(space_width * 0.45, 2.0)
+        if not (
+            rotation == rotation_angle
+            and pending.visible == visible
+            and not line_break_before
+            and pending_size == font_size
+            and (
+                pending.font_name == font_name
+                or can_merge_cross_font_word(self.tail, text)
+                or can_merge_cross_font_word(text, self.head)
+            )
+            and pending.fill_color == fill_color
+        ):
+            return 0
+        if rotation == 90:
+            if abs(y0 - pending.y1) > first_max(
+                first_max(space_width * 0.5, pending_size * 0.8), 2.0
+            ):
+                return 0
+        elif rotation == 0 and abs(pending.y0 - y0) > pending_size * 0.5:
+            return 0
+        merged: cython.int
+        if rotation == 0:
+            merged = self.merge(
+                text, clusters, ink_bbox, x0, x1, y1, x0 - pending.x1, threshold, WIDEN_X1, False
+            ) or self.merge(
+                text, clusters, ink_bbox, x0, x1, y1, pending.x0 - x1, threshold, WIDEN_X0, True
+            )
+        elif rotation == 90:
+            merged = self.merge(
+                text, clusters, ink_bbox, x0, x1, y1, y0 - pending.y1, threshold, WIDEN_Y1, False
+            )
+        else:
+            merged = self.merge(
+                text, clusters, ink_bbox, x0, x1, y1, pending.x0 - x1, threshold, WIDEN_X0, False
+            ) or self.merge(
+                text, clusters, ink_bbox, x0, x1, y1, x0 - pending.x1, threshold, WIDEN_X1, True
+            )
+        if merged:
+            pending.advance_bbox = (pending.x0, pending.y0, pending.x1, pending.y1)
+        return merged
+
+
 @cython.cclass
 class ArrayWalk:
     """What one TJ array's strings share: the state, its font and text state, the
@@ -139,6 +392,7 @@ class ArrayWalk:
     clip_bbox: object
     page_clip: object
     pending_line_break: object
+    accumulator: RunAccumulator
 
     @cython.cfunc
     @cython.exceptval(-1, check=False)
@@ -285,15 +539,44 @@ class ArrayWalk:
         x1: cython.double = max4(c0_x, c1_x, c2_x, c3_x)
         y1: cython.double = max4(c0_y, c1_y, c2_y, c3_y)
         adv_y: cython.double = 0.0
+        advance_bbox = (x0, y0, x1, y1)
+        run_text: str = text if text.isascii() else self.normalize(text)
+        cluster_tuple = tuple(clusters)
+        has_geometry: cython.bint = kept_advance is not None and kept_ink is not None
+        accumulator: RunAccumulator = self.accumulator
+        if accumulator is not None:
+            # update_pending_run: a run clipped away is dropped, and one that continues the
+            # pending run is merged into it, so it needs no TextRun of its own.
+            if state.is_clipped_away(
+                advance_bbox[0], advance_bbox[1], advance_bbox[2], advance_bbox[3]
+            ):
+                state.sequence = seqno + 1
+                return 1
+            if accumulator.run is not None and accumulator.try_merge(
+                run_text,
+                advance_bbox[0],
+                advance_bbox[1],
+                advance_bbox[2],
+                advance_bbox[3],
+                layout.effective_font_size,
+                layout.rotation,
+                visible,
+                self.pending_line_break,
+                self.current_font,
+                layout.fill_color,
+                kept_ink if has_geometry else advance_bbox,
+                cluster_tuple,
+            ):
+                state.sequence = seqno + 1
+                return 1
         baseline = (E, F, Ed + adv_x * A + adv_y * C, Fd + adv_x * B + adv_y * D)
         provenance = (("source", self.capture_source), ("seqno", seqno), *layout.run_provenance)
-        advance_bbox = (x0, y0, x1, y1)
         new_run = self.text_run(
-            text if text.isascii() else self.normalize(text),
-            x0,
-            y0,
-            x1,
-            y1,
+            run_text,
+            advance_bbox[0],
+            advance_bbox[1],
+            advance_bbox[2],
+            advance_bbox[3],
             te_value,
             tf_value,
             layout.effective_font_size,
@@ -315,12 +598,15 @@ class ArrayWalk:
             provenance,
             None,
         )
-        new_run.glyph_clusters = tuple(clusters)
-        if kept_advance is not None and kept_ink is not None:
+        new_run.glyph_clusters = cluster_tuple
+        if has_geometry:
             new_run.advance_bbox = kept_advance
             new_run.ink_bbox = kept_ink
             new_run.confidence = kept_confidence
-        state.update_pending_run(new_run)
+        if accumulator is not None:
+            accumulator.start(new_run)
+        else:
+            state.update_pending_run(new_run)
         state.sequence = seqno + 1
         return 1
 
@@ -490,6 +776,8 @@ def show_text_array(state, array, decoder, context) -> bool:
     walk.page_clip = state.page_clip
     walk.matrix = matrix
     walk.pending_line_break = state.pending_line_break
+    accumulator = state.run_accumulator
+    walk.accumulator = accumulator if type(accumulator) is RunAccumulator else None
     walk.linear_identity = walk.ta == 1.0 and walk.tb == 0.0 and walk.tc == 0.0 and walk.td == 1.0
     # Matrix.multiply returns the text matrix itself when the ctm is the identity, and
     # multiply_affine's products otherwise; their linear part is the same for every string.
