@@ -374,8 +374,8 @@ def show_text(
     seqno = self.sequence
     actual_text_span = layout.actual_text_span
     captured: GlyphCapture | None = None
+    options = self.options
     if actual_text_span is None:
-        options = self.options
         if not options.glyphs and not options.text_runs:
             # Neither glyphs nor runs are wanted: only the sequence advances.
             self.sequence = seqno + 1
@@ -405,13 +405,13 @@ def show_text(
             graphics.current_font,
             seqno,
             self.glyph_cluster_count,
-            self.options,
+            options,
             layout.width_source,
             # The observations go straight into the program's list, when it keeps them.
             self.glyphs if options.glyphs else [],
         )
         self.glyph_cluster_count += captured.cluster_count
-        if not self.options.text_runs:
+        if not options.text_runs:
             self.sequence = seqno + 1
             return
 
@@ -496,6 +496,10 @@ def show_text(
 
 
 def text_boundary(self: TextState, state: object, kind: str) -> None:
+    if kind == "shown":
+        # After every shown string, so first.
+        self.pending_line_break = False
+        return
     if kind in {"type3-glyph-begin", "type3-glyph-end"}:
         self.text_boundaries.append(
             CapturedTextBoundary(
@@ -518,8 +522,6 @@ def text_boundary(self: TextState, state: object, kind: str) -> None:
                 self.text_boundaries.append(CapturedTextBoundary(self.sequence, "end"))
             self.capture_text_open = False
             self.run_accumulator.flush()
-        case "shown":
-            self.pending_line_break = False
         case "quoted":
             self.pending_line_break = True
         case _:
