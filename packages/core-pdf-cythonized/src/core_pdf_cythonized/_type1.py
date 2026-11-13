@@ -4,9 +4,10 @@ import typing
 
 import cython
 from cython.cimports.core_pdf_cythonized._type1 import T1_MAX_DEPTH, T1_STACK, fabs, sqrt
-from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc
+from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc, PyMem_RawFree, PyMem_RawRealloc
+from cython.cimports.libc.math import pow
 
-__all__ = ("decrypt_type1", "type1_glyph_bounds")
+__all__ = ("decrypt_type1", "type1_glyph_bounds", "type1_glyph_contours")
 
 
 def decrypt_type1(data: cython.const[cython.uchar][::1], key: cython.int):
@@ -27,7 +28,9 @@ def decrypt_type1(data: cython.const[cython.uchar][::1], key: cython.int):
 # type1_glyph_bounds mirrors fontTools' T1CharString.draw into a BoundsPen behind
 # a TransformPen, which core_pdf.impl.fonts.program_type1 keeps for every input
 # declined here: the arithmetic below is theirs, operation for operation, so the
-# bounds are the same doubles.
+# bounds are the same doubles. type1_glyph_contours runs the same interpreter
+# collecting the outline instead, as core's Type1Outline records it and
+# recording_to_contours flattens it.
 
 T1_OK = cython.declare(cython.int, 0)
 T1_STOP = cython.declare(cython.int, 1)
@@ -55,7 +58,93 @@ T1State = cython.struct(
     subrs=cython.pp_const_uchar,
     subr_lengths=cython.p_Py_ssize_t,
     subr_count=cython.Py_ssize_t,
+    # Collecting contours: the points, where the open contour starts, and where each
+    # closed contour ends.
+    collect=cython.bint,
+    open_contour=cython.bint,
+    failed=cython.bint,
+    xs=cython.p_double,
+    ys=cython.p_double,
+    point_count=cython.Py_ssize_t,
+    point_capacity=cython.Py_ssize_t,
+    contour_start=cython.Py_ssize_t,
+    ends=cython.p_Py_ssize_t,
+    end_count=cython.Py_ssize_t,
+    end_capacity=cython.Py_ssize_t,
 )
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def collect_point(s: cython.pointer[T1State], x: cython.double, y: cython.double) -> cython.void:
+    capacity: cython.Py_ssize_t
+    xs: cython.p_double
+    ys: cython.p_double
+    if s.failed:
+        return
+    if s.point_count == s.point_capacity:
+        capacity = s.point_capacity * 2 if s.point_capacity else 64
+        xs = cython.cast(
+            cython.p_double, PyMem_RawRealloc(s.xs, capacity * cython.sizeof(cython.double))
+        )
+        if xs == cython.NULL:
+            s.failed = True
+            return
+        s.xs = xs
+        ys = cython.cast(
+            cython.p_double, PyMem_RawRealloc(s.ys, capacity * cython.sizeof(cython.double))
+        )
+        if ys == cython.NULL:
+            s.failed = True
+            return
+        s.ys = ys
+        s.point_capacity = capacity
+    s.xs[s.point_count] = x
+    s.ys[s.point_count] = y
+    s.point_count += 1
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def close_contour(s: cython.pointer[T1State]) -> cython.void:
+    # recording_to_contours' close_contour: the start point again unless it ends there.
+    start: cython.Py_ssize_t = s.contour_start
+    last: cython.Py_ssize_t
+    capacity: cython.Py_ssize_t
+    ends: cython.p_Py_ssize_t
+    if not s.open_contour:
+        return
+    s.open_contour = False
+    if s.failed or s.point_count == start:
+        return
+    last = s.point_count - 1
+    if s.xs[start] != s.xs[last] or s.ys[start] != s.ys[last]:
+        collect_point(s, s.xs[start], s.ys[start])
+    if s.end_count == s.end_capacity:
+        capacity = s.end_capacity * 2 if s.end_capacity else 16
+        ends = cython.cast(
+            cython.p_Py_ssize_t,
+            PyMem_RawRealloc(s.ends, capacity * cython.sizeof(cython.Py_ssize_t)),
+        )
+        if ends == cython.NULL:
+            s.failed = True
+            return
+        s.ends = ends
+        s.end_capacity = capacity
+    s.ends[s.end_count] = s.point_count
+    s.end_count += 1
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def end_path(s: cython.pointer[T1State]) -> cython.void:
+    # Type1Outline's end of a path: a closePath or endPath after a move closes the contour.
+    if s.collect and s.saw_move:
+        close_contour(s)
+    s.saw_move = False
 
 
 @cython.cfunc
@@ -185,6 +274,12 @@ def cubic_bounds(
 @cython.exceptval(check=False)
 def pen_move(s: cython.pointer[T1State]) -> cython.void:
     p = cython.declare(cython.double[2])
+    if s.collect:
+        close_contour(s)
+        s.contour_start = s.point_count
+        s.open_contour = True
+        collect_point(s, s.x, s.y)
+        return
     transform(s, s.x, s.y, p)
     add_point(s, p[0], p[1])
     s.pen_x = p[0]
@@ -196,6 +291,9 @@ def pen_move(s: cython.pointer[T1State]) -> cython.void:
 @cython.exceptval(check=False)
 def pen_line(s: cython.pointer[T1State]) -> cython.void:
     p = cython.declare(cython.double[2])
+    if s.collect:
+        collect_point(s, s.x, s.y)
+        return
     transform(s, s.x, s.y, p)
     add_point(s, p[0], p[1])
     s.pen_x = p[0]
@@ -226,6 +324,54 @@ def r_line(s: cython.pointer[T1State], dx: cython.double, dy: cython.double) -> 
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
+def collect_curve(
+    s: cython.pointer[T1State],
+    dx1: cython.double,
+    dy1: cython.double,
+    dx2: cython.double,
+    dy2: cython.double,
+    dx3: cython.double,
+    dy3: cython.double,
+) -> cython.void:
+    # The curve's three points, then flatten_cubic's eight: cubic_point at i / 8.
+    x0: cython.double = s.x
+    y0: cython.double = s.y
+    s.x = s.x + dx1
+    s.y = s.y + dy1
+    x1: cython.double = s.x
+    y1: cython.double = s.y
+    s.x = s.x + dx2
+    s.y = s.y + dy2
+    x2: cython.double = s.x
+    y2: cython.double = s.y
+    s.x = s.x + dx3
+    s.y = s.y + dy3
+    x3: cython.double = s.x
+    y3: cython.double = s.y
+    i: cython.int
+    t: cython.double
+    mt: cython.double
+    mt3: cython.double
+    t3: cython.double
+    mt2t: cython.double
+    mtt2: cython.double
+    for i in range(1, 9):
+        t = i / 8.0
+        mt = 1.0 - t
+        mt3 = pow(mt, 3.0)
+        t3 = pow(t, 3.0)
+        mt2t = 3.0 * mt * mt * t
+        mtt2 = 3.0 * mt * t * t
+        collect_point(
+            s,
+            mt3 * x0 + mt2t * x1 + mtt2 * x2 + t3 * x3,
+            mt3 * y0 + mt2t * y1 + mtt2 * y2 + t3 * y3,
+        )
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
 def r_curve(
     s: cython.pointer[T1State],
     dx1: cython.double,
@@ -241,6 +387,9 @@ def r_curve(
     box = cython.declare(cython.double[4])
     if not s.saw_move:
         r_move(s, 0.0, 0.0)
+    if s.collect:
+        collect_curve(s, dx1, dy1, dx2, dy2, dx3, dy3)
+        return
     s.x = s.x + dx1
     s.y = s.y + dy1
     transform(s, s.x, s.y, c1)
@@ -486,7 +635,7 @@ def execute(
                 s.stack[s.sp - 1] = s.stack[s.sp - 2]
                 s.stack[s.sp - 2] = num1
                 continue
-            s.saw_move = False
+            end_path(s)
             if s.sp < 1:
                 return T1_DECLINE
             num1 = s.stack[0]
@@ -504,7 +653,7 @@ def execute(
             if rr_curves(s) != T1_OK:
                 return T1_DECLINE
         elif op == 9:
-            s.saw_move = False
+            end_path(s)
         elif op == 10:
             if subr_index(s, cython.address(index)) != T1_OK:
                 return T1_DECLINE
@@ -519,11 +668,11 @@ def execute(
             s.x = s.stack[0]
             s.sp = 0
         elif op == 14:
-            s.saw_move = False
+            end_path(s)
         elif op == 21:
             if s.flexing:
                 continue
-            s.saw_move = False
+            end_path(s)
             if s.sp < 2:
                 return T1_DECLINE
             num1 = s.stack[0]
@@ -535,7 +684,7 @@ def execute(
                 if push_value(s, 0.0) != T1_OK:
                     return T1_DECLINE
                 continue
-            s.saw_move = False
+            end_path(s)
             if s.sp < 1:
                 return T1_DECLINE
             num1 = s.stack[0]
@@ -611,6 +760,7 @@ def type1_glyph_bounds(
     state.pen_y = 0.0
     state.has_bounds = False
     state.min_x = state.min_y = state.max_x = state.max_y = 0.0
+    state.collect = False
     state.subr_count = count
     if count:
         subr_data = cython.cast(
@@ -643,3 +793,103 @@ def type1_glyph_bounds(
     if not state.has_bounds:
         return ()
     return (state.min_x, state.min_y, state.max_x, state.max_y)
+
+
+def type1_glyph_contours(
+    charstring: typing.Optional[bytes],
+    subrs: typing.Optional[tuple],
+    matrix: typing.Optional[tuple],
+):
+    """A Type 1 charstring's contours, as core's Type1Outline records them,
+    recording_to_contours flattens them (each curve in eight steps, each contour closed
+    back to its start, those under three points dropped) and transform_contours maps them
+    through the font matrix into a 1000-unit em.
+
+    Returns a tuple of contours, each a tuple of (x, y) points, or None for input it
+    declines as type1_glyph_bounds does, which the caller draws in Python.
+    """
+    state = cython.declare(T1State)
+    count: cython.Py_ssize_t = len(subrs)
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    status: cython.int
+    subr_data: cython.pp_const_uchar = cython.NULL
+    subr_lengths: cython.p_Py_ssize_t = cython.NULL
+    if len(matrix) != 6:
+        return None
+    a: cython.double = matrix[0]
+    b: cython.double = matrix[1]
+    c: cython.double = matrix[2]
+    d: cython.double = matrix[3]
+    e: cython.double = matrix[4]
+    f: cython.double = matrix[5]
+    state.sp = 0
+    state.x = 0.0
+    state.y = 0.0
+    state.saw_move = False
+    state.flexing = False
+    state.pen_x = 0.0
+    state.pen_y = 0.0
+    state.has_bounds = False
+    state.collect = True
+    state.open_contour = False
+    state.failed = False
+    state.xs = cython.NULL
+    state.ys = cython.NULL
+    state.point_count = 0
+    state.point_capacity = 0
+    state.contour_start = 0
+    state.ends = cython.NULL
+    state.end_count = 0
+    state.end_capacity = 0
+    state.subr_count = count
+    if count:
+        subr_data = cython.cast(
+            cython.pp_const_uchar, PyMem_Malloc(count * cython.sizeof(cython.p_const_uchar))
+        )
+        subr_lengths = cython.cast(
+            cython.p_Py_ssize_t, PyMem_Malloc(count * cython.sizeof(cython.Py_ssize_t))
+        )
+        if subr_data == cython.NULL or subr_lengths == cython.NULL:
+            PyMem_Free(subr_data)
+            PyMem_Free(subr_lengths)
+            raise MemoryError()
+    contours: list = []
+    try:
+        for i in range(count):
+            subr = subrs[i]
+            if type(subr) is not bytes:
+                return None
+            subr_data[i] = cython.cast(cython.p_const_uchar, cython.cast(bytes, subr))
+            subr_lengths[i] = len(cython.cast(bytes, subr))
+        state.subrs = subr_data
+        state.subr_lengths = subr_lengths
+        status = execute(
+            cython.address(state), cython.cast(cython.p_const_uchar, charstring), len(charstring), 0
+        )
+        if status == T1_DECLINE:
+            return None
+        end_path(cython.address(state))
+        if state.failed:
+            raise MemoryError()
+        start: cython.Py_ssize_t = 0
+        end: cython.Py_ssize_t
+        x: cython.double
+        y: cython.double
+        for i in range(state.end_count):
+            end = state.ends[i]
+            if end - start >= 3:
+                points: list = []
+                for j in range(start, end):
+                    x = state.xs[j]
+                    y = state.ys[j]
+                    points.append(((x * a + y * c + e) * 1000.0, (x * b + y * d + f) * 1000.0))
+                contours.append(tuple(points))
+            start = end
+    finally:
+        PyMem_Free(subr_data)
+        PyMem_Free(subr_lengths)
+        PyMem_RawFree(state.xs)
+        PyMem_RawFree(state.ys)
+        PyMem_RawFree(state.ends)
+    return tuple(contours)

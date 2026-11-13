@@ -80,7 +80,7 @@ lazy from core_pdf_cythonized._text_array import (
     text_advance,
 )
 lazy from core_pdf_cythonized._truetype import truetype_contours
-lazy from core_pdf_cythonized._type1 import decrypt_type1, type1_glyph_bounds
+lazy from core_pdf_cythonized._type1 import decrypt_type1, type1_glyph_bounds, type1_glyph_contours
 lazy from core_pdf_cythonized._type2 import type2_glyph_geometry
 lazy from core_pdf_cythonized._xref_headers import object_headers_match
 
@@ -130,6 +130,7 @@ __all__ = (
     "decode_arithmetic_generic_template0",
     "decrypt_type1",
     "type1_glyph_bounds",
+    "type1_glyph_contours",
     "distinct_uint16_rows",
     "fill_edge_rows",
     "fill_glyph_coverage",

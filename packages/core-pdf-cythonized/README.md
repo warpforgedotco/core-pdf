@@ -145,9 +145,14 @@ Python would resolve differently (negative, fractional, out of range), division
 by zero and truncated numbers return None, and
 `core_pdf.impl.fonts.program_type1` draws the same glyph with core's Python Type 1
 interpreter (`core_pdf.impl.fonts.outline_pens`), which follows fontTools to the same
-doubles. `scripts/check_font_programs.py` measures every sampled Type 1 glyph of the
-upstream test files both ways, and against fontTools, and fails on any bounds whose
-bits differ.
+doubles. `type1_glyph_contours` runs the same interpreter collecting the outline: each
+curve flattened in eight steps as `recording_to_contours` does (libm `pow` for the cubes,
+as Python's `**`), each contour closed back to its start, and the points mapped through
+the font matrix in `transform_contours`' order. It declines what the bounds do, and
+`Type1FontProgram.glyph_contours` records and flattens those glyphs in Python, which the
+bounds fallback keeps anyway. `scripts/check_font_programs.py` measures and outlines every
+sampled Type 1 glyph of the upstream test files both ways, and against fontTools, and fails
+on any bounds or point whose bits differ.
 
 Each of these makes divergence possible where elsewhere it is not, so a change to either
 side has to be made in both.
@@ -226,6 +231,7 @@ Nothing checks the result on the platforms that build wheels.
 | `composite_knockout_element`, `composite_knockout_group` | `core_pdf.impl.spec.s_11_transparency.groups` and `core_pdf.impl.render.target` (both deleted) | 7.06x on the fused wrapper |
 | `decode_arithmetic_generic_template0` | `core_pdf.impl.jbig2.codec` (deleted, with `JBIG2MQDecoder` and the `MQ_*` tables) | 69x over the 18 generic regions the JBIG2 fixtures decode (168 to 2.4 ns/px); render of no_bad_redactions.4.1 1424 to 77 ms, the two SCORE-Bench JBIG2 scans -31% and -40% |
 | `merge_collinear_rows` | the sequential merge loop over `tolist()` rows in `core_pdf.impl.extract.grids.merge_collinear_segments` (deleted); the same comparisons, `min`/`max` and averaging in double precision, pinned to that loop by a randomized test | table detection on issue-301 (18,560 ruled segments) 11.2 to 4.8 ms per first-page extract |
+| `type1_glyph_contours` | nothing deleted: `Type1FontProgram.glyph_contours`' recording, flattening and transform, which the bounds fallback's interpreter keeps for what it declines | 13,954 of 14,263 corpus Type 1 glyphs with bit-identical contours; first-page render of layout-parser-paper, whose glyph outlines were 46% of it, 57 to 34 ms (-41%) |
 | `type1_glyph_bounds` | nothing deleted: mirrors fontTools' `T1CharString.draw` into a `BoundsPen`, which `core_pdf.impl.fonts.program_type1.Type1FontProgram.glyph_bbox_for_gid` keeps, in core's own interpreter, for what it declines | about 500 us per glyph in Python, 99% of 10,222 corpus Type 1 glyphs taking the compiled path with bit-identical bounds; 3-page extract of layout-parser-paper 72 to 44 ms, Type1-Font-Format 92 to 64 ms, 2201.00069 143 to 119 ms |
 | `glyph_feature_cells` | the numpy cell measurement of `core_pdf.impl.fonts.cff_repair.feature_from_contours` (deleted), which keeps `feature_from_points` for the non-finite inputs the kernel declines | 57 to 18 us per glyph feature over the NASA CMap sample's CFF repair glyphs (about 200 points each), where some twenty array operations ran on arrays too small to amortize them |
 | `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts.glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |

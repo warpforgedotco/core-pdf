@@ -10,9 +10,10 @@ the upstream corpora, and on OpenType CFF and CFF2 fonts built from the corpora'
 - TrueType: the glyph names, the Unicode and code cmaps, the metrics and loca table, each
   composite's components, and the drawing of sampled glyphs, pen operation for operation;
 - OpenType: the glyph names, and each sampled glyph's decomposed drawing and bounds;
-- Type 1: each sampled glyph's drawing, and its bounds drawn in Python; and the bounds
-  core-pdf-cythonized's type1_glyph_bounds gives, where it does not decline, against the
-  Python bounds. It fails if the kernel took no glyph.
+- Type 1: each sampled glyph's drawing, and its bounds drawn in Python; and the bounds and
+  contours core-pdf-cythonized's type1_glyph_bounds and type1_glyph_contours give, where
+  they do not decline, against the Python bounds and the contours recording_to_contours and
+  transform_contours make of the Python drawing. It fails if either kernel took no glyph.
 
 Drawings and bounds must be equal to the last bit; a read that fails must fail on both
 sides. Needs fontTools and the upstream submodules:
@@ -45,9 +46,10 @@ from core_pdf.impl.fonts import program_truetype as core_truetype
 from core_pdf.impl.fonts.outline_pens import BoundsSink, Type1Outline, draw_decomposed
 from core_pdf.impl.fonts.program_truetype import OpenTypeFontProgram, TrueTypeFontProgram
 from core_pdf.impl.fonts.program_type1 import Type1FontProgram
+from core_pdf.impl.fonts.raster_kernel import transform_contours
 from core_pdf.impl.fonts.sfnt import GlyphOutlines, placeholder_glyph_id, placeholder_glyph_order
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf_cythonized import type1_glyph_bounds
+from core_pdf_cythonized import type1_glyph_bounds, type1_glyph_contours
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "tests/upstream"
@@ -530,6 +532,17 @@ def check_program_contours(data: bytes) -> list[str]:
 # Type 1.
 
 TYPE1_KERNEL: Counter[str] = Counter()
+TYPE1_CONTOURS: Counter[str] = Counter()
+
+
+def contour_bits(contours: Any) -> Any:
+    """Contours compared point by point, each coordinate by its type and bits."""
+    return tuple(
+        tuple(
+            tuple((type(value), struct.pack(">d", value)) for value in point) for point in contour
+        )
+        for contour in contours
+    )
 
 
 def float_bits(bounds: Any) -> Any:
@@ -598,6 +611,26 @@ def check_type1(data: bytes, length1: int | None) -> list[str]:
             TYPE1_KERNEL["taken"] += 1
             if failed(python_bounds) or float_bits(compiled[1]) != float_bits(python_bounds[1]):
                 problems.append(f"kernel bounds of {name}")
+        compiled_contours = outcome(
+            lambda name=name: type1_glyph_contours(
+                program.charstring_data[name], program.subr_data, program.font_matrix
+            )
+        )
+        if failed(compiled_contours):
+            problems.append(f"kernel contours of {name}: {compiled_contours[1]}")
+        elif compiled_contours[1] is None:
+            TYPE1_CONTOURS["declined"] += 1
+        else:
+            TYPE1_CONTOURS["taken"] += 1
+            python_contours = outcome(
+                lambda ours=ours: transform_contours(
+                    core_truetype.recording_to_contours(ours[1]), program.font_matrix
+                )
+            )
+            if failed(ours) or failed(python_contours):
+                problems.append(f"kernel contours of {name}: Python failed")
+            elif contour_bits(compiled_contours[1]) != contour_bits(python_contours[1]):
+                problems.append(f"kernel contours of {name}")
     return problems
 
 
@@ -640,8 +673,15 @@ def main() -> int:
         f"Type 1 glyph bounds: {TYPE1_KERNEL['taken']} taken by the kernel,",
         f"{TYPE1_KERNEL['declined']} declined",
     )
+    print(
+        f"Type 1 glyph contours: {TYPE1_CONTOURS['taken']} taken by the kernel,",
+        f"{TYPE1_CONTOURS['declined']} declined",
+    )
     if not TYPE1_KERNEL["taken"]:
         print("the Type 1 bounds kernel took no glyph")
+        return 1
+    if not TYPE1_CONTOURS["taken"]:
+        print("the Type 1 contour kernel took no glyph")
         return 1
     if failures:
         print(f"{len(failures)} fonts differ:")

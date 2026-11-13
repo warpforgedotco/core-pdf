@@ -6,3 +6,6 @@ def type1_glyph_bounds(
     subrs: tuple[bytes, ...],
     matrix: tuple[float, float, float, float, float, float],
 ) -> tuple[float, float, float, float] | tuple[()] | None: ...
+def type1_glyph_contours(
+    charstring: bytes, subrs: tuple[bytes, ...], matrix: tuple[float, ...]
+) -> tuple[tuple[tuple[float, float], ...], ...] | None: ...
