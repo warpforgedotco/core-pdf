@@ -404,28 +404,43 @@ class TableIndex(GeneratedRecord):
     table: Table
     rows: tuple[IndexedRow, ...]
     frame: BoxIndex | None
+    # The row of each box in frame, the rows holding a cell without one, and the cell count.
+    frame_rows: tuple[int, ...]
+    unframed_rows: frozenset[int]
+    cell_count: int
 
     @classmethod
     def build(cls, table: Table) -> TableIndex:
         rows: list[IndexedRow] = []
         boxes: list[Rectangle] = []
-        for row in table.rows:
+        frame_rows: list[int] = []
+        unframed_rows: set[int] = set()
+        for row_index, row in enumerate(table.rows):
             cells = tuple(cell for cell in row if cell.text)
             texts = tuple(collapse_ws(cell.text) for cell in cells)
             indexes: list[int] = []
             for cell in cells:
                 if cell.bbox is None:
                     indexes.append(-1)
+                    unframed_rows.add(row_index)
                 else:
                     indexes.append(len(boxes))
                     boxes.append(cell.bbox)
+                    frame_rows.append(row_index)
             rows.append(
                 IndexedRow(
                     cells, texts, tuple(content_tokens(text) for text in texts), tuple(indexes)
                 )
             )
         frame = BoxIndex.from_boxes(boxes) if boxes else None
-        return cls(table, tuple(rows), frame)
+        return cls(
+            table,
+            tuple(rows),
+            frame,
+            tuple(frame_rows),
+            frozenset(unframed_rows),
+            sum(len(row.cells) for row in rows),
+        )
 
 
 def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
@@ -436,14 +451,20 @@ def line_duplicates_table(text: str, box: Rectangle, index: TableIndex) -> bool:
     tokens = content_tokens(normalized)
     if index.frame is None:
         touches = covered = numpy.zeros(0, dtype=bool)
+        visited = index.unframed_rows
     else:
         intersections = index.frame.intersection_areas(box)
         touches = intersections > 0.0
         covered = index.frame.overlap_of(box, intersections) >= 0.90
+        # Only a row with a touched cell or a cell without a box keeps a cell below.
+        frame_rows = index.frame_rows
+        visited = index.unframed_rows.union(
+            [frame_rows[frame_index] for frame_index in numpy.flatnonzero(touches).tolist()]
+        )
     participating_cells: list[TableCell] = []
-    total_cells = 0
-    for row in index.rows:
-        total_cells += len(row.cells)
+    total_cells = index.cell_count
+    for row_index in sorted(visited):
+        row = index.rows[row_index]
         kept = [
             position
             for position, frame_index in enumerate(row.frame_indexes)
