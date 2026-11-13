@@ -72,7 +72,6 @@ benchmark = [
 src = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src", "."]
 extend-exclude = [
     ".claude/worktrees",
-    "src/core_pdf/_vendor/fontTools",
     "tests/upstream",
 ]
 line-length = 100
@@ -179,8 +178,9 @@ select = [
 ]
 
 ignore = [
-    # The one getattr() flagged reads an attribute that the vendored fontTools
-    # DirectoryEntry does not declare; `ty` rejects direct attribute access there.
+    # The getattr() calls flagged read attributes their types do not declare (a slot
+    # descriptor in core_records, a pypdf object in the merge writer); `ty` rejects
+    # direct attribute access there.
     "B009",   # getattr with a constant attribute value
     # Every zip() flagged here is either preceded by an explicit length check or
     # is an intentional pairwise zip(xs, xs[1:]); strict=True would be wrong.
@@ -194,7 +194,6 @@ ignore = [
 python_version = "3.15"
 files = ["src/core_pdf", "packages/core-pdf-ocr/src/core_pdf_ocr", "packages/core-pdf-compat/src/core_pdf_compat", "packages/core-pdf-validate/src/core_pdf_validate", "packages/core-records/src/core_records", "packages/core-pdf-cythonized/src/core_pdf_cythonized"]
 mypy_path = ["src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src", "packages/core-pdf-validate/src", "packages/core-records/src", "packages/core-pdf-cythonized/src"]
-exclude = ["src/core_pdf/_vendor/fontTools"]
 show_error_codes = true
 ignore_missing_imports = true
 disallow_untyped_defs = true
@@ -208,7 +207,6 @@ root = [".", "src", "packages/core-pdf-ocr/src", "packages/core-pdf-compat/src",
 [tool.ty.src]
 exclude = [
     ".claude/worktrees",
-    "src/core_pdf/_vendor/fontTools",
     "tests/upstream",
     # Runs in the isolated PEP 517 build environment, where Cython is present
     # and the dev venv it would be checked against is not.
@@ -228,9 +226,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 core_pdf = ["py.typed"]
-"core_pdf._vendor.fontTools" = ["LICENSE.txt", "LICENSE.external.txt"]
-"core_pdf._vendor.icc" = ["*.icc", "README.md"]
-"core_pdf._vendor.fontTools.ttLib.tables" = ["table_API_readme.txt"]
 "core_pdf.impl.data.wordlists" = [
     "*.txt.gz",
     "*.bin",
@@ -238,6 +233,7 @@ core_pdf = ["py.typed"]
     "LICENSE*",
 ]
 "core_pdf.impl.data" = ["raster_fonts/**", "cid_unicode/*.bin.gz"]
+"core_pdf.impl.data.icc" = ["*.icc", "README.md"]
 "core_pdf.impl.adobe_fonts.cmap" = ["data/cmaps/**"]
 "core_pdf.impl.adobe_fonts._vendor.font_data" = ["LICENSE*", "*.md"]
 "core_pdf.impl.adobe_fonts.afm" = ["*.txt", "*.md"]

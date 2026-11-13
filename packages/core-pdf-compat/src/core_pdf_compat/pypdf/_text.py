@@ -1447,25 +1447,6 @@ class LegacyTextExtractor(TextMachine[LegacyFont | UnknownFont]):
         # The visitor saw each piece of the form's text while it was extracted.
 
 
-VENDORED_FONTTOOLS_LOGGER = logging.getLogger("core_pdf._vendor.fontTools")
-VENDORED_FONTTOOLS_LOGGER.addHandler(logging.NullHandler())
-
-
-@contextmanager
-def font_programs_quiet() -> Generator[None]:
-    """Keep the messages of core-pdf's bundled fontTools to itself in the block.
-
-    core-pdf reads font programs to extract text, where pypdf does not read them at all, so
-    what fontTools says about one is nothing pypdf would log.
-    """
-    propagate = VENDORED_FONTTOOLS_LOGGER.propagate
-    VENDORED_FONTTOOLS_LOGGER.propagate = False
-    try:
-        yield
-    finally:
-        VENDORED_FONTTOOLS_LOGGER.propagate = propagate
-
-
 @contextmanager
 def irregular_dictionaries_reported(reader: Any) -> Generator[None]:
     """Read as pypdf the objects with an irregular dictionary core first parsed in the block.

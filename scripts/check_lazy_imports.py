@@ -27,7 +27,7 @@ DEFERRED = (
     "core_pdf.impl.crypto.ciphers",
     "core_pdf.impl.crypto.pdf_mac",
     "imagecodecs",
-    "core_pdf._vendor.fontTools.ttLib",
+    "core_pdf.impl.fonts.sfnt",
     "core_pdf.impl.document.structure",
     "core_pdf.impl.extract.table_core",
     "core_pdf.impl.graphics.images",
