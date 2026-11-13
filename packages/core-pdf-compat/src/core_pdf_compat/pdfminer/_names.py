@@ -14,11 +14,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from core_pdf.impl.exceptions import PdfParseError
-from core_pdf.impl.recovery_lexer import PdfLexer
+from core_pdf.impl.base.exceptions import PdfParseError
+from core_pdf.impl.base.types import PdfReference
+from core_pdf.impl.recovery.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax import lexer as spec_lexer
 from core_pdf.impl.spec.s_07_syntax.xref import key_for
-from core_pdf.impl.types import PdfReference
 
 # pdfminer.six's END_LITERAL.
 END_LITERAL = re.compile(rb"[#/%\[\]()<>{}\s]")

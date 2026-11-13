@@ -5,8 +5,8 @@ import math
 import re
 from typing import Any, NamedTuple
 
-from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.geometry import flip_rect_vertical, interval_overlap
+from core_pdf.impl.base.exceptions import PdfError
+from core_pdf.impl.base.geometry import flip_rect_vertical, interval_overlap
 from core_pdf_compat.pdfminer._layout import LTChar, LTTextBox
 
 # unstructured's default PDF_ANNOTATION_THRESHOLD.

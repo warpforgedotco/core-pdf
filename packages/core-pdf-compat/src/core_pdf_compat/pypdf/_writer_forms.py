@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import Any, NamedTuple, cast
 
 from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA
-from core_pdf.impl.fonts_metrics import FONT_DATA, standard_14_widths
+from core_pdf.impl.fonts.metrics import FONT_DATA, standard_14_widths
 
 from ._page_merge import Transformation
 from .constants import FieldDictionaryAttributes as FA  # noqa: N814

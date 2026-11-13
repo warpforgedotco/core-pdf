@@ -9,8 +9,8 @@ import sys
 from typing import Any
 
 from core_pdf import EditableDocument, PdfDocument
-from core_pdf.impl.exceptions import PdfError, PdfUnsupportedError
-from core_pdf.impl.types import PdfString
+from core_pdf.impl.base.exceptions import PdfError, PdfUnsupportedError
+from core_pdf.impl.base.types import PdfString
 
 PATTERNS = (
     "tests/upstream/pdfplumber/tests/pdfs/*.pdf",

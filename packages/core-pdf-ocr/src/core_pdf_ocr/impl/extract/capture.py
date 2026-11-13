@@ -9,10 +9,16 @@ from typing import Any
 
 lazy import numpy
 
-from core_pdf.impl import extract_capture, extract_contracts
-from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
-from core_pdf.impl.capture_records import CapturedDrawing, CapturedLines
-from core_pdf.impl.extract_capture import (
+from core_pdf.impl.base.geometry import bbox_area, bbox_union, rect_tuple
+from core_pdf.impl.base.glyphs import GlyphObservation, UnicodeSource
+from core_pdf.impl.base.runs import TextRun
+from core_pdf.impl.base.spatial import BoxIndex
+from core_pdf.impl.base.text import normalize_extracted_text
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedLines
+from core_pdf.impl.extract import capture as extract_capture
+from core_pdf.impl.extract import contracts as extract_contracts
+from core_pdf.impl.extract.capture import (
     STRUCTURE_UNSET,
     analyze_text,
     capture_runs,
@@ -20,16 +26,11 @@ from core_pdf.impl.extract_capture import (
     promoted_hidden_runs,
     run_uses_actual_text,
 )
-from core_pdf.impl.extract_contracts import (
+from core_pdf.impl.extract.contracts import (
     GlyphEvidence,
     ObservationBatch,
 )
-from core_pdf.impl.geometry import bbox_area, bbox_union, rect_tuple
-from core_pdf.impl.glyphs import GlyphObservation, UnicodeSource
-from core_pdf.impl.graphics_filter_registry import declared_filter_names
-from core_pdf.impl.runs import TextRun
-from core_pdf.impl.spatial import BoxIndex
-from core_pdf.impl.text import normalize_extracted_text
+from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf_ocr.impl.extract.contracts import (
     VECTOR_PAINT_KINDS,
     PageAnalysis,

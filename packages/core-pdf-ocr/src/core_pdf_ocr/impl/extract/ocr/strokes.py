@@ -8,15 +8,15 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import TypeAlias
 
-from core_pdf.impl.capture_records import CapturedDrawing, CapturedPath
-from core_pdf.impl.geometry import (
+from core_pdf.impl.base.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_union,
     points_bbox,
     rect_tuple,
 )
-from core_pdf.impl.types import GeneratedRecord, Rectangle
+from core_pdf.impl.base.types import GeneratedRecord, Rectangle
+from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath
 
 GlyphSignature: TypeAlias = tuple[tuple[tuple[bool, tuple[tuple[int, int], ...]], ...], ...]
 GlyphTopology: TypeAlias = tuple[tuple[tuple[bool, int], ...], ...]

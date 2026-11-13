@@ -4,19 +4,19 @@ from __future__ import annotations
 
 lazy import numpy
 
-from core_pdf.impl.extract_grids import (
-    axis_segments,
-    grid_components,
-    split_grid_component,
-)
-from core_pdf.impl.geometry import (
+from core_pdf.impl.base.geometry import (
     bbox_area,
     bbox_intersection_area,
     bbox_tuple,
     bbox_union,
     rect_tuple,
 )
-from core_pdf.impl.spatial import BoxIndex
+from core_pdf.impl.base.spatial import BoxIndex
+from core_pdf.impl.extract.grids import (
+    axis_segments,
+    grid_components,
+    split_grid_component,
+)
 from core_pdf_ocr.impl.extract.contracts import (
     MAX_OCR_PIXELS,
     VECTOR_PAINT_KINDS,

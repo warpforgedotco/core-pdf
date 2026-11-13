@@ -6,18 +6,18 @@ from functools import lru_cache
 from typing import Any
 
 from core_pdf._vendor.fontTools.agl import LEGACY_AGL2UV, toUnicode
-from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.fonts_cmap import resolve_cmap_decoder
-from core_pdf.impl.fonts_decoder import FontDecoder
-from core_pdf.impl.fonts_metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
-from core_pdf.impl.geometry import bbox_union
-from core_pdf.impl.pdf_values import recover_pdf_name
+from core_pdf.impl.base.exceptions import PdfError
+from core_pdf.impl.base.geometry import bbox_union
+from core_pdf.impl.base.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
+from core_pdf.impl.base.values import recover_pdf_name
+from core_pdf.impl.fonts.cmap import resolve_cmap_decoder
+from core_pdf.impl.fonts.decoder import FontDecoder
+from core_pdf.impl.fonts.metrics import FONT_DATA, LIGATURE_TEXT_TO_CHAR
 from core_pdf.impl.spec.s_09_fonts.data.base_encodings import (
     MAC_ROMAN_ENCODING,
     STANDARD_ENCODING,
     WIN_ANSI_ENCODING,
 )
-from core_pdf.impl.types import PdfName, PdfString, RecordType, ReplaceFields, ReprFields
 
 from ._zapf_dingbats import ZAPF_DINGBATS_WIDTHS
 

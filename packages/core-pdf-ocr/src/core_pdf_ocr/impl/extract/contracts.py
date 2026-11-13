@@ -5,11 +5,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from core_pdf.impl import extract_contracts
-from core_pdf.impl.extract_contracts import (
+from core_pdf.impl.base.types import GeneratedRecord, RecordType, field
+from core_pdf.impl.extract import contracts as extract_contracts
+from core_pdf.impl.extract.contracts import (
     ObservationBatch,
 )
-from core_pdf.impl.types import GeneratedRecord, RecordType, field
 
 PSM_AUTO = 3
 PSM_SPARSE_TEXT = 11

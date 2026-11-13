@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple, NoReturn, cast
 lazy import secrets
 
-from core_pdf.impl.object_serialize import serialize_object
+from core_pdf.impl.base.types import PdfReference
+from core_pdf.impl.document.object_writer import serialize_object
 from core_pdf.impl.spec.exceptions import PdfParseError as CorePdfParseError
-from core_pdf.impl.types import PdfReference
-lazy from core_pdf.impl.document_editing import (
+lazy from core_pdf.impl.document.editing import (
     TRAILER_KEYS,
     EditableDocument,
     SavedPdf,

@@ -6,10 +6,11 @@ from functools import partial
 from typing import Any, cast
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl.exceptions import PdfError
-from core_pdf.impl.pdf_values import recover_pdf_name
-from core_pdf.impl.recovery_policy import RecoveryMode
-from core_pdf.impl.recovery_xref import StrictXRefScanner, XRefScanner
+from core_pdf.impl.base.exceptions import PdfError
+from core_pdf.impl.base.types import PdfByteBuffer, PdfReference
+from core_pdf.impl.base.values import recover_pdf_name
+from core_pdf.impl.recovery.policy import RecoveryMode
+from core_pdf.impl.recovery.xref import StrictXRefScanner, XRefScanner
 from core_pdf.impl.spec.s_07_syntax.xref import (
     PdfXRefEntry,
     XRefRevision,
@@ -18,7 +19,6 @@ from core_pdf.impl.spec.s_07_syntax.xref import (
     key_for,
     merge_xref_sections,
 )
-from core_pdf.impl.types import PdfByteBuffer, PdfReference
 
 from .._shared import parse_indirect_object_at
 

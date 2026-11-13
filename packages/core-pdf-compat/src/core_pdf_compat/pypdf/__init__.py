@@ -12,17 +12,17 @@ from pathlib import Path
 from typing import Any, cast
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import (
+from core_pdf.impl.base.exceptions import (
     PdfDecryptionError,
     PdfInvalidPermissionsError,
     PdfUnsupportedError,
 )
-from core_pdf.impl.recovery_lexer import PdfLexer as RecoveryLexer
+from core_pdf.impl.base.types import PdfName, PdfReference, PdfString
+from core_pdf.impl.recovery.lexer import PdfLexer as RecoveryLexer
 from core_pdf.impl.spec.exceptions import PdfParseError, PdfPasswordError
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry, key_for
-from core_pdf.impl.types import PdfName, PdfReference, PdfString
 from core_pdf_compat._shared import ClosingMixin, PdfInput
 from core_pdf_compat.pdfminer.pdftypes import DocumentView
 from core_pdf_compat.pypdf._configuration import (

@@ -109,35 +109,35 @@ line-length = 100
     "SIM210",
     "SIM300",
 ]
-"src/core_pdf/impl/graphics_stream_decoding.py" = ["ARG001"]
+"src/core_pdf/impl/graphics/stream_decoding.py" = ["ARG001"]
 # Colour converters share one (values, space, context) signature.
-"src/core_pdf/impl/graphics_image_samples.py" = ["ARG001"]
+"src/core_pdf/impl/graphics/image_samples.py" = ["ARG001"]
 # FURB136 rewrites `a if a < b else b` back into min()/max(). Both spellings
 # are fine, but min(a, b) is a call with tuple packing where the conditional
 # is a compare and a jump -- measured 3.2x cheaper. These run per glyph, over
 # coordinates as_floats has already proved finite, so the NaN difference the
 # two spellings have cannot arise here.
-"src/core_pdf/impl/capture_glyphs.py" = ["FURB136"]
+"src/core_pdf/impl/capture/glyphs.py" = ["FURB136"]
 # The same for the pdfminer layout's distance between every pair of text boxes; the
 # conditionals are written as min(first, other) evaluates, so NaN gives the same result.
 "packages/core-pdf-compat/src/core_pdf_compat/pdfminer/_layout.py" = ["FURB136"]
 # Scanner callbacks share the (data, pos, ..., semantic_context) signature.
-"src/core_pdf/impl/recovery_xref.py" = ["ARG001", "ARG004"]
+"src/core_pdf/impl/recovery/xref.py" = ["ARG001", "ARG004"]
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
-"src/core_pdf/impl/capture_tolerant_state.py" = ["ARG002"]
-"src/core_pdf/impl/capture_recording.py" = ["ARG002"]
+"src/core_pdf/impl/capture/tolerant_state.py" = ["ARG002"]
+"src/core_pdf/impl/capture/recording.py" = ["ARG002"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
 "src/core_pdf/impl/spec/s_07_syntax/lexer.py" = ["ARG002"]
 "src/core_pdf/impl/spec/s_07_syntax/objects.py" = ["ARG002"]
 "src/core_pdf/impl/spec/s_07_syntax/resolver.py" = ["ARG002"]
 "src/core_pdf/impl/spec/s_07_content/streams.py" = ["ARG002"]
-"src/core_pdf/impl/recovery_lexer.py" = ["ARG002"]
-"src/core_pdf/impl/recovery_resolver.py" = ["ARG002"]
-"src/core_pdf/impl/fonts_cmap.py" = ["ARG002"]
+"src/core_pdf/impl/recovery/lexer.py" = ["ARG002"]
+"src/core_pdf/impl/recovery/resolver.py" = ["ARG002"]
+"src/core_pdf/impl/fonts/cmap.py" = ["ARG002"]
 # Glyph programs share one hook signature; the defaults and the null program
 # ignore the parts a program type does not need.
-"src/core_pdf/impl/fonts_program_base.py" = ["ARG002"]
+"src/core_pdf/impl/fonts/program_base.py" = ["ARG002"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "dataclasses.dataclass".msg = "Subclass core_records.GeneratedRecord, or use core_records.RecordType, instead"
 

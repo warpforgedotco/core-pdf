@@ -20,21 +20,21 @@ lazy import numpy
 
 from core_pdf import PdfDocument
 from core_pdf._vendor.fontTools.ttLib import TTLibError
-from core_pdf.impl.capture_page import capture_annotation_appearances
-from core_pdf.impl.capture_program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
-from core_pdf.impl.capture_recording import TextState
-from core_pdf.impl.collector import pauses_collector
-from core_pdf.impl.exceptions import PdfPasswordError, PdfUnsupportedError
-from core_pdf.impl.fonts_cmap import ToUnicodeCMap
-from core_pdf.impl.geometry import (
+from core_pdf.impl.base.collector import pauses_collector
+from core_pdf.impl.base.exceptions import PdfPasswordError, PdfUnsupportedError
+from core_pdf.impl.base.geometry import (
     bbox_intersects,
 )
-from core_pdf.impl.render_page import compose_page
+from core_pdf.impl.base.text import collapse_ws
+from core_pdf.impl.base.types import PdfReference, RecordType, ReplaceFields, ReprFields
+from core_pdf.impl.capture.page import capture_annotation_appearances
+from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CaptureOptions, PageProgram
+from core_pdf.impl.capture.recording import TextState
+from core_pdf.impl.fonts.cmap import ToUnicodeCMap
+from core_pdf.impl.render.page import compose_page
 from core_pdf.impl.spec.s_07_content.model import PATH_OPERAND_COUNTS, PATH_RECT, PdfPath
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
-from core_pdf.impl.text import collapse_ws
-from core_pdf.impl.types import PdfReference, RecordType, ReplaceFields, ReprFields
 
 from .._shared import parse_indirect_object_at
 

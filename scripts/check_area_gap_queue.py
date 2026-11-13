@@ -17,7 +17,7 @@ import math
 import random
 import sys
 
-from core_pdf.impl.spatial import AreaGapQueue
+from core_pdf.impl.base.spatial import AreaGapQueue
 from core_pdf_compat.pdfminer._layout import _PairQueue
 
 SPECIAL = (math.nan, math.inf, -math.inf, 0.0, -0.0, 1.0, 2.5)

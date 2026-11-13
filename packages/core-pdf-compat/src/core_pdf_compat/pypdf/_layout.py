@@ -15,8 +15,8 @@ from itertools import groupby
 from pathlib import Path
 from typing import Any
 
+from core_pdf.impl.base.types import PdfString
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, multiply_affine
-from core_pdf.impl.types import PdfString
 from core_pdf_compat._text_state import orientation
 from core_pdf_compat.pypdf.errors import PdfReadError
 from core_records import GeneratedRecord

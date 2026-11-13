@@ -35,6 +35,12 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 `core-pdf-cythonized` compiles its Python files with Cython, and a build can leave `.so` files beside them in `packages/core-pdf-cythonized/src/`. Those shadow later edits to the `.py` files. After changing that package, rebuild it with `uv sync --all-packages --reinstall-package core-pdf-cythonized` before testing.
 
+## Layout of `core_pdf.impl`
+
+`core_pdf.impl` is split into subpackages, lowest first: the floor packages `spec`, `adobe_fonts`, `jbig2`, `crypto`, `postscript` and `data`; `base` (shared types, geometry, values, caches, glyphs, runs); `output` (the structured `Document` and its serializers); `fonts`, `graphics` and `layout`; `recovery`; `capture`; `render` and `extract`; and `document`, which drives the rest. Every subpackage's `__init__.py` is empty: import modules by their full path, never through a package re-export, so a package import loads nothing. `scripts/check_impl_imports.py` imports every module and resolves every lazy import, which catches an import left pointing at a moved module.
+
+The modules were flat (`fonts_cmap.py`, `render_target.py`) until `scripts/restructure_impl.py` moved them. A branch made before that: merge or rebase it onto the commit before the restructure, run `uv run --no-project python scripts/restructure_impl.py`, commit, then rebase or merge onto the restructure. The script maps every old module to its new one, rewrites imports, strings and paths, and `--check` lists anything left.
+
 ## Lazy imports
 
 CI, development and the packages are Python 3.15 only. Modules import what a text extraction does not need with `lazy import` / `lazy from ... import`, which loads the module on first use; a `lazy` import must be at module level, outside `try` blocks, and cannot be `*`. Do not use `__lazy_modules__`. An eager `from module import name` of a name that module imported lazily loads it, so import such names from where they are defined. Code at module level that touches a lazily imported name (a constant, a default argument, a type alias assigned rather than declared with `type`) loads it at import, so keep such uses inside functions. `scripts/check_lazy_imports.py` fails if a text extraction loads a module that should stay deferred.

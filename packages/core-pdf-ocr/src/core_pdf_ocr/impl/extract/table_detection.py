@@ -8,15 +8,15 @@ from typing import cast
 
 lazy import numpy
 
-from core_pdf.impl import extract_contracts
-from core_pdf.impl.extract_contracts import ObservationBatch, ObservationSource
-from core_pdf.impl.extract_table_core import TableCandidate, TableContext
-from core_pdf.impl.extract_table_detection import TableDetector
-from core_pdf.impl.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
-from core_pdf.impl.output_model import Table, TableCell
-from core_pdf.impl.spatial import band_rows
-from core_pdf.impl.text import text_word_tokens
-from core_pdf.impl.types import Rectangle
+from core_pdf.impl.base.geometry import bbox_union, finite_rect, overlap_ratio_min_exact
+from core_pdf.impl.base.spatial import band_rows
+from core_pdf.impl.base.text import text_word_tokens
+from core_pdf.impl.base.types import Rectangle
+from core_pdf.impl.extract import contracts as extract_contracts
+from core_pdf.impl.extract.contracts import ObservationBatch, ObservationSource
+from core_pdf.impl.extract.table_core import TableCandidate, TableContext
+from core_pdf.impl.extract.table_detection import TableDetector
+from core_pdf.impl.output.model import Table, TableCell
 from core_pdf_ocr.impl.extract.contracts import PageAnalysis, PageEvidence
 
 CHART_NUMERIC_TOKEN = re.compile(r"^[+-]?(?:\d[\d,./%\-]*|\d[\d,./%\-]*\s+\d+)$")

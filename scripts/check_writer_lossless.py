@@ -29,11 +29,11 @@ from io import BytesIO
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.base.exceptions import PdfError
+from core_pdf.impl.base.types import PdfName, PdfReference
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_syntax.serialize import serialize_spaced_real
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.types import PdfName, PdfReference
 from core_pdf_compat.pypdf import PdfReader, PdfWriter
 from core_pdf_compat.pypdf.errors import PyPdfError
 from core_pdf_compat.pypdf.generic import IndirectObject, to_core

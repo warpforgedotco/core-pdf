@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from core_pdf import EditableDocument, PdfDocument
-from core_pdf.impl.exceptions import PdfError, PdfUnsupportedError
+from core_pdf.impl.base.exceptions import PdfError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.serialize import serialize_object
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream

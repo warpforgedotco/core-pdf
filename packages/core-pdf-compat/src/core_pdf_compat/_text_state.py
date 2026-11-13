@@ -3,9 +3,9 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator, Mapping, Sequence
 
-from core_pdf.impl.fonts_helpers import build_decode_table
+from core_pdf.impl.base.text import is_rtl_character
+from core_pdf.impl.fonts.helpers import build_decode_table
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, multiply_affine
-from core_pdf.impl.text import is_rtl_character
 
 PREDEFINED_ENCODING_CODECS = {
     "Identity-H": "utf-16-be",

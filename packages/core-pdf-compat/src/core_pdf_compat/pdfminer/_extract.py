@@ -9,8 +9,8 @@ lazy from html import escape
 lazy import numpy
 
 from core_pdf import PdfDocument, PdfPage
-from core_pdf.impl.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
-from core_pdf.impl.types import PdfName
+from core_pdf.impl.base.exceptions import PdfEmptySourceError, PdfError, PdfPasswordError
+from core_pdf.impl.base.types import PdfName
 
 from .._shared import PdfInput
 from ._layout import (

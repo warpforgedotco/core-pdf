@@ -9,16 +9,16 @@ from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from core_pdf.impl.exceptions import ExtractionScope
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.extract_selection import (
+from core_pdf.impl.base.exceptions import ExtractionScope
+from core_pdf.impl.base.geometry import bbox_tuple
+from core_pdf.impl.base.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
+from core_pdf.impl.base.types import GeneratedRecord, field
+from core_pdf.impl.extract.contracts import ObservationBatch
+from core_pdf.impl.extract.selection import (
     assemble_document,
     prepare_document_pages,
 )
-from core_pdf.impl.geometry import bbox_tuple
-from core_pdf.impl.glyphs import GlyphUnicodeSemantics, glyph_unicode_semantics
-from core_pdf.impl.output_model import Document
-from core_pdf.impl.types import GeneratedRecord, field
+from core_pdf.impl.output.model import Document
 from core_pdf_ocr.impl.extract.capture import (
     LearnedUnicodeMap,
     capture_from_program,
@@ -32,8 +32,8 @@ from core_pdf_ocr.impl.extract.ocr.strokes import (
 from core_pdf_ocr.impl.extract.pipeline import PageExtraction
 
 if TYPE_CHECKING:
-    from core_pdf.impl.document_document import PdfDocument
-    from core_pdf.impl.document_page import PdfPage
+    from core_pdf.impl.document.pdf_document import PdfDocument
+    from core_pdf.impl.document.pdf_page import PdfPage
 
 
 DOCUMENT_FONT_SEED_LIMIT = 4

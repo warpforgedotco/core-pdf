@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from core_pdf import EditableDocument, PdfDocument
-from core_pdf.impl.exceptions import PdfError
+from core_pdf.impl.base.exceptions import PdfError
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf_compat.pypdf import PdfReader, PdfWriter
 from core_pdf_compat.pypdf.errors import PyPdfError

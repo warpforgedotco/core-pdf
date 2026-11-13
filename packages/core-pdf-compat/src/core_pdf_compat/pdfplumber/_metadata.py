@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from core_pdf import PdfDocument
-from core_pdf.impl.types import PdfReference
+from core_pdf.impl.base.types import PdfReference
 
 
 class _Cycle(Exception):

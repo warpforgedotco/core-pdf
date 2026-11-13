@@ -2,7 +2,7 @@
 """Precompute the CID-to-Unicode votes of every packaged CID collection.
 
 Writes src/core_pdf/impl/data/cid_unicode/<Registry>-<Ordering>.bin.gz, which
-core_pdf.impl.fonts_unicode.CIDUnicodeMap reads. The sources, overrides, and
+core_pdf.impl.fonts.unicode.CIDUnicodeMap reads. The sources, overrides, and
 voting rules live here and run only to build those tables. Rerun it after
 changing them or the Adobe CMap data; tests/src/core_pdf/test_cid_unicode_tables.py
 fails until it is.
@@ -20,15 +20,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "src/core_pdf/impl/data/cid_unicode"
 
-from core_pdf.impl import fonts_unicode  # noqa: E402
 from core_pdf.impl.adobe_fonts.cmap.ranges import code_in_ranges, iter_codespace_range  # noqa: E402
-from core_pdf.impl.fonts_cmap import (  # noqa: E402
+from core_pdf.impl.fonts import unicode as fonts_unicode  # noqa: E402
+from core_pdf.impl.fonts.cmap import (  # noqa: E402
     CMapDecoder,
     resolve_cmap_decoder,
     resolve_cmap_resource,
     unicode_scalar_from_cmap_code,
 )
-from core_pdf.impl.fonts_unicode import (  # noqa: E402
+from core_pdf.impl.fonts.unicode import (  # noqa: E402
     CID_UNICODE_TABLE_ENTRY,
     CID_UNICODE_TABLE_HEADER,
     CID_UNICODE_TABLE_MAGIC,

@@ -5,8 +5,8 @@ from typing import Any
 
 lazy import numpy
 
-from core_pdf.impl.geometry import flip_rect_vertical
-from core_pdf.impl.types import GeneratedRecord
+from core_pdf.impl.base.geometry import flip_rect_vertical
+from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf_compat.pdfminer._layout import LTChar, LTFigure, LTText, LTTextBox
 
 from ._classification import (

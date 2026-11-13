@@ -7,9 +7,9 @@ from typing import NamedTuple
 
 lazy import numpy
 
-from core_pdf.impl.extract_capture import TextAnalysis, analyze_text
-from core_pdf.impl.extract_contracts import ObservationBatch
-from core_pdf.impl.types import GeneratedRecord, field
+from core_pdf.impl.base.types import GeneratedRecord, field
+from core_pdf.impl.extract.capture import TextAnalysis, analyze_text
+from core_pdf.impl.extract.contracts import ObservationBatch
 
 
 class CandidateMetrics(GeneratedRecord):

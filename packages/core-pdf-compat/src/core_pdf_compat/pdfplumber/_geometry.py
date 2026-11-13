@@ -16,7 +16,7 @@ import numbers
 from collections.abc import Collection
 from typing import Any
 
-from core_pdf.impl.types import PdfByteBuffer
+from core_pdf.impl.base.types import PdfByteBuffer
 
 from ..pdfminer._parsing import (
     MESSAGE,

@@ -3,8 +3,8 @@ from __future__ import annotations
 import mmap
 from typing import Any
 
-from core_pdf.impl.recovery_lexer import PdfLexer
-from core_pdf.impl.types import PdfSource
+from core_pdf.impl.base.types import PdfSource
+from core_pdf.impl.recovery.lexer import PdfLexer
 
 BBox = tuple[float, float, float, float]
 PdfInput = PdfSource

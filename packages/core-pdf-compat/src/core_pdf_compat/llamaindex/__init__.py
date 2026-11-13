@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from core_pdf.impl.types import GeneratedRecord, field
+from core_pdf.impl.base.types import GeneratedRecord, field
 
 from .. import pypdf
 

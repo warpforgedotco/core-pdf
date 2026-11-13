@@ -10,6 +10,7 @@ naming any deferred module that loaded.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -27,12 +28,12 @@ DEFERRED = (
     "core_pdf.impl.crypto.pdf_mac",
     "imagecodecs",
     "core_pdf._vendor.fontTools.ttLib",
-    "core_pdf.impl.document_structure",
-    "core_pdf.impl.extract_table_core",
-    "core_pdf.impl.graphics_images",
-    "core_pdf.impl.graphics_shading",
-    "core_pdf.impl.render_page",
-    "core_pdf.impl.render_target",
+    "core_pdf.impl.document.structure",
+    "core_pdf.impl.extract.table_core",
+    "core_pdf.impl.graphics.images",
+    "core_pdf.impl.graphics.shading",
+    "core_pdf.impl.render.page",
+    "core_pdf.impl.render.target",
     "core_pdf.impl.spec.s_11_transparency.blend",
 )
 
@@ -60,6 +61,11 @@ def loaded_modules(workload: str) -> set[str]:
 
 
 def main() -> int:
+    # A renamed module would otherwise never appear in sys.modules and pass unguarded.
+    missing = [name for name in DEFERRED if importlib.util.find_spec(name) is None]
+    if missing:
+        print(f"DEFERRED names that do not exist: {', '.join(missing)}")
+        return 1
     failed = False
     for workload in WORKLOADS:
         loaded = sorted(set(DEFERRED) & loaded_modules(workload))
