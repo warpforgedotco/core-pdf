@@ -380,7 +380,9 @@ class ContentInterpreter:
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
         decoder = decoder if decoder is not None else self.get_decoder()
         glyphs = decoder.decode_glyphs(data if isinstance(data, bytes) else bytes(data))
-        text = "".join(glyph.unicode for glyph in glyphs)
+        text = (
+            glyphs[0].unicode if len(glyphs) == 1 else "".join([glyph.unicode for glyph in glyphs])
+        )
         self.append_decoded_text(text, data, glyphs, decoder)
 
     def append_decoded_text(
@@ -399,12 +401,13 @@ class ContentInterpreter:
         if not text and not data:
             return
 
+        graphics = self.graphics
         adv_x, adv_y = decoder.text_advance_vector(
             data,
-            font_size=self.graphics.font_size,
-            char_space=self.graphics.char_space,
-            word_space=self.graphics.word_space,
-            horizontal_scale=self.graphics.horizontal_scale,
+            font_size=graphics.font_size,
+            char_space=graphics.char_space,
+            word_space=graphics.word_space,
+            horizontal_scale=graphics.horizontal_scale,
             glyphs=glyphs,
         )
         ta, tb, tc, td, te, tf = self.text_matrix
