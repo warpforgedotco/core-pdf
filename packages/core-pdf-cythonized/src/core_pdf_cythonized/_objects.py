@@ -62,6 +62,9 @@ class ObjectScanner:
     # The strict lexer's reading: an invalid or null name escape and an endobj glued to a
     # value are left to the lexer, which raises, where the recovery reader keeps them.
     strict: cython.bint
+    # Set by a reading that took one of those three things the strict lexer leaves alone, so
+    # a reading without it is one the strict scanner makes too.
+    lenient: cython.bint
 
     def __init__(
         self,
@@ -92,6 +95,7 @@ class ObjectScanner:
         self.string_type = string_type
         self.reference_type = reference_type
         self.strict = strict
+        self.lenient = False
 
     def release(self):
         self.view = None
@@ -105,6 +109,10 @@ class ObjectScanner:
 
     def parse_array(self, pos: cython.Py_ssize_t, decipher=None, object_number=0, generation=0):
         return self.parse(pos, False, decipher, object_number, generation)
+
+    def read_was_strict(self) -> bool:
+        """Whether the last parse_indirect read nothing the strict scanner would not."""
+        return not self.lenient
 
     def parse_indirect(self, pos: cython.Py_ssize_t, decipher=None):
         """(object number, generation, value, end, complete) for the indirect object at pos.
@@ -143,6 +151,7 @@ class ObjectScanner:
         self.decipher = decipher
         self.object_number = object_number
         self.generation = generation_number
+        self.lenient = False
         try:
             if cursor + 1 < length and data[cursor] == 60 and data[cursor + 1] == 60:
                 value = self.dictionary(cython.address(cursor), 0)
@@ -370,14 +379,16 @@ class ObjectScanner:
                     continue
                 high = HEX_VALUE[data[index + 1]] if index + 1 < end else 255
                 low = HEX_VALUE[data[index + 2]] if index + 2 < end else 255
-                if high == 255 or low == 255 or (self.strict and (high << 4) | low == 0):
+                if high == 255 or low == 255 or (high << 4) | low == 0:
                     if self.strict:
                         return BAIL
-                    decoded.append(35)
-                    index += 1
-                else:
-                    decoded.append((high << 4) | low)
-                    index += 3
+                    self.lenient = True
+                    if high == 255 or low == 255:
+                        decoded.append(35)
+                        index += 1
+                        continue
+                decoded.append((high << 4) | low)
+                index += 3
             raw = bytes(decoded)
         else:
             raw = PyBytes_FromStringAndSize(
@@ -595,14 +606,16 @@ class ObjectScanner:
             return BAIL
         if object_number < 0 or not 0 <= generation <= 65535:
             return BAIL
-        if self.strict and (
+        if (
             object_number == 0
             or not self.canonical_digits(start, end)
             or not self.canonical_digits(next_start, next_end)
         ):
             # The strict lexer takes only plain digits without a leading zero, and object
             # numbers from 1; it is left to raise, or to read a lenient context's own way.
-            return BAIL
+            if self.strict:
+                return BAIL
+            self.lenient = True
         pos[0] = marker_end
         return self.reference_type(object_number, generation)
 
@@ -639,6 +652,7 @@ class ObjectScanner:
         end: cython.Py_ssize_t = self.word_end(start)
         if strip_endobj and not self.strict and end - start > 6 and self.is_endobj(end - 6):
             end -= 6
+            self.lenient = True
         if self.number_kind(start, end):
             return self.number_or_reference(start, end, pos)
         pos[0] = end

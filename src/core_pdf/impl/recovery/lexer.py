@@ -129,7 +129,7 @@ class ScannedLexer(lexer.PdfLexer):
     the lexer's own code then reads the same bytes from the same position.
     """
 
-    __slots__ = ("scanner", "scanner_rules")
+    __slots__ = ("scanner", "scanner_rules", "strict_reads")
 
     # Strict mode bails on whatever the spec's strict lexer reads differently from the reader.
     strict_scanner: ClassVar[bool] = False
@@ -144,6 +144,10 @@ class ScannedLexer(lexer.PdfLexer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.scanner: ObjectScanner | None = None
         self.scanner_rules: LexicalRules | None = None
+        # When a resolver hands it a dict, each indirect object the scanner reads whole, as
+        # the strict scanner would and with nothing to decipher, by offset: (object number,
+        # generation, end, value, the lexical rules the scanner read with).
+        self.strict_reads: dict[int, tuple[int, int, int, object, LexicalRules]] | None = None
         super().__init__(*args, **kwargs)
 
     def close(self) -> None:
@@ -205,7 +209,9 @@ class ScannedLexer(lexer.PdfLexer):
         nothing, leaves the rest -- and a header naming another object, which raises -- to
         the lexer's own code.
         """
-        scanned = self.object_scanner().parse_indirect(self.pos, self.decipher)
+        scanner = self.object_scanner()
+        start = self.pos
+        scanned = scanner.parse_indirect(start, self.decipher)
         if scanned is None:
             return MISSING
         number, generation, value, end, complete = scanned
@@ -216,6 +222,15 @@ class ScannedLexer(lexer.PdfLexer):
             return MISSING
         self.pos = end
         if complete:
+            reads = self.strict_reads
+            rules = self.scanner_rules
+            if (
+                reads is not None
+                and rules is not None
+                and self.decipher is None
+                and scanner.read_was_strict()
+            ):
+                reads[start] = (number, generation, end, value, rules)
             return value
         return self.parse_indirect_body(number, generation, value)
 
