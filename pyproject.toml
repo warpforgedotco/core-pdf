@@ -65,7 +65,7 @@ test = [
 ]
 benchmark = [
     "pytest>=9.2.0",
-    "pytest-codspeed>=5.0.3,<6",
+    "pytest-codspeed>=5.0.4,<6",
 ]
 
 [tool.ruff]
