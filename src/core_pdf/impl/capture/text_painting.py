@@ -536,22 +536,27 @@ def has_stock_text_methods(kind: type) -> bool:
     return known
 
 
-def append_tj_array(self: TextState, array: Any) -> None:
-    """TJ: its strings shown in one compiled loop, when this state and its font use the
-    methods the loop inlines and the capture records runs, else the interpreter's loop.
+def show_compiled_text_array(self: TextState, array: Any) -> bool:
+    """Show a TJ array's strings with the compiled loop, which shows each as append_text
+    would, when this state and its font use the methods the loop inlines and the capture
+    records runs. Returns False, having shown nothing, when the interpreter must.
 
     Tables exported from word processors kern every pair of characters, so a cell's array
-    shows one or two characters at a time; the loop shows each as append_text would.
+    shows one or two characters at a time, and most text is shown one Tj string at a time.
     """
     decoder = self.graphics.current_decoder
-    if (
-        decoder is None
-        or not self.options.text_runs
-        or self.sink is not self
-        or not has_stock_text_methods(type(self))
-        or type(decoder).text_advance_vector is not FontDecoder.text_advance_vector
-        or not show_text_array(self, array, decoder, TEXT_ARRAY_CONTEXT)
-    ):
+    return (
+        decoder is not None
+        and self.options.text_runs
+        and self.sink is self
+        and has_stock_text_methods(type(self))
+        and type(decoder).text_advance_vector is FontDecoder.text_advance_vector
+        and show_text_array(self, array, decoder, TEXT_ARRAY_CONTEXT)
+    )
+
+
+def append_tj_array(self: TextState, array: Any) -> None:
+    if not self.show_compiled_text_array(array):
         ContentInterpreter.append_tj_array(self, array)
 
 
