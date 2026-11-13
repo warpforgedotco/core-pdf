@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import ClassVar, TypeAlias
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
@@ -259,6 +260,12 @@ def parse_color_space(value: object, *, context: SemanticContext | None = None) 
     return parse_color_space_versioned(value, set(), version)
 
 
+@cites(
+    "ISO 32000-2",
+    "8.6.6.3",
+    since="1.3",
+    rule="an Indexed colour space may have a Separation or DeviceN base",
+)
 def parse_color_space_versioned(
     value: object, active: set[int], version: PdfVersion | None
 ) -> ColorSpace:

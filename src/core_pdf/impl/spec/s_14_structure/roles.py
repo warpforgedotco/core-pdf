@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Literal
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.text_string import decode_pdf_text_string
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
@@ -118,6 +119,7 @@ def name(value: object) -> str | None:
     return value.value if isinstance(value, PdfName) else None
 
 
+@cites("ISO 32000-2", "14.7.4", introduced="2.0", rule="structure namespaces and RoleMapNS")
 def resolve_namespace(
     value: object,
     resolve: Callable[[object], object],
@@ -160,6 +162,7 @@ def mapping_value(mapping: object, name: str, resolve: Callable[[object], object
     return None
 
 
+@cites("ISO 32000-2", "14.7.3", since="1.5", rule="a role map can remap standard structure types")
 def resolve_structure_role(
     name: object,
     *,

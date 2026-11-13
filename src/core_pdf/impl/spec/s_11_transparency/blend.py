@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 lazy import numpy
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfUnsupportedError
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
@@ -13,6 +14,13 @@ BlendMode = Literal["ColorDodge", "ColorBurn"]
 type BlendSamples = numpy.ndarray[Any, numpy.dtype[numpy.float64]]
 
 
+@cites("ISO 32000-2", "11.3.5.2", since="2.0", rule="revised ColorDodge and ColorBurn")
+@cites(
+    "ISO 32000-2",
+    "11.3.5.2",
+    extension="ADBE/1.7/5",
+    rule="revised ColorDodge and ColorBurn in PDF 1.7",
+)
 def revised_blending(context: SemanticContext | None) -> bool:
     if context is None:
         return True

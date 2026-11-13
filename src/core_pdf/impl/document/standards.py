@@ -13,6 +13,7 @@ from defusedxml.ElementTree import fromstring
 
 from core_pdf.impl.base.exceptions import PdfError, PdfParseError
 from core_pdf.impl.recovery.resolver import ObjectResolver
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_document.metadata import catalog_metadata_stream, info_dictionary
 from core_pdf.impl.spec.s_07_document.standards import (
     effective_pdf_version,
@@ -266,6 +267,7 @@ def discover_extensions(
     return tuple(extensions)
 
 
+@cites("ISO 32000-2", "7.12.3", since="2.0", rule="a developer extension declares its URL")
 def extension_diagnostics(standards: DocumentStandards) -> DocumentStandards:
     if not standards.extensions:
         return standards

@@ -41,6 +41,10 @@ To validate against the locked dependencies, use `uv run --locked` with the rele
 
 The modules were flat (`fonts_cmap.py`, `render_target.py`) until `scripts/restructure_impl.py` moved them. A branch made before that: merge or rebase it onto the commit before the restructure, run `uv run --no-project python scripts/restructure_impl.py`, commit, then rebase or merge onto the restructure. The script maps every old module to its new one, rewrites imports, strings and paths, and `--check` lists anything left.
 
+## Specification citations
+
+Code whose behaviour depends on the PDF version, or that implements a feature an edition, extension or embedded standard adds, carries a `@cites(...)` marker from `core_pdf.impl.spec.citations` naming the specification (an id of `SPECIFICATIONS`), the clause, a one-line `rule`, and `since`/`until` for a version rule (`introduced` for a feature read in every version, `extension` or `profile` for what adds it). A module implementing one specification starts its docstring with the citation, as in `"""ISO 32000-2 7.8: ..."""`. `uv run --all-packages python scripts/spec_index.py` rewrites `docs/spec-index.md`, and its `--check`, in CI, fails on a stale index, an unknown id, or a function comparing a PDF version without a `since`/`until` marker.
+
 ## Lazy imports
 
 CI, development and the packages are Python 3.15 only. Modules import what a text extraction does not need with `lazy import` / `lazy from ... import`, which loads the module on first use; a `lazy` import must be at module level, outside `try` blocks, and cannot be `*`. Do not use `__lazy_modules__`. An eager `from module import name` of a name that module imported lazily loads it, so import such names from where they are defined. Code at module level that touches a lazily imported name (a constant, a default argument, a type alias assigned rather than declared with `type`) loads it at import, so keep such uses inside functions. `scripts/check_lazy_imports.py` fails if a text extraction loads a module that should stay deferred.
