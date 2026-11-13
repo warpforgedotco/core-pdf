@@ -9,47 +9,23 @@ PdfDocument lists them as its methods.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.base.caches import DocumentCaches
-from core_pdf.impl.base.exceptions import (
-    PdfParseError,
-)
-from core_pdf.impl.base.raw_records import (
-    RawNamedDestination,
-)
-from core_pdf.impl.base.types import (
-    PdfName,
-    PdfReference,
-)
+from core_pdf.impl.base.exceptions import PdfParseError
+from core_pdf.impl.base.raw_records import RawNamedDestination
+from core_pdf.impl.base.types import PdfName, PdfReference
 from core_pdf.impl.base.values import parse_text_string, recover_pdf_name
 from core_pdf.impl.document.pdf_page import PAGE_INHERITED_KEYS, PdfPage
+from core_pdf.impl.document.source import first_indexes
 from core_pdf.impl.spec.s_07_document.page import PageNode, iter_page_nodes
-from core_pdf.impl.spec.s_07_syntax.inherited_values import (
-    collect_inherited_values,
-)
+from core_pdf.impl.spec.s_07_syntax.inherited_values import collect_inherited_values
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
-from core_pdf.impl.spec.s_07_syntax.types import (
-    InheritedValueMap,
-    PdfDict,
-    PdfValueResolver,
-)
+from core_pdf.impl.spec.s_07_syntax.types import InheritedValueMap, PdfDict, PdfValueResolver
 lazy from core_pdf.impl.base.pages import PageSelection, resolve_page_selection
 lazy from core_pdf.impl.recovery.trees import iter_number_tree_items
 lazy from core_pdf.impl.spec.s_07_document import document_labels
 lazy from core_pdf.impl.spec.s_07_document.document_labels import PageLabelStyle
-
-if TYPE_CHECKING:
-    pass
-
-
-from core_pdf.impl.document.source import (
-    first_indexes,
-)
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PageT, PdfDocument

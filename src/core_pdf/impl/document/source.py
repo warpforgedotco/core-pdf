@@ -11,38 +11,15 @@ import mmap
 from array import array
 from collections.abc import Iterable, Sequence
 from os import PathLike
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    BinaryIO,
-)
+from typing import Any, BinaryIO
 
 lazy import numpy
 
-from core_pdf.impl.base.exceptions import (
-    PdfEmptySourceError,
-    PdfSourceError,
-)
-from core_pdf.impl.base.types import (
-    PdfByteBuffer,
-    PdfSource,
-)
+from core_pdf.impl.base.exceptions import PdfEmptySourceError, PdfSourceError
+from core_pdf.impl.base.types import PdfByteBuffer, PdfSource
 from core_pdf.impl.base.values import recover_pdf_name
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfDict,
-)
-lazy from core_pdf_cythonized import (
-    object_headers_match,
-    regions_with_markers,
-)
-
-if TYPE_CHECKING:
-    pass
-
-
-if TYPE_CHECKING:
-    pass
-
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+lazy from core_pdf_cythonized import object_headers_match, regions_with_markers
 
 XREF_STREAM_MARKERS = (b"#", b"XRef", b"/W", b"/Size")
 

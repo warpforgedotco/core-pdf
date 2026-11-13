@@ -21,10 +21,7 @@ from core_pdf.impl.capture.records import (
     TilingPattern,
 )
 from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb
-from core_pdf.impl.graphics.images import (
-    PreparedImage,
-    prepare_image,
-)
+from core_pdf.impl.graphics.images import PreparedImage, prepare_image
 from core_pdf.impl.graphics.shading import PreparedShading, ShadingEvaluatorCache, prepare_shading
 from core_pdf.impl.render.blend import (
     BlendOp,

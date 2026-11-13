@@ -14,9 +14,7 @@ from typing import TYPE_CHECKING, Any
 lazy import numpy
 
 from core_pdf.impl.base.values import lenient_int
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
+from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import (
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     blend_normal_solid_array_numpy,
@@ -28,9 +26,7 @@ from core_pdf.impl.render.paths import (
     fill_path_crossing_spans,
     intersect_box,
 )
-from core_pdf.impl.render.raster_support import (
-    bounded_edges,
-)
+from core_pdf.impl.render.raster_support import bounded_edges
 lazy from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     fill_glyph_coverage_at,

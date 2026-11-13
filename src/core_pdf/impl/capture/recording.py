@@ -12,14 +12,8 @@ from core_pdf.impl.base.caches import IdentityCache
 from core_pdf.impl.base.geometry import intersect_bbox, transform_bbox
 from core_pdf.impl.base.glyphs import GlyphObservation
 from core_pdf.impl.base.runs import TextRun
-from core_pdf.impl.base.types import (
-    MISSING,
-    MissingObject,
-    Rectangle,
-)
-from core_pdf.impl.capture.glyphs import (
-    GlyphPaint,
-)
+from core_pdf.impl.base.types import MISSING, MissingObject, Rectangle
+from core_pdf.impl.capture.glyphs import GlyphPaint
 from core_pdf.impl.capture.program import DEFAULT_CAPTURE, CapturedProgram, CaptureOptions
 from core_pdf.impl.capture.records import (
     CapturedDrawing,
@@ -32,11 +26,7 @@ from core_pdf.impl.capture.records import (
     TilingPattern,
     marker_drawing,
 )
-from core_pdf.impl.capture.recovery import (
-    CaptureRecovery,
-    ContentFallback,
-    content_scanner,
-)
+from core_pdf.impl.capture.recovery import CaptureRecovery, ContentFallback, content_scanner
 from core_pdf.impl.capture.text_runs import RunAccumulator
 from core_pdf.impl.capture.tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts.decoder import FontDecoder
@@ -52,9 +42,7 @@ from core_pdf.impl.spec.s_07_content.streams import ContentStreamExecutor, Conte
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_strict, parse_int_strict
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
-from core_pdf.impl.spec.s_08_graphics.color_rendering import (
-    ColorRendering,
-)
+from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask

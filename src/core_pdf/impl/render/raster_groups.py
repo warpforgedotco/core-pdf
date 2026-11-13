@@ -14,19 +14,9 @@ from typing import TYPE_CHECKING
 lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
-from core_pdf.impl.capture.records import (
-    CapturedPath,
-)
-from core_pdf.impl.render.blend import (
-    BlendOp,
-    blend_op,
-    composite_blended_group_numpy,
-)
-from core_pdf.impl.render.model import (
-    PixelWindow,
-    RasterGroup,
-    SoftMaskPlane,
-)
+from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.render.blend import BlendOp, blend_op, composite_blended_group_numpy
+from core_pdf.impl.render.model import PixelWindow, RasterGroup, SoftMaskPlane
 from core_pdf.impl.render.raster_support import (
     ElementaryScratch,
     PixelBox,

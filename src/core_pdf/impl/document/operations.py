@@ -5,14 +5,7 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
-
-if TYPE_CHECKING:
-    pass
-
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PdfDocument

@@ -19,9 +19,7 @@ from core_pdf.impl.render.blend import (
     kernel_blend_code,
 )
 from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_component
-lazy from core_pdf_cythonized import (
-    blend_coverage_counts,
-)
+lazy from core_pdf_cythonized import blend_coverage_counts
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget

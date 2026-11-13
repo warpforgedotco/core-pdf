@@ -7,15 +7,7 @@ import mmap
 import threading
 from collections.abc import Iterable, Sequence
 from types import TracebackType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    BinaryIO,
-    Generic,
-    Protocol,
-    Self,
-    TypeVar,
-)
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Protocol, Self, TypeVar
 
 from core_pdf.impl.base.caches import DocumentCaches
 from core_pdf.impl.base.collector import pauses_collector
@@ -24,28 +16,16 @@ from core_pdf.impl.base.exceptions import (
     PdfDocumentClosedError,
     PdfEmptySourceError,
 )
-from core_pdf.impl.base.types import (
-    PageScoped,
-    PdfReference,
-    PdfSource,
-)
+from core_pdf.impl.base.types import PageScoped, PdfReference, PdfSource
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document.pdf_page import PdfPage
-from core_pdf.impl.document.standards import (
-    discover_profile_claims,
-)
+from core_pdf.impl.document.standards import discover_profile_claims
 from core_pdf.impl.fonts.fallback import RasterFontRepository
 from core_pdf.impl.recovery.policy import Recovery, recovery_policy
 from core_pdf.impl.recovery.resolver import ObjectResolver
-from core_pdf.impl.spec.s_07_security.standard import (
-    StandardSecurityHandler,
-)
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfDict,
-)
-from core_pdf.impl.spec.s_07_syntax.xref import (
-    PdfXRefEntry,
-)
+from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict
+from core_pdf.impl.spec.s_07_syntax.xref import PdfXRefEntry
 from core_pdf.impl.spec.standards import DocumentStandards, SemanticContext
 lazy from core_pdf.impl.base.pages import PageSelection
 lazy from core_pdf.impl.document.structure import StructureTree
@@ -60,15 +40,9 @@ if TYPE_CHECKING:
 
 from core_pdf.impl.document import fields as form_fields
 from core_pdf.impl.document import navigation, page_tree, security, xref_recovery
-from core_pdf.impl.document.operations import (
-    DocumentOperation,
-)
-from core_pdf.impl.document.page_tree import (
-    PageLookup,
-)
-from core_pdf.impl.document.source import (
-    load_source,
-)
+from core_pdf.impl.document.operations import DocumentOperation
+from core_pdf.impl.document.page_tree import PageLookup
+from core_pdf.impl.document.source import load_source
 
 PageT = TypeVar("PageT", bound=PdfPage, default=PdfPage)
 

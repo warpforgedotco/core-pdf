@@ -9,33 +9,15 @@ PdfDocument lists them as its methods.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING, Any
 
-from core_pdf.impl.base.exceptions import (
-    PdfParseError,
-)
-from core_pdf.impl.base.raw_records import (
-    RawNamedDestination,
-    RawOutlineItem,
-)
+from core_pdf.impl.base.exceptions import PdfParseError
+from core_pdf.impl.base.raw_records import RawNamedDestination, RawOutlineItem
+from core_pdf.impl.document.page_tree import PageLookup
 from core_pdf.impl.document.pdf_page import goto_action_destination
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfArray,
-    PdfDict,
-)
+from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 lazy from core_pdf.impl.recovery.trees import iter_name_tree_items
-
-if TYPE_CHECKING:
-    pass
-
-
-from core_pdf.impl.document.page_tree import (
-    PageLookup,
-)
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PageT, PdfDocument

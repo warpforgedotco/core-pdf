@@ -11,19 +11,10 @@ from core_pdf.impl.render import raster_groups as groups
 from core_pdf.impl.render import raster_images as images
 from core_pdf.impl.render import raster_shading as shading
 from core_pdf.impl.render import raster_strokes as strokes
-from core_pdf.impl.render.blend import (
-    blend_context,
-)
+from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
-from core_pdf.impl.render.model import (
-    PixelWindow,
-    RasterGroup,
-)
-from core_pdf.impl.render.raster_support import (
-    ElementaryScratch,
-    FloatPlane,
-    RenderResources,
-)
+from core_pdf.impl.render.model import PixelWindow, RasterGroup
+from core_pdf.impl.render.raster_support import ElementaryScratch, FloatPlane, RenderResources
 from core_pdf.impl.spec.standards import SemanticContext
 
 

@@ -9,36 +9,16 @@ PdfDocument lists them as its methods.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Literal,
-    Protocol,
-    TypeAlias,
-)
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 
-from core_pdf.impl.base.raw_records import (
-    RawFormField,
-)
-from core_pdf.impl.base.types import (
-    PdfName,
-    PdfString,
-)
+from core_pdf.impl.base.raw_records import RawFormField
+from core_pdf.impl.base.types import PdfName, PdfString
 from core_pdf.impl.base.values import parse_text_string
 from core_pdf.impl.document.pdf_page import PdfPage
 from core_pdf.impl.recovery.policy import MalformedFn
-from core_pdf.impl.spec.s_07_syntax.inherited_values import (
-    inherited_dictionary_value,
-)
-from core_pdf.impl.spec.s_07_syntax.types import (
-    PdfDict,
-    PdfValueResolver,
-)
+from core_pdf.impl.spec.s_07_syntax.inherited_values import inherited_dictionary_value
+from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 lazy from core_pdf.impl.spec.s_07_document.fields import field_children, qualified_field_name
-
-if TYPE_CHECKING:
-    pass
-
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PageT, PdfDocument

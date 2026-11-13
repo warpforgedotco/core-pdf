@@ -8,21 +8,14 @@ from __future__ import annotations
 from array import array
 from collections.abc import Callable
 from math import copysign, hypot
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import Any, TypeAlias
 
 lazy import numpy
 
 from core_pdf.impl.base.glyphs import GlyphStyle
 from core_pdf.impl.base.runs import TextRun
-from core_pdf.impl.base.types import (
-    RecordType,
-    Rectangle,
-    ReplaceFields,
-    ReprFields,
-)
-from core_pdf.impl.capture.glyphs import (
-    GlyphPaint,
-)
+from core_pdf.impl.base.types import RecordType, Rectangle, ReplaceFields, ReprFields
+from core_pdf.impl.capture.glyphs import GlyphPaint
 from core_pdf.impl.capture.records import (
     EMPTY_LINES,
     PATH_PAINT_DEFAULTS,
@@ -35,23 +28,12 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.model import GraphicsState, PdfPath
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfValueResolver
-from core_pdf.impl.spec.s_08_graphics.color_rendering import (
-    DEFAULT_COLOR_RENDERING,
-    ColorRendering,
-)
+from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 lazy from core_pdf.impl.graphics.images import decode_soft_mask
 lazy from core_pdf.impl.spec.s_08_graphics import image_spec
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 lazy from core_pdf_cythonized import SlotLayout, flatten_path_commands
-
-if TYPE_CHECKING:
-    pass
-
-
-if TYPE_CHECKING:
-    pass
-
 
 CaptureMarks: TypeAlias = tuple[int, int, int, int, int, int]
 

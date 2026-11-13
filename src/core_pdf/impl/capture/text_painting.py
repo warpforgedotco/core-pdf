@@ -21,26 +21,19 @@ from core_pdf.impl.capture.glyphs import (
     glyph_style,
     glyph_width_source,
 )
-from core_pdf.impl.capture.records import (
-    CapturedTextBoundary,
-)
-from core_pdf.impl.capture.text_runs import is_visible_text
-from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
-from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
-from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
-from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
-from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
-
-if TYPE_CHECKING:
-    pass
-
-
 from core_pdf.impl.capture.recording_support import (
     MarkedContentEntry,
     TextLayout,
     detect_rotation_from_linear,
     same_floats,
 )
+from core_pdf.impl.capture.records import CapturedTextBoundary
+from core_pdf.impl.capture.text_runs import is_visible_text
+from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
+from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
+from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
+from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontService
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState

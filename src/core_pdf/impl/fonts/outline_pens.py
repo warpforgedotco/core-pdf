@@ -24,9 +24,7 @@ from collections.abc import Callable, Sequence
 from math import sqrt
 from typing import Any
 
-from core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names import (
-    STANDARD_ENCODING_GLYPH_NAMES,
-)
+from core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names import STANDARD_ENCODING_GLYPH_NAMES
 
 Point = tuple[float, float]
 Transform = tuple[float, float, float, float, float, float]
