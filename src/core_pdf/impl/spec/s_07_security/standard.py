@@ -12,6 +12,7 @@ from typing import ClassVar, Literal
 lazy import secrets
 lazy from hmac import compare_digest
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import (
     PdfInvalidPermissionsError,
     PdfParseError,
@@ -595,6 +596,12 @@ def normalize_password(password: str | bytes, revision: int) -> bytes:
     return password.encode("utf-8")[:127]
 
 
+@cites(
+    "ISO 32000-2",
+    "7.6.4.3.3",
+    extension="ADBE/1.7/3",
+    rule="revision 5 password hash (AES-256 before revision 6)",
+)
 def compute_password_hash(
     revision: int, password: bytes, salt: bytes, vector: bytes | None = None
 ) -> bytes:
@@ -607,6 +614,9 @@ def compute_password_hash(
     return r6_password_hash(password, salt[:8], vector)
 
 
+@cites(
+    "ISO 32000-2", "7.6.4.3.4", introduced="2.0", rule="revision 6 password hash (Algorithm 2.B)"
+)
 def r6_password_hash(password: bytes, salt: bytes, vector: bytes | None = None) -> bytes:
     initial_hash = sha256(password)
     initial_hash.update(salt)
@@ -658,6 +668,7 @@ def saslprep(data: str) -> str:
     return data
 
 
+@cites("ISO 32003", extension="ISO_/2.0/32003", rule="V 6 and R 7: AES-256-GCM")
 def supported_revisions_for_version(version: int) -> tuple[int, ...] | None:
     match version:
         case 1:

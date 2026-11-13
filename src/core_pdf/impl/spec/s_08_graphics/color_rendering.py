@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Literal
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name
 from core_records import GeneratedRecord
 
@@ -23,6 +24,7 @@ def parse_rendering_intent(value: object) -> RenderingIntent:
             return "RelativeColorimetric"
 
 
+@cites("ISO 32000-2", "8.6.5.9", introduced="2.0", rule="black point compensation (UseBlackPtComp)")
 def parse_black_point_compensation(value: object) -> BlackPointCompensation:
     name = decoded_name(value)
     match name:

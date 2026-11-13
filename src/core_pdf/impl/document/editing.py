@@ -14,6 +14,7 @@ from core_pdf.impl.base.types import PdfReference, PdfString
 from core_pdf.impl.document.object_writer import serialize_indirect_object, serialize_object
 from core_pdf.impl.recovery.lexer import StrictPdfLexer
 from core_pdf.impl.recovery.xref import XRefScanner
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_security.output import (
     NewEncryption,
@@ -193,6 +194,13 @@ class EditableDocument:
             pending.extend(references_in(self.get_object(reference)))
         return reachable
 
+    @cites("ISO 32000-2", "7.5.8", since="1.5", rule="cross-reference streams")
+    @cites(
+        "ISO 32000-2",
+        "7.6.4",
+        since="1.7",
+        rule="AES-256 encryption (PDF 1.7 with an extension, or 2.0)",
+    )
     def save(
         self,
         target: str | Path | None = None,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.resolver import STREAM_DECODE_KEYS
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
@@ -98,6 +99,12 @@ def has_jpx_filter(dictionary: dict[object, object]) -> bool:
     return any(decoded_name(value) == "JPXDecode" for value in filters)
 
 
+@cites(
+    "ISO 32000-2",
+    "7.4.9",
+    since="2.0",
+    rule="a JPX image's Decode array applies when it has a ColorSpace",
+)
 def image_decode_array_applies(
     dictionary: dict[object, object], *, context: SemanticContext | None = None
 ) -> bool:

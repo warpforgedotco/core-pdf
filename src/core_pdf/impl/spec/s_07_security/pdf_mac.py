@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfDecryptionError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_security.standard import StandardSecurityHandler
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -11,6 +12,7 @@ lazy from core_pdf.impl.crypto.pdf_mac import validate_pdf_mac_token
 HEXADECIMAL_DIGITS = frozenset(b"0123456789ABCDEFabcdef")
 
 
+@cites("ISO 32004", extension="ISO_/2.0/32004", rule="PDF MAC integrity protection")
 def validate_pdf_mac_if_present(
     raw_data: PdfByteBuffer, trailer: PdfDict, handler: StandardSecurityHandler
 ) -> bool:
