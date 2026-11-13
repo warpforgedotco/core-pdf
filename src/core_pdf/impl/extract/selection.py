@@ -7,7 +7,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from core_pdf.impl.base.exceptions import ExtractionScope
-from core_pdf.impl.document.metadata import plain_pdf_value
+from core_pdf.impl.base.values import plain_pdf_value
 from core_pdf.impl.extract.pipeline import PageExtraction
 from core_pdf.impl.output.model import SCHEMA_VERSION, Document, Page
 

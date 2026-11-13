@@ -79,31 +79,6 @@ def resolve_info_metadata(
         return recovery_policy(recover).reject(error, "info", {})
 
 
-PlainValue: TypeAlias = (
-    str | int | float | bool | None | list["PlainValue"] | dict[str, "PlainValue"]
-)
-
-
-def plain_pdf_value(value: object) -> PlainValue:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, PdfName):
-        return recover_pdf_name(value)
-    if isinstance(value, PdfString):
-        return decode_pdf_text_string(value.data)
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return decode_pdf_text_string(bytes(value))
-    if isinstance(value, PdfReference):
-        return f"{value.object_number} {value.generation_number} R"
-    if isinstance(value, PdfStream):
-        return plain_pdf_value(value.dictionary)
-    if isinstance(value, dict):
-        return {str(plain_pdf_value(key)): plain_pdf_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [plain_pdf_value(item) for item in value]
-    return str(value)
-
-
 def xml_node_shell(node: ElementTree.Element) -> XmpNodeRecord:
     attrs = {str(local_name(key)): value for key, value in node.attrib.items()}
     text = (node.text or "").strip()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Protocol, overload
+from typing import Protocol, TypeAlias, overload
 
 from core_pdf.impl.base.types import (
     PdfReference,
@@ -13,6 +13,7 @@ from core_pdf.impl.base.types import (
     ReprFields,
     field,
 )
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives import text_string
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import decoded_name, parse_float, parse_int
 from core_pdf.impl.spec.types import PdfName
@@ -176,3 +177,28 @@ def coerce_value(value: object, string_decoder: Callable[[bytes], object] | None
             else:
                 frame.pending = (key, child)
     raise AssertionError("object coercion did not produce a result")
+
+
+PlainValue: TypeAlias = (
+    str | int | float | bool | None | list["PlainValue"] | dict[str, "PlainValue"]
+)
+
+
+def plain_pdf_value(value: object) -> PlainValue:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, PdfName):
+        return recover_pdf_name(value)
+    if isinstance(value, PdfString):
+        return decode_pdf_text_string(value.data)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return decode_pdf_text_string(bytes(value))
+    if isinstance(value, PdfReference):
+        return f"{value.object_number} {value.generation_number} R"
+    if isinstance(value, PdfStream):
+        return plain_pdf_value(value.dictionary)
+    if isinstance(value, dict):
+        return {str(plain_pdf_value(key)): plain_pdf_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain_pdf_value(item) for item in value]
+    return str(value)
