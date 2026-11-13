@@ -125,6 +125,10 @@ line-length = 100
 # Content operator handlers and semantic-sink callbacks share fixed signatures.
 "src/core_pdf/impl/capture/tolerant_state.py" = ["ARG002"]
 "src/core_pdf/impl/capture/recording.py" = ["ARG002"]
+# TextState methods kept as functions take the interpreter's arguments whether they use them.
+"src/core_pdf/impl/capture/text_painting.py" = ["ARG001"]
+"src/core_pdf/impl/capture/path_painting.py" = ["ARG001"]
+"src/core_pdf/impl/capture/image_painting.py" = ["ARG001"]
 # Documented parsing extension hooks keep their signatures, in the strict base
 # and in the recovery overrides.
 "src/core_pdf/impl/spec/s_07_syntax/lexer.py" = ["ARG002"]
