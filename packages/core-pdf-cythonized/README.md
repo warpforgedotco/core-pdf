@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with seven exceptions, `ObjectScanner`, `ObjectWriter`, `plumber_char_dicts`, `pdfminer_chars`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with eight exceptions, `ObjectScanner`, `ObjectWriter`, `plumber_char_dicts`, `pdfminer_chars`, `show_text_array`, `AreaGapQueue`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Source form
@@ -116,6 +116,16 @@ holds exactly) -- and `scripts/check_plumber_chars.py` reads every page's chars 
 horizontal text the same way, and leaves the projection loop the glyphs it declines;
 `scripts/check_pdfminer_chars.py` lays out every page both ways and compares the trees.
 
+`show_text_array` keeps its Python too: a capture state shows a TJ array with it, inlining
+the content interpreter's `append_tj_array`, `append_text` and `append_decoded_text` and
+the state's `show_text` and `text_boundary`, when its class and font use those stock
+methods and the capture records runs; the interpreter's loop takes any other array -- one
+with vertical or Type 3 text, a number other than a float or an int a double holds
+exactly -- and the state's own methods any string the loop cannot show exactly (at the
+identity text matrix, in an ActualText span, under a clipping render mode, or with a glyph
+whose text splits). `scripts/check_text_arrays.py` captures every page both ways and
+compares the runs, glyphs, drawings and text boundaries.
+
 `AreaGapQueue` keeps its Python too: the reading order of
 `core_pdf_compat.pdfminer._layout` takes it when every box coordinate is a float
 and `_PairQueue` otherwise, and `scripts/check_area_gap_queue.py` drives both
@@ -211,6 +221,7 @@ Nothing checks the result on the platforms that build wheels.
 | `object_headers_match` | the anchored `OBJECT_HEADER_RE` match and its two `int()` comparisons in `core_pdf.impl.document.xref_recovery.xref_entry_matches_header` (deleted), run per in-use xref entry at open | one pass over every entry instead of a match object and two conversions each (471,099 over the corpus); corpus open 2.80 to 2.73 s. An object number too large for 63 bits is settled by core by digits |
 | `decrypt_type1` | nothing deleted: mirrors `core_pdf.impl.adobe_fonts.type1.program.decrypt_type1`, which that pure-Python package keeps; core's `Type1FontProgram` decrypts its eexec section and every charstring with this | 1.36 s of a 400-document extraction sample over 41,241 calls, at about 100 ns a byte in Python; first-page extract of f1040nr 0.17 to 0.13 s, layout-parser-paper 0.11 to 0.09 s |
 | `pdfminer_chars` | nothing deleted: mirrors the plain horizontal path of `core_pdf_compat.pdfminer._projection.project_page`, which makes what it leaves | 99.4% of corpus chars compiled; pdfminer text and pages -9 to -23% (pr-138 172 to 152 ms), unstructured -3% |
+| `show_text_array` | nothing deleted: mirrors the TJ path of `core_pdf.impl.spec.s_07_content.interpreter.ContentInterpreter` and `core_pdf.impl.capture.text_painting.show_text`, which show what it hands back | 12,061 of 12,075 TJ arrays over the pdfplumber and unstructured test files; core extraction of the WARN report (a cell's characters kerned pair by pair) 222 to 174 ms (-22%), layout-parser-paper and NICS -8% |
 | `plumber_char_dicts` | nothing deleted: mirrors the char loop of `core_pdf_compat.pdfplumber`'s `char_objects`, which writes what it declines | 341 of 356 corpus pages compiled; pdfplumber chars of federal-register 423 to 365 ms (-14%), the pr-138 checks -5 to -7% |
 | `ObjectWriter` | nothing deleted: mirrors `serialize_object` of `core_pdf.impl.spec.s_07_syntax.serialize`, which writes what it hands back | -8 to -21% on the pypdf reads, clones, appends and incremental writes and core rewrites of the benchmarks (pypdf reads of issue-598 236 to 197 ms, core rewrite of issue-914-xmp 16.6 to 13.1 ms) |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary`, `parse_array` and `parse_indirect_object` of `core_pdf.impl.recovery.lexer.PdfLexer`, which falls back to them, and in strict mode those of the spec's `PdfLexer`, for `StrictPdfLexer` | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction. Whole indirect objects (40,762 of 40,775 corpus objects): core rewrite of issue-598 141 to 80 ms, pypdf reads 246 to 193 ms and clone 286 to 234 ms of it, pdfminer text of DA-1p 84 to 65 ms |

@@ -70,6 +70,7 @@ lazy from core_pdf_cythonized._source_plane import accumulate_source_plane
 lazy from core_pdf_cythonized._stroke import stroke_polylines
 lazy from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 lazy from core_pdf_cythonized._supersample import supersampled_coverage_plane
+lazy from core_pdf_cythonized._text_array import show_text_array
 lazy from core_pdf_cythonized._truetype import truetype_contours
 lazy from core_pdf_cythonized._type1 import decrypt_type1, type1_glyph_bounds
 lazy from core_pdf_cythonized._type2 import type2_glyph_geometry
@@ -92,6 +93,7 @@ __all__ = (
     "OBSERVATION_FIELDS",
     "SlotLayout",
     "capture_horizontal_glyphs",
+    "show_text_array",
     "untrack_tuple",
     "ContentScanner",
     "NativeOperators",
