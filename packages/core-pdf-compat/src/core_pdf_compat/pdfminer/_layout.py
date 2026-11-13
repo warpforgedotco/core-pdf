@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from math import ceil
 from typing import Any, ClassVar
-lazy import heapq
 
 from core_pdf.impl.base.geometry import bbox_union
 from core_pdf.impl.base.spatial import AreaGapQueue
@@ -592,74 +591,6 @@ class _TextGroup(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     vertical: bool = False
 
 
-class _PairQueue:
-    """pdfminer's group_textboxes queue: every pair of items by distance, on a heap.
-
-    The distance is the area of the two items' union box less both their areas. Each
-    item's corners and area are kept by id, and min(a, b) and max(a, b) are spelled out as
-    Python evaluates them, NaN included. AreaGapQueue does the same in C.
-    """
-
-    def __init__(self, boxes: list[tuple[float, float, float, float]]) -> None:
-        self.bounds: dict[int, tuple[float, float, float, float, float]] = {}
-        for index, (x0, y0, x1, y1) in enumerate(boxes):
-            self.bounds[index] = (x0, y0, x1, y1, (x1 - x0) * (y1 - y0))
-        self.active: dict[int, None] = dict.fromkeys(range(len(boxes)))
-        self.queue: list[tuple[bool, float, int, int]] = []
-        for first in range(len(boxes)):
-            self.gaps(first, range(first + 1, len(boxes)), self.queue)
-        heapq.heapify(self.queue)
-        self.compact_at = len(self.active) // 2
-        self.last: tuple[bool, float, int, int] = (False, 0.0, 0, 0)
-
-    def gaps(
-        self, first: int, others: Iterable[int], out: list[tuple[bool, float, int, int]]
-    ) -> None:
-        fx0, fy0, fx1, fy1, first_area = self.bounds[first]
-        append = out.append
-        for other in others:
-            ox0, oy0, ox1, oy1, other_area = self.bounds[other]
-            x0 = ox0 if ox0 < fx0 else fx0
-            y0 = oy0 if oy0 < fy0 else fy0
-            x1 = ox1 if ox1 > fx1 else fx1
-            y1 = oy1 if oy1 > fy1 else fy1
-            append((False, (x1 - x0) * (y1 - y0) - first_area - other_area, first, other))
-
-    def pop(self) -> tuple[bool, int, int] | None:
-        queue = self.queue
-        active = self.active
-        while queue:
-            entry = heapq.heappop(queue)
-            if entry[2] in active and entry[3] in active:
-                self.last = entry
-                return entry[0], entry[2], entry[3]
-        return None
-
-    def push_skipped(self) -> None:
-        _skip, distance, first, second = self.last
-        heapq.heappush(self.queue, (True, distance, first, second))
-
-    def merge(
-        self, first: int, second: int, group: int, bbox: tuple[float, float, float, float]
-    ) -> None:
-        active = self.active
-        del active[first], active[second], self.bounds[first], self.bounds[second]
-        x0, y0, x1, y1 = bbox
-        self.bounds[group] = (x0, y0, x1, y1, (x1 - x0) * (y1 - y0))
-        merged: list[tuple[bool, float, int, int]] = []
-        self.gaps(group, active, merged)
-        for entry in merged:
-            heapq.heappush(self.queue, entry)
-        active[group] = None
-        if len(active) <= self.compact_at:
-            if len(self.queue) > len(active) * (len(active) - 1):
-                self.queue = [
-                    entry for entry in self.queue if entry[2] in active and entry[3] in active
-                ]
-                heapq.heapify(self.queue)
-            self.compact_at = len(active) // 2
-
-
 def _reading_order(
     boxes: list[LTTextBox],
     boxes_flow: float | None,
@@ -689,11 +620,10 @@ def _reading_order(
         plane.add(box)
     retained_groups: list[_TextGroup] = []
     corners = [box.bbox for box in boxes]
-    # The C queue reads coordinates as doubles; boxes built from glyphs always hold floats.
-    exact_floats = all(type(value) is float for corner in corners for value in corner)
-    queue: AreaGapQueue | _PairQueue = (
-        AreaGapQueue(corners) if exact_floats else _PairQueue(corners)
-    )
+    # pdfminer's group_textboxes queue: every pair of boxes by the area of their union box
+    # less both their areas, on a heap. An int coordinate is read as a double, which every
+    # distance holds exactly for coordinates up to 2^24, so the pairs pop in the same order.
+    queue = AreaGapQueue(corners)
     while (popped := queue.pop()) is not None:
         skip_between, first_id, second_id = popped
         active_first = active[first_id]
