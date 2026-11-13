@@ -240,15 +240,7 @@ class EnginePageAdapter:
 
         marks = self._text_marks
         info = self.info
-        pa, pb, pc, pd, pe, pf = info.pdfminer_ctm
-        page_number = info.number
-        media_x0 = info.media_x0
-        media_top = info.media_top
-        page_height = info.page_height
-        nfc = self.unicode_norm == "NFC"
-        # Compiled for a page of horizontal text whose numbers are all floats; this loop is
-        # its reference, and writes the rest.
-        compiled = plumber_char_dicts(
+        return plumber_char_dicts(
             projected_glyphs,
             marks,
             skipped_ligature_parts,
@@ -259,166 +251,13 @@ class EnginePageAdapter:
             pdfminer_descent,
             font_name,
             info.pdfminer_ctm,
-            page_number,
-            media_x0,
-            media_top,
-            page_height,
+            info.number,
+            info.media_x0,
+            info.media_top,
+            info.page_height,
             doctop,
-            nfc,
+            self.unicode_norm == "NFC",
         )
-        if compiled is not None:
-            return compiled
-        provenances: dict[int, tuple[object, bool, dict[str, Any]]] = {}
-        # A page repeats a few hundred glyphs thousands of times; these depend only on
-        # the font decoder and the glyph fields in the key.
-        glyph_texts: dict[tuple[Any, ...], str] = {}
-        widths: dict[tuple[Any, ...], float] = {}
-        descents: dict[int, tuple[Any, float]] = {}
-        mark_starts = [mark.glyph_index for mark in marks]
-        mark_count = len(marks)
-        # Glyph indexes rise, so the current mark moves forward only: the last one that starts
-        # at or before the glyph, or, before the first mark starts, the last mark.
-        mark_position = -1
-        objects: list[ObjectDict] = []
-        vertical_run = 0.0
-        for glyph_index, glyph in enumerate(projected_glyphs):
-            if pdfminer_embedded_cmap_is_unusable(glyph):
-                continue
-            if id(glyph) in skipped_ligature_parts:
-                continue
-            ligature = ligatures.get(id(glyph))
-            key = (
-                glyph.font_decoder,
-                glyph.char_code,
-                glyph.cid,
-                glyph.code_bytes,
-                glyph.unicode_source,
-                glyph.text,
-                glyph.alternates,
-            )
-            if ligature is not None:
-                text = ligature[0]
-            else:
-                text = glyph_texts.get(key)  # type: ignore[assignment]
-                if text is None:
-                    text = glyph_texts[key] = pdfminer_glyph_text(glyph)
-            source_provenance = glyph.provenance
-            known = provenances.get(id(source_provenance))
-            if known is None or known[0] is not source_provenance:
-                known = provenances[id(source_provenance)] = (
-                    source_provenance,
-                    ("source", "annotation_appearance") in source_provenance,
-                    dict(source_provenance) if source_provenance else {},
-                )
-            if known[1]:
-                continue
-            if not mark_count:
-                continue
-            while mark_position + 1 < mark_count and mark_starts[mark_position + 1] <= glyph_index:
-                mark_position += 1
-            mark = marks[mark_position]
-            # pdfminer.six's LTChar (pdfminer/layout.py): a box from two corners of the glyph
-            # placed by the char matrix, which is the text matrix times the CTM, without rise.
-            a, b, c, d, e, f = mark.matrix
-            font_size = glyph.font_size
-            rise = mark.rise
-            scaling = mark.scaling
-            decoder = glyph.font_decoder
-            baseline = ligature[2] if ligature is not None else glyph.baseline
-            is_vertical = decoder.is_vertical
-            if is_vertical:
-                w1y, vx, vy = decoder.vertical_glyph_metric(glyph.cid)
-                explicit = glyph.cid in getattr(decoder.metrics, "vertical_metrics", {})
-                scale = font_size * 0.001
-                advance = w1y * scale * scaling
-                # pdfminer.six's render_string_vertical moves down the run by each advance.
-                if glyph_index == mark.glyph_index:
-                    vertical_run = 0.0
-                else:
-                    vertical_run += mark.char_space
-                e += vertical_run * c
-                f += vertical_run * d
-                vertical_run += advance
-                disp_x = vx * scale if explicit else font_size * 0.5
-                disp_y = (1000 - vy) * scale
-                lower_left = (-disp_x, disp_y + rise + advance)
-                upper_right = (-disp_x + font_size, disp_y + rise)
-            else:
-                if glyph_index != mark.glyph_index and baseline is not None:
-                    e = baseline[0] - rise * c
-                    f = baseline[1] - rise * d
-                known_descent = descents.get(id(decoder))
-                if known_descent is None or known_descent[0] is not decoder:
-                    known_descent = descents[id(decoder)] = (decoder, pdfminer_descent(glyph))
-                descent = known_descent[1] * font_size
-                projected = None if ligature else text
-                width_key = (*key, projected)
-                width = widths.get(width_key)
-                if width is None:
-                    width = widths[width_key] = pdfminer_normalized_width(glyph, projected)
-                advance = width * font_size * scaling
-                lower_left = (0.0, descent + rise)
-                upper_right = (advance, descent + rise + font_size)
-            matrix = (
-                a * pa + b * pc,
-                a * pb + b * pd,
-                c * pa + d * pc,
-                c * pb + d * pd,
-                e * pa + f * pc + pe,
-                e * pb + f * pd + pf,
-            )
-            # pdfminer.six's apply_matrix_rect: the box around all four placed corners.
-            ma, mb, mc, md, me, mf = matrix
-            left, bottom = lower_left
-            right, top = upper_right
-            x_ll = ma * left + mc * bottom + me
-            x_lt = ma * left + mc * top + me
-            x_rl = ma * right + mc * bottom + me
-            x_rt = ma * right + mc * top + me
-            y_ll = mb * left + md * bottom + mf
-            y_lt = mb * left + md * top + mf
-            y_rl = mb * right + md * bottom + mf
-            y_rt = mb * right + md * top + mf
-            x0 = min(x_ll, x_lt, x_rl, x_rt)
-            x1 = max(x_ll, x_lt, x_rl, x_rt)
-            y0 = min(y_ll, y_lt, y_rl, y_rt)
-            y1 = max(y_ll, y_lt, y_rl, y_rt)
-            if nfc and text == "\u037e":
-                text = ";"
-            # pdfplumber's process_object: the box measured from the top of the page, with
-            # the keys in the order _envelope gives them.
-            char_x0 = x0 + media_x0
-            char_top = page_height - y1 + media_top
-            char_x1 = x1 + media_x0
-            char_bottom = page_height - y0 + media_top
-            objects.append(
-                {
-                    "object_type": "char",
-                    "page_number": page_number,
-                    "x0": char_x0,
-                    "x1": char_x1,
-                    "top": char_top,
-                    "bottom": char_bottom,
-                    "doctop": doctop + char_top,
-                    "width": char_x1 - char_x0,
-                    "height": char_bottom - char_top,
-                    "text": text,
-                    "y0": y0,
-                    "y1": y1,
-                    "fontname": font_name(decoder),
-                    "size": x1 - x0 if is_vertical else y1 - y0,
-                    "stroking_color": mark.stroke_color,
-                    "non_stroking_color": mark.fill_color,
-                    "upright": ma * md * scaling > 0 and mb * mc <= 0,
-                    "adv": advance,
-                    "seqno": glyph.seqno,
-                    "matrix": matrix,
-                    "ncs": mark.color_space,
-                    "mcid": mark.mcid,
-                    "tag": mark.tag,
-                }
-            )
-        return objects
 
     def page_program(self) -> Any:
         # Only drawings and images are read from this program (characters come from

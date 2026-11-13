@@ -4,7 +4,7 @@ Compiled kernels for `core-pdf` hot paths.
 
 `core-pdf` depends on this distribution and imports from it directly. There is
 no pure-Python fallback: when a kernel lands here, the Python it replaced is
-deleted -- with six exceptions, `ObjectScanner`, `ObjectWriter`, `plumber_char_dicts`, `pdfminer_chars`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
+deleted -- with five exceptions, `ObjectScanner`, `ObjectWriter`, `pdfminer_chars`, `scan_to_unicode_cmap` and `type1_glyph_bounds`, described below. That makes `core-pdf` a compiled distribution — it needs a wheel for
 the target platform, or a C compiler at install time.
 
 ## Source form
@@ -72,7 +72,7 @@ decoder now reports arithmetic generic regions as unsupported, as it already
 did MMR and text regions. Core's `RecoveryJBIG2PageDecoder` checks the region
 header and calls the kernel.
 
-## Six kernels keep their Python
+## Five kernels keep their Python
 
 `ObjectScanner` is the other exception, in the opposite direction: it mirrors
 code that is not deleted. The Python it mirrors is `core_pdf.impl.spec`'s object
@@ -116,13 +116,11 @@ takes the bytes from it, and it hands the spec's serializer what it does not wri
 both layouts, and values generated around those cases, both ways and fails on any
 difference.
 
-`plumber_char_dicts` keeps its Python too: `core_pdf_compat.pdfplumber` writes a page's
-chars with it, and with the Python loop beside it for a page it declines -- one with
-vertical text, or a number other than a float (the page's ctm and box may be ints a double
-holds exactly) -- and `scripts/check_plumber_chars.py` reads every page's chars both ways.
-`pdfminer_chars`, beside it, makes `core_pdf_compat.pdfminer`'s LTChars for plain
-horizontal text the same way, and leaves the projection loop the glyphs it declines;
-`scripts/check_pdfminer_chars.py` lays out every page both ways and compares the trees.
+`pdfminer_chars` keeps its Python too: it makes `core_pdf_compat.pdfminer`'s LTChars for
+plain horizontal text, and leaves the projection loop the glyphs it declines -- vertical
+text, the centring rule for a lone wide flat glyph, a number other than a float -- which
+is the general projection rather than a copy of it; `scripts/check_pdfminer_chars.py` lays
+out every page both ways and compares the trees.
 
 `scan_to_unicode_cmap` keeps its Python on the same terms. It parses a
 ToUnicode CMap straight from bytes to the mapping dict, for the well-formed
@@ -215,7 +213,7 @@ Nothing checks the result on the platforms that build wheels.
 | `pdfminer_chars` | nothing deleted: mirrors the plain horizontal path of `core_pdf_compat.pdfminer._projection.project_page`, which makes what it leaves | 99.4% of corpus chars compiled; pdfminer text and pages -9 to -23% (pr-138 172 to 152 ms), unstructured -3% |
 | `RunAccumulator` | `RunAccumulator`, `PendingRun`, `gap_separator` and `can_merge_cross_font_word` of `core_pdf.impl.capture.text_runs` (deleted); every capture state collects its runs with it, and a string shown inline is merged with its values before a `TextRun` is made, which only a string starting a run needs | core extraction of the WARN report 175 to 157 ms (-10%), layout-parser-paper -5%, NICS -4% |
 | `show_text_array`, `show_string`, `show_decoded`, `show_text` | the text showing of `core_pdf.impl.spec.s_07_content.interpreter.ContentInterpreter` (`append_tj_array`, `append_text` and `append_decoded_text` now call these), `core_pdf.impl.capture.text_painting.show_text`, the horizontal advance of `FontDecoder.text_advance_vector` (`text_advance`), `text_adjustment_vector` and `core_pdf.impl.capture.text_runs` (all deleted). A capture state hands over what it captures with as `text_capture_context`; one with the stock show_text, text_boundary, current_text_layout and update_pending_run, its own sink, has each string shown inline and merged into the pending run before any TextRun is made, and any other state has its sink's methods called. Type 3 glyph procedures, vertical advances and glyphs whose text splits stay with the Python that owns them (`render_type3_glyphs`, `vertical_glyph_metric`, `capture_glyphs`) | core extraction of the WARN report (a cell's characters kerned pair by pair) 222 to 174 ms (-22%) for TJ arrays; Tj strings: federal-register and NICS -3% |
-| `plumber_char_dicts` | nothing deleted: mirrors the char loop of `core_pdf_compat.pdfplumber`'s `char_objects`, which writes what it declines | 341 of 356 corpus pages compiled; pdfplumber chars of federal-register 423 to 365 ms (-14%), the pr-138 checks -5 to -7% |
+| `plumber_char_dicts` | the char loop of `core_pdf_compat.pdfplumber`'s `char_objects` (deleted): every page's chars, vertical text included, numbers read as Python's float arithmetic reads them | 346 of 356 corpus pages (the rest fail before any chars); pdfplumber chars of federal-register 423 to 365 ms (-14%), the pr-138 checks -5 to -7% |
 | `ObjectWriter` | nothing deleted: mirrors `serialize_object` of `core_pdf.impl.spec.s_07_syntax.serialize`, which writes what it hands back | -8 to -21% on the pypdf reads, clones, appends and incremental writes and core rewrites of the benchmarks (pypdf reads of issue-598 236 to 197 ms, core rewrite of issue-914-xmp 16.6 to 13.1 ms) |
 | `ObjectScanner` | nothing deleted: mirrors `parse_dictionary`, `parse_array` and `parse_indirect_object` of `core_pdf.impl.recovery.lexer.PdfLexer`, which falls back to them, and in strict mode those of the spec's `PdfLexer`, for `StrictPdfLexer` | 5.5x on parsing the indirect objects of the benchmark corpus (201 to 37 ms), 99% of calls taking the compiled path; -30 to -46% on document open, -3 to -55% on first-page extraction. Whole indirect objects (40,762 of 40,775 corpus objects): core rewrite of issue-598 141 to 80 ms, pypdf reads 246 to 193 ms and clone 286 to 234 ms of it, pdfminer text of DA-1p 84 to 65 ms |
 | `AreaGapQueue` | `_PairQueue` of `core_pdf_compat.pdfminer._layout` (deleted), which took boxes with non-float coordinates: the kernel takes ints as doubles, and every distance it compares is exact for coordinates up to 2^24, so the order is the same | layout analysis of 256 test pages 1.46 to 0.73 s (2.18 s before the distances were inlined) |

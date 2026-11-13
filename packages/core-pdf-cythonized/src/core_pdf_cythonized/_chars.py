@@ -30,6 +30,14 @@ def exact_operand(value: object, out: cython.p_double) -> cython.bint:
 
 @cython.cfunc
 @cython.inline
+@cython.exceptval(-1.0, check=True)
+def as_double(value: object) -> cython.double:
+    # What Python's float arithmetic reads a number as: an int is rounded to a double first.
+    return cython.cast(cython.double, value)
+
+
+@cython.cfunc
+@cython.inline
 def item(sequence: object, index: cython.Py_ssize_t) -> object:
     # sequence[index] for an index known not to be negative: a tuple's slot read directly,
     # its length checked (the package compiles without bounds checks), anything else by
@@ -77,13 +85,12 @@ def plumber_char_dicts(
     doctop_value,
     nfc: cython.bint,
 ):
-    """core_pdf_compat.pdfplumber's char_objects for horizontal text, or None.
+    """core_pdf_compat.pdfplumber's char_objects: each glyph's char dict, as pdfplumber
+    writes it from pdfminer.six's LTChar.
 
-    Writes each glyph's char dict as the Python loop does, with the same arithmetic in the
-    same order, and calls back for what it caches: whether a decoder's embedded CMap is
-    unusable, a glyph's text, width and descent, a decoder's font name. None, having
-    returned nothing, for a page with vertical text or with a number that is not a float,
-    whose dicts the Python loop writes.
+    Calls back for what it caches: whether a decoder's embedded CMap is unusable, a glyph's
+    text, width and descent, a decoder's font name and vertical metrics. Numbers are read
+    as Python's float arithmetic reads them; every value written is computed with a float.
     """
     pa = cython.declare(cython.double)
     pb = cython.declare(cython.double)
@@ -108,19 +115,22 @@ def plumber_char_dicts(
     width = cython.declare(cython.double)
     base_x = cython.declare(cython.double)
     base_y = cython.declare(cython.double)
-    if len(ctm) != 6 or not (
-        exact_operand(ctm[0], cython.address(pa))
-        and exact_operand(ctm[1], cython.address(pb))
-        and exact_operand(ctm[2], cython.address(pc))
-        and exact_operand(ctm[3], cython.address(pd))
-        and exact_operand(ctm[4], cython.address(pe))
-        and exact_operand(ctm[5], cython.address(pf))
-        and exact_operand(media_x0_value, cython.address(media_x0))
-        and exact_operand(media_top_value, cython.address(media_top))
-        and exact_operand(page_height_value, cython.address(page_height))
-        and exact_operand(doctop_value, cython.address(doctop))
-    ):
-        return None
+    pa = as_double(item(ctm, 0))
+    pb = as_double(item(ctm, 1))
+    pc = as_double(item(ctm, 2))
+    pd = as_double(item(ctm, 3))
+    pe = as_double(item(ctm, 4))
+    pf = as_double(item(ctm, 5))
+    media_x0 = as_double(media_x0_value)
+    media_top = as_double(media_top_value)
+    page_height = as_double(page_height_value)
+    doctop = as_double(doctop_value)
+    # pdfminer.six's render_string_vertical moves down a vertical run by each advance.
+    vertical_run: cython.double = 0.0
+    is_vertical: cython.bint
+    scale: cython.double
+    disp_x: cython.double
+    disp_y: cython.double
     objects: list = []
     glyph_texts: dict = {}
     widths: dict = {}
@@ -196,48 +206,57 @@ def plumber_char_dicts(
             mark_position += 1
         # Before the first mark's glyph, Python's marks[-1]: the last mark.
         mark = mark_items[mark_position if mark_position >= 0 else mark_count - 1]
-        if decoder.is_vertical:
-            return None
+        # pdfminer.six's LTChar: a box from two corners of the glyph placed by the char
+        # matrix, which is the text matrix times the CTM, without rise.
         matrix_value = field(mark, 6)
-        if not (
-            len(matrix_value) == 6
-            and exact_float(item(matrix_value, 0), cython.address(a))
-            and exact_float(item(matrix_value, 1), cython.address(b))
-            and exact_float(item(matrix_value, 2), cython.address(c))
-            and exact_float(item(matrix_value, 3), cython.address(d))
-            and exact_float(item(matrix_value, 4), cython.address(e))
-            and exact_float(item(matrix_value, 5), cython.address(f))
-            and exact_float(style.font_size, cython.address(font_size))
-            and exact_float(field(mark, 7), cython.address(rise))
-            and exact_float(field(mark, 8), cython.address(scaling))
-        ):
-            return None
+        a = as_double(item(matrix_value, 0))
+        b = as_double(item(matrix_value, 1))
+        c = as_double(item(matrix_value, 2))
+        d = as_double(item(matrix_value, 3))
+        e = as_double(item(matrix_value, 4))
+        f = as_double(item(matrix_value, 5))
+        font_size = as_double(style.font_size)
+        rise = as_double(field(mark, 7))
+        scaling = as_double(field(mark, 8))
         baseline = item(ligature, 2) if ligature is not None else glyph.baseline
-        if glyph_index != field(mark, 0) and baseline is not None:
-            if not (
-                exact_float(item(baseline, 0), cython.address(base_x))
-                and exact_float(item(baseline, 1), cython.address(base_y))
-            ):
-                return None
-            e = base_x - rise * c
-            f = base_y - rise * d
-        if not exact_float(
-            cached_by_identity(descents, decoder, descent_of, glyph), cython.address(descent_unit)
-        ):
-            return None
-        descent = descent_unit * font_size
-        projected = None if ligature else text
-        width_key = (*key, projected)
-        width_value = widths.get(width_key)
-        if width_value is None:
-            width_value = widths[width_key] = normalized_width(glyph, projected)
-        if not exact_float(width_value, cython.address(width)):
-            return None
-        advance = width * font_size * scaling
-        left = 0.0
-        bottom = descent + rise
-        right = advance
-        top = descent + rise + font_size
+        is_vertical = bool(decoder.is_vertical)
+        if is_vertical:
+            metric = decoder.vertical_glyph_metric(glyph.cid)
+            explicit: cython.bint = glyph.cid in getattr(decoder.metrics, "vertical_metrics", {})
+            scale = font_size * 0.001
+            advance = as_double(item(metric, 0)) * scale * scaling
+            if glyph_index == field(mark, 0):
+                vertical_run = 0.0
+            else:
+                vertical_run += as_double(field(mark, 9))
+            e += vertical_run * c
+            f += vertical_run * d
+            vertical_run += advance
+            disp_x = as_double(item(metric, 1)) * scale if explicit else font_size * 0.5
+            disp_y = (1000.0 - as_double(item(metric, 2))) * scale
+            left = -disp_x
+            bottom = disp_y + rise + advance
+            right = -disp_x + font_size
+            top = disp_y + rise
+        else:
+            if glyph_index != field(mark, 0) and baseline is not None:
+                base_x = as_double(item(baseline, 0))
+                base_y = as_double(item(baseline, 1))
+                e = base_x - rise * c
+                f = base_y - rise * d
+            descent_unit = as_double(cached_by_identity(descents, decoder, descent_of, glyph))
+            descent = descent_unit * font_size
+            projected = None if ligature else text
+            width_key = (*key, projected)
+            width_value = widths.get(width_key)
+            if width_value is None:
+                width_value = widths[width_key] = normalized_width(glyph, projected)
+            width = as_double(width_value)
+            advance = width * font_size * scaling
+            left = 0.0
+            bottom = descent + rise
+            right = advance
+            top = descent + rise + font_size
         ma = a * pa + b * pc
         mb = a * pb + b * pd
         mc = c * pa + d * pc
@@ -286,7 +305,7 @@ def plumber_char_dicts(
                 "y0": y0,
                 "y1": y1,
                 "fontname": cached_by_identity(font_names, decoder, font_name, decoder),
-                "size": y1 - y0,
+                "size": x1 - x0 if is_vertical else y1 - y0,
                 "stroking_color": field(mark, 4),
                 "non_stroking_color": field(mark, 5),
                 "upright": ma * md * scaling > 0 and mb * mc <= 0,
