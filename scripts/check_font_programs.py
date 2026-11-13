@@ -435,6 +435,94 @@ def variable_cff2() -> bytes:
     return buffer.getvalue()
 
 
+def cubic_glyf() -> bytes:
+    """A TrueType font with cubic glyf contours (flag bit 0x80), which no corpus font has:
+    on-curve points between cubic segments, a run of four cubic off-curve points (with
+    implied on-curve midpoints), a contour of cubic off-curve points only, a quadratic
+    contour beside a cubic one, and a composite placing the cubic glyph scaled and moved."""
+    from fontTools.ttLib.tables import ttProgram  # noqa: PLC0415  # ty: ignore[unresolved-import]
+    from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphComponent, GlyphCoordinates  # noqa: PLC0415  # ty: ignore[unresolved-import]
+
+    on, off, cubic = 0x01, 0x00, 0x80
+
+    def simple(*contours: list[tuple[int, int, int]]) -> Any:
+        glyph = Glyph()
+        points = [point for contour in contours for point in contour]
+        glyph.coordinates = GlyphCoordinates([(x, y) for x, y, _ in points])
+        glyph.flags = bytearray(flag for _, _, flag in points)
+        ends, total = [], 0
+        for contour in contours:
+            total += len(contour)
+            ends.append(total - 1)
+        glyph.endPtsOfContours = ends
+        glyph.numberOfContours = len(contours)
+        glyph.program = ttProgram.Program()
+        glyph.program.fromBytecode(b"")
+        return glyph
+
+    glyphs = {
+        ".notdef": simple([(50, 0, on), (450, 0, on), (450, 700, on), (50, 700, on)]),
+        "cubic": simple(
+            [
+                (100, 0, on),
+                (150, 200, cubic),
+                (350, 200, cubic),
+                (400, 0, on),
+                (420, 100, cubic),
+                (440, 300, cubic),
+                (420, 500, cubic),
+                (380, 650, cubic),
+                (250, 700, on),
+            ],
+            [(100, 300, cubic), (100, 500, cubic), (300, 500, cubic), (300, 300, cubic)],
+        ),
+        "mixed": simple(
+            [(0, 0, on), (250, 400, off), (500, 0, on)],
+            [(100, 450, on), (150, 650, cubic), (350, 650, cubic), (400, 450, on)],
+        ),
+    }
+    composite = Glyph()
+    composite.numberOfContours = -1
+    component = GlyphComponent()
+    component.glyphName = "cubic"
+    component.x, component.y = 37, -11
+    component.flags = 0x0004
+    component.transform = [[0.75, 0], [0, 0.5]]
+    composite.components = [component]
+    glyphs["composite"] = composite
+    order = list(glyphs)
+    builder = FontBuilder(1000, isTTF=True)
+    builder.setupHead(unitsPerEm=1000, glyphDataFormat=1)  # 1: the glyf table has cubics
+    builder.setupGlyphOrder(order)
+    builder.setupCharacterMap({0x41 + index: name for index, name in enumerate(order[1:])})
+    builder.setupGlyf(glyphs)
+    builder.setupHorizontalMetrics(dict.fromkeys(order, (500, 0)))
+    builder.setupHorizontalHeader()
+    builder.setupPost()
+    builder.setupOS2()
+    builder.setupNameTable({"familyName": "Check", "styleName": "Regular"})
+    buffer = io.BytesIO()
+    builder.save(buffer)
+    return buffer.getvalue()
+
+
+def check_program_contours(data: bytes) -> list[str]:
+    """What the TrueType program returns, compiled kernel first, against fontTools."""
+    font = TTFont(io.BytesIO(data), lazy=True)
+    glyph_set = font.getGlyphSet()
+    program = TrueTypeFontProgram(data)
+    scale = 1000.0 / font["head"].unitsPerEm
+    problems = []
+    for gid, name in enumerate(font.getGlyphOrder()):
+        recording = reference_drawing(font, name, glyph_set)
+        theirs = tuple(tuple(c) for c in core_truetype.recording_to_contours(recording))
+        if scale != 1.0:
+            theirs = core_truetype.scale_contours(theirs, scale)
+        if program.normalized_glyph_contours(gid) != theirs:
+            problems.append(f"contours of {name}")
+    return problems
+
+
 # Type 1.
 
 
@@ -513,6 +601,8 @@ def main() -> int:
             kind = "built CFF2" if cff2 else "built OpenType CFF"
             record(kind, source, check_opentype(font))
     record("variable CFF2", "built", check_opentype(variable_cff2()))
+    cubic = cubic_glyf()
+    record("cubic glyf", "built", check_truetype(cubic) + check_program_contours(cubic))
     print("; ".join(f"{count} {kind}" for kind, count in results.items()), end="")
     print(f"; {built['not built']} CFF programs fontTools could not wrap" if built else "")
     if failures:

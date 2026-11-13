@@ -253,7 +253,7 @@ def composite_nonisolated_blend(
 ):
     """Composite a non-isolated group over its parent, removing the backdrop.
 
-    The general branch of core_pdf.impl.render.target.composite_nonisolated_group:
+    The general branch of core_pdf.impl.render.raster_support.composite_nonisolated_group:
     the effective alpha rint(source_alpha * opacity * 255 [* mask]) cast to
     uint8, then for each visible pixel the group backdrop removed as
     backdrop_removed computes it, clipped to [0, 1], and blended
