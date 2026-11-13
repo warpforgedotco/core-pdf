@@ -9,7 +9,7 @@ from core_pdf.impl.fonts.outline_pens import BoundsSink, Recording, Type1Outline
 from core_pdf.impl.fonts.program_base import GlyphNaming, GlyphProgram
 from core_pdf.impl.fonts.program_truetype import recording_to_contours
 from core_pdf.impl.fonts.raster_kernel import Contours, Point, transform_contours
-lazy from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds
+lazy from core_pdf_cythonized import decrypt_type1, type1_glyph_bounds, type1_glyph_contours
 
 LEN_IV_RE = re.compile(rb"/lenIV\s+(-?\d+)\s+def\b")
 FONT_MATRIX_RE = re.compile(
@@ -140,6 +140,11 @@ class Type1FontProgram(GlyphProgram):
         if glyph_name not in self.charstring_data:
             return ()
         try:
+            compiled = type1_glyph_contours(
+                self.charstring_data[glyph_name], self.subr_data, self.font_matrix
+            )
+            if compiled is not None:
+                return compiled
             contours = recording_to_contours(self.record(glyph_name))
             return transform_contours(contours, self.font_matrix)
         except Exception:
