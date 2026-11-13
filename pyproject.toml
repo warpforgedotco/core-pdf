@@ -138,6 +138,8 @@ line-length = 100
 # Glyph programs share one hook signature; the defaults and the null program
 # ignore the parts a program type does not need.
 "src/core_pdf/impl/fonts/program_base.py" = ["ARG002"]
+# Table readers and cmap decoders share one signature for their dispatch tables.
+"src/core_pdf/impl/fonts/sfnt.py" = ["ARG001"]
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "dataclasses.dataclass".msg = "Subclass core_records.GeneratedRecord, or use core_records.RecordType, instead"
 

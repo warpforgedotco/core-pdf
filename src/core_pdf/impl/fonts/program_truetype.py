@@ -4,7 +4,6 @@ import logging
 import struct
 import threading
 from collections.abc import Callable
-from functools import partial
 from io import BytesIO
 from typing import Any
 
@@ -26,6 +25,15 @@ from core_pdf.impl.fonts.raster_kernel import (
     Point,
     scale_contours,
 )
+from core_pdf.impl.fonts.sfnt import (
+    GlyphOutlines,
+    SfntFont,
+    Table,
+    best_cmap,
+    cmap_subtable,
+    glyf_glyph,
+    placeholder_glyph_id,
+)
 from core_pdf.impl.spec.s_09_fonts.helpers import (
     is_unicode_scalar,
     symbol_character_code,
@@ -34,9 +42,9 @@ lazy from core_pdf._vendor.fontTools.ttLib import TTFont
 lazy from core_pdf_cythonized import truetype_contours
 
 
-def parse_truetype_program(data: bytes) -> TTFont:
-    font = TTFont(BytesIO(data), lazy=True)
-    if not {"maxp", "glyf", "loca", "head"} <= set(font.keys()):
+def parse_truetype_program(data: bytes) -> SfntFont:
+    font = SfntFont(data)
+    if not {"maxp", "glyf", "loca", "head"} <= font.keys():
         raise ValueError("invalid TrueType glyph tables")
     return font
 
@@ -67,12 +75,10 @@ def fonttools_bbox(
     return float(x_min), float(y_min), float(x_max), float(y_max)
 
 
-def glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] | None:
-    glyph = glyf[glyph_name]
+def glyph_bbox(glyf: Table, glyph_name: str) -> tuple[float, float, float, float] | None:
+    glyph = glyf_glyph(glyf, glyph_name)
     if glyph.numberOfContours == 0:
         return None
-    if not all(hasattr(glyph, attr) for attr in ("xMin", "yMin", "xMax", "yMax")):
-        glyph.recalcBounds(glyf)
     return (
         float(glyph.xMin),
         float(glyph.yMin),
@@ -84,11 +90,10 @@ def glyph_bbox(glyf: Any, glyph_name: str) -> tuple[float, float, float, float] 
 GLYPH_HEADER = struct.Struct(">hhhhh")
 
 
-def raw_glyph_locations(font: TTFont) -> tuple[Any, bytes | None]:
+def raw_glyph_locations(font: SfntFont) -> tuple[Any, bytes | None]:
     try:
-        locations = font["loca"]
-        reader = font.reader
-        glyph_data = bytes(reader["glyf"]) if reader is not None else b""
+        locations = font.table("loca").locations
+        glyph_data = font.table_data("glyf")
     except Exception:
         return (), None
     return locations, glyph_data
@@ -120,9 +125,9 @@ def fonttools_contours(font: Any, glyph_id: int) -> tuple[tuple[Point, ...], ...
 type TrueTypeTables = tuple[bytes, numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], int]
 
 
-def truetype_tables(font: TTFont, glyph_data: bytes | None = None) -> TrueTypeTables | None:
+def truetype_tables(font: Any, glyph_data: bytes | None = None) -> TrueTypeTables | None:
     try:
-        keys = set(font.keys())
+        keys = font.keys()
         if (
             "CFF " in keys
             or "CFF2" in keys
@@ -130,18 +135,15 @@ def truetype_tables(font: TTFont, glyph_data: bytes | None = None) -> TrueTypeTa
             or not {"glyf", "loca", "hmtx"} <= keys
         ):
             return None
-        reader = font.reader
-        if reader is None:
-            return None
-        glyf = bytes(reader["glyf"]) if glyph_data is None else glyph_data
-        loca = numpy.asarray(font["loca"].locations, dtype=numpy.int64)
-        order = font.getGlyphOrder()
+        glyf = font.table_data("glyf") if glyph_data is None else glyph_data
+        loca = numpy.asarray(font.table("loca").locations, dtype=numpy.int64)
+        order = font.glyph_order
         if len(set(order)) != len(order):
             return None
-        metrics = font["hmtx"].metrics
+        metrics = font.table("hmtx").metrics
         lsb = numpy.asarray([int(metrics[name][1]) for name in order], dtype=numpy.int64)
         if "vmtx" in keys:
-            vertical = font["vmtx"].metrics
+            vertical = font.table("vmtx").metrics
             if not all(name in vertical for name in order):
                 return None
     except Exception:
@@ -152,6 +154,62 @@ def truetype_tables(font: TTFont, glyph_data: bytes | None = None) -> TrueTypeTa
         if bool(((ends < starts) | ((ends > len(glyf)) & (ends != starts))).any()):
             return None
     return glyf, loca, lsb, len(order)
+
+
+class SfntOutlineAccess:
+    """A TrueType program's glyphs by ID: drawn by the compiled kernel from the raw
+    tables, or, where the kernel cannot read them, glyph by glyph in Python."""
+
+    __slots__ = (
+        "font",
+        "glyph_count",
+        "glyph_data",
+        "outline_sets",
+        "scale",
+        "truetype",
+        "truetype_read",
+    )
+
+    def __init__(self, font: SfntFont, glyph_data: bytes | None = None) -> None:
+        self.font = font
+        self.glyph_data = glyph_data
+        self.glyph_count = len(font.glyph_order)
+        units_per_em = float(getattr(font.table("head"), "unitsPerEm", 1000) or 1000)
+        self.scale = 1000.0 / units_per_em if units_per_em else 1.0
+        self.truetype: TrueTypeTables | None = None
+        self.truetype_read = False
+        self.outline_sets: dict[int, GlyphOutlines] = {}
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.font.glyph_id_for_name(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return 0 <= glyph_id < self.glyph_count
+
+    def outlines(self) -> GlyphOutlines:
+        # Drawing tracks component depth, so each thread draws with its own.
+        thread = threading.get_ident()
+        outlines = self.outline_sets.get(thread)
+        if outlines is None:
+            outlines = self.outline_sets[thread] = GlyphOutlines(self.font)
+        return outlines
+
+    def normalized_glyph_contours(self, glyph_id: int) -> tuple[tuple[Point, ...], ...]:
+        if not self.truetype_read:
+            self.truetype = truetype_tables(self.font, self.glyph_data)
+            self.truetype_read = True
+        tables = self.truetype
+        if tables is not None:
+            glyf, loca, lsb, glyph_count = tables
+            drawn = truetype_contours(glyf, loca, lsb, glyph_count, glyph_id, self.scale)
+            if drawn is not None:
+                return drawn
+        try:
+            recording = self.outlines().record(self.font.glyph_name(glyph_id))
+            contours = tuple(tuple(contour) for contour in recording_to_contours(recording))
+            return contours if self.scale == 1.0 else scale_contours(contours, self.scale)
+        except Exception:
+            return ()
 
 
 class FontToolsOutlineAccess:
@@ -250,7 +308,7 @@ class UnicodeGlyphMaps:
 
     __slots__ = ("font", "cmap", "inverse")
 
-    def __init__(self, font: TTFont) -> None:
+    def __init__(self, font: SfntFont) -> None:
         self.font = font
         self.cmap: dict[int, int] | None = None
         self.inverse: dict[int, str] | None = None
@@ -268,8 +326,10 @@ class UnicodeGlyphMaps:
         return inverse
 
 
-class TrueTypeFontProgram(FontToolsProgram):
+class TrueTypeFontProgram(GlyphProgram):
     __slots__ = (
+        "font",
+        "outlines",
         "data",
         "units_per_em",
         "cid_to_gid",
@@ -292,11 +352,11 @@ class TrueTypeFontProgram(FontToolsProgram):
             int, tuple[tuple[float, float, float, float] | None, bool]
         ] = {}
         self.font = tt_font_from_data(data)
-        ensure_glyph_order(self.font)
-        self.units_per_em = float(getattr(self.font["head"], "unitsPerEm", 1000) or 1000)
+        self.font.resolve_glyph_order()
+        self.units_per_em = float(getattr(self.font.table("head"), "unitsPerEm", 1000) or 1000)
         self.glyph_locations, glyph_data = raw_glyph_locations(self.font)
         self.glyph_table_data = glyph_data if glyph_data is not None else b""
-        self.outlines = FontToolsOutlineAccess(self.font, glyph_data)
+        self.outlines = SfntOutlineAccess(self.font, glyph_data)
         self.cid_to_gid = cid_to_gid
         self.unicode_maps = UnicodeGlyphMaps(self.font)
         self.cmap = self.selected_cmap(use_cmap=use_cmap)
@@ -310,11 +370,20 @@ class TrueTypeFontProgram(FontToolsProgram):
 
     def variant(self, cid_to_gid: bytes | None, *, use_cmap: bool) -> TrueTypeFontProgram:
         variant = object.__new__(TrueTypeFontProgram)
-        for name in (*FontToolsProgram.__slots__, *TrueTypeFontProgram.__slots__):
+        for name in TrueTypeFontProgram.__slots__:
             setattr(variant, name, getattr(self, name))
         variant.cid_to_gid = cid_to_gid
         variant.cmap = self.selected_cmap(use_cmap=use_cmap)
         return variant
+
+    def glyph_id_for_name(self, glyph_name: str) -> int | None:
+        return self.outlines.glyph_id_for_name(glyph_name)
+
+    def has_glyph_id(self, glyph_id: int) -> bool:
+        return self.outlines.has_glyph_id(glyph_id)
+
+    def normalized_glyph_contours(self, glyph_id: int) -> Contours:
+        return self.outlines.normalized_glyph_contours(glyph_id)
 
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
         if not naming.is_cid_font and 0 <= code < 256 and self.cmap:
@@ -368,15 +437,16 @@ class TrueTypeFontProgram(FontToolsProgram):
         self, gid: int
     ) -> tuple[tuple[float, float, float, float] | None, bool]:
         try:
-            glyph_name = self.font.getGlyphName(gid)
-            glyf = self.font["glyf"]
-            glyph = glyf[glyph_name]
-            if not glyph.isComposite():
+            glyph_name = self.font.glyph_name(gid)
+            glyf = self.font.table("glyf")
+            glyph = glyf_glyph(glyf, glyph_name)
+            if not glyph.is_composite():
                 return (None, False)
             body_bbox: tuple[float, float, float, float] | None = None
             has_dot = False
             for component in glyph.components:
-                component_name, transform = component.getComponentInfo()
+                component_name = component.name
+                transform = component.transform()
                 bbox = glyph_bbox(glyf, component_name)
                 if bbox is None:
                     continue
@@ -419,66 +489,19 @@ def cached_truetype_program(
     return program
 
 
-def tt_font_from_data(data: bytes) -> TTFont:
+def tt_font_from_data(data: bytes) -> SfntFont:
     try:
         return parse_truetype_program(data)
     except Exception as exc:
         raise ValueError("invalid TrueType font program") from exc
 
 
-PLACEHOLDER_GLYPH_NAMES = [".notdef"]
-
-
-def placeholder_glyph_order(glyph_count: int) -> list[str]:
-    global PLACEHOLDER_GLYPH_NAMES
-    names = PLACEHOLDER_GLYPH_NAMES
-    if glyph_count > len(names):
-        names = PLACEHOLDER_GLYPH_NAMES = [
-            *names,
-            *("glyph%.5d" % gid for gid in range(len(names), glyph_count)),
-        ]
-    return names[:glyph_count] if glyph_count > 0 else []
-
-
-def placeholder_glyph_names(font: TTFont) -> None:
-    glyph_order = placeholder_glyph_order(int(font["maxp"].numGlyphs))
-    glyph_order[0] = ".notdef"
-    font.glyphOrder = glyph_order
-    font.__dict__["_core_pdf_placeholder_names"] = True
-    if "cmap" in font:
-        font["cmap"].buildReversedMin()
-
-
-def ensure_glyph_order(font: TTFont) -> None:
-    # A TrueType program finds glyphs by ID, so when the post table names none,
-    # fontTools' names synthesized from the cmap would only be re-mapped back to
-    # IDs. The placeholders it starts from serve instead; the cmap is still read
-    # where fontTools reads it, so a corrupt one fails and is kept the same way.
-    overrides = font.__dict__
-    overrides["_getGlyphNamesFromCmap"] = partial(placeholder_glyph_names, font)
-    try:
-        font.getGlyphOrder()
-        return
-    except Exception:
-        pass
-    finally:
-        del overrides["_getGlyphNamesFromCmap"]
-    try:
-        glyph_count = int(font["maxp"].numGlyphs)
-    except Exception as exc:
-        raise ValueError("invalid TrueType glyph order") from exc
-    if glyph_count <= 0:
-        raise ValueError("invalid TrueType glyph order")
-    font.setGlyphOrder(placeholder_glyph_order(glyph_count))
-    font.__dict__["_core_pdf_placeholder_names"] = True
-
-
-def cmap_glyph_ids(font: TTFont) -> Callable[[str], int | None]:
+def cmap_glyph_ids(font: SfntFont) -> Callable[[str], int | None]:
     """Glyph ID for a glyph name a cmap subtable produced, or None when the
     font neither names it nor gives it a placeholder name."""
-    if font.__dict__.get("_core_pdf_placeholder_names"):
+    if font.placeholder:
         return placeholder_glyph_id
-    reverse_glyph_map = font.getReverseGlyphMap()
+    reverse_glyph_map = font.glyph_id_map()
 
     def gid_for(glyph_name: str) -> int | None:
         try:
@@ -489,25 +512,14 @@ def cmap_glyph_ids(font: TTFont) -> Callable[[str], int | None]:
     return gid_for
 
 
-def placeholder_glyph_id(glyph_name: str) -> int | None:
-    if glyph_name == ".notdef":
-        return 0
-    if not glyph_name.startswith("glyph"):
-        return None
-    try:
-        return int(glyph_name[5:])
-    except ValueError:
-        return None
-
-
-def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
+def best_unicode_gid_cmap(font: SfntFont) -> dict[int, int]:
     symbol_fallback = False
     try:
-        cmap_table = font["cmap"]
-        name_cmap = cmap_table.getBestCmap()
+        cmap_table = font.table("cmap")
+        name_cmap = best_cmap(cmap_table)
         if name_cmap is None:
-            symbol_cmap = cmap_table.getcmap(3, 0)
-            name_cmap = symbol_cmap.cmap if symbol_cmap is not None else {}
+            symbol_cmap = cmap_subtable(cmap_table, 3, 0)
+            name_cmap = symbol_cmap.mapping() if symbol_cmap is not None else {}
             symbol_fallback = bool(name_cmap)
         gid_for = cmap_glyph_ids(font)
     except Exception:
@@ -524,22 +536,22 @@ def best_unicode_gid_cmap(font: TTFont) -> dict[int, int]:
     return mapping
 
 
-def code_gid_cmap(font: TTFont) -> dict[int, int]:
+def code_gid_cmap(font: SfntFont) -> dict[int, int]:
     try:
-        cmap_table = font["cmap"]
+        cmap_table = font.table("cmap")
         gid_for = cmap_glyph_ids(font)
     except Exception:
         return {}
 
     for platform, encoding in ((3, 0), (1, 0)):
         try:
-            subtable = cmap_table.getcmap(platform, encoding)
+            subtable = cmap_subtable(cmap_table, platform, encoding)
         except Exception:
             continue
         if subtable is None:
             continue
         mapping: dict[int, int] = {}
-        for code, glyph_name in subtable.cmap.items():
+        for code, glyph_name in subtable.mapping().items():
             gid = gid_for(glyph_name)
             if gid is None or gid <= 0:
                 continue
