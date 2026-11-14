@@ -50,6 +50,7 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import (
     ColorRendering,
     use_black_point_compensation,
 )
+from core_pdf.impl.spec.s_08_graphics.pdf_function import batch_evaluator, with_batch
 from core_pdf.impl.spec.s_11_transparency.images import unblend_matte_components
 from core_pdf.impl.spec.types import PdfName
 lazy from core_pdf_cythonized import code_presence, distinct_uint16_rows, gather_uint8_rows
@@ -190,6 +191,9 @@ def compiled_tint_function(tint_fn: object) -> TintFunction:
             output = outputs.put(inputs, compiled(*inputs))
         return output
 
+    batch = batch_evaluator(compiled)
+    if batch is not None:
+        with_batch(remembered, batch)
     if key is not None:
         TINT_FUNCTION_CACHE.put(key, remembered)
     return remembered
@@ -281,10 +285,15 @@ def convert_tint_components(
             raise ValueError("missing tint alternate")
         function = tint_function(space.tint_fn)
         distinct, inverse = distinct_component_rows(values)
-        tinted = numpy.asarray(
-            [function(*(float(component) for component in row)) for row in distinct],
-            dtype=numpy.float64,
-        )
+        batch = batch_evaluator(function) if distinct.shape[1] == 1 else None
+        if batch is not None:
+            # A Separation's tints through the transform at once, as one at a time finds them.
+            tinted = batch(numpy.ascontiguousarray(distinct[:, 0], dtype=numpy.float64))
+        else:
+            tinted = numpy.asarray(
+                [function(*(float(component) for component in row)) for row in distinct],
+                dtype=numpy.float64,
+            )
         if tinted.shape != (len(distinct), len(space.alternate.component_ranges)):
             raise ValueError("invalid tint transform output count")
         if not numpy.isfinite(tinted).all():

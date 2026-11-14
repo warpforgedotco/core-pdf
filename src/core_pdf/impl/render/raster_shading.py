@@ -48,6 +48,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, invert_affine
+from core_pdf.impl.spec.s_08_graphics.pdf_function import batch_evaluator
 lazy from core_pdf_cythonized import (
     composite_normal_group,
     function_values,
@@ -157,6 +158,7 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
         lambda positions: ordered[positions].tolist(),
         allowed if background is not None else None,
         background,
+        many_colors=True,
     )
 
 
@@ -303,19 +305,31 @@ def device_palette(
     count = DEVICE_COMPONENTS.get(color_model)
     if count is None:
         return None
+    many = batch_evaluator(evaluate) if batch is None and type(inputs[0]) is not tuple else None
     try:
-        rows = (
-            batch
-            if batch is not None
-            else [evaluate(*value) if type(value) is tuple else evaluate(value) for value in inputs]
-        )
-        components = numpy.asarray(rows, dtype=numpy.float64)
-        alpha = shading_rgba(color_model, rows[0], fill_opacity, rendering, shading_alpha)[3]
+        if many is not None:
+            components = many(numpy.asarray(inputs, dtype=numpy.float64))
+        else:
+            rows = (
+                batch
+                if batch is not None
+                else [
+                    evaluate(*value) if type(value) is tuple else evaluate(value)
+                    for value in inputs
+                ]
+            )
+            components = numpy.asarray(rows, dtype=numpy.float64)
+        alpha = shading_rgba(color_model, (0.0,), fill_opacity, rendering, shading_alpha)[3]
     except Exception:  # noqa: BLE001 - one at a time reports the colour that fails
         return None
-    if components.ndim != 2 or components.shape[1] < 1:
+    # A component that is not finite is found one at a time, as shading_rgba finds it.
+    if (
+        components.ndim != 2
+        or len(components) != len(inputs)
+        or components.shape[1] < 1
+        or not numpy.isfinite(components).all()
+    ):
         return None
-    components = numpy.nan_to_num(components, nan=0.0, posinf=0.0, neginf=0.0)
     palette = numpy.empty((len(components), 4), dtype=numpy.int32)
     palette[:, 3] = alpha
     if color_model == "DeviceGray" or components.shape[1] == 1:

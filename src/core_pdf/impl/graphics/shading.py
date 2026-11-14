@@ -24,7 +24,7 @@ from core_pdf.impl.spec.s_07_filters.errors import FilterError
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
-from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
+from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, batch_evaluator
 from core_pdf.impl.spec.s_08_graphics.shading import (
     SHADING_STREAM_KEY,
     parse_function_shading,
@@ -366,14 +366,21 @@ class SpaceEvaluator:
         """What calling it on each value, or each tuple of values, gives, converting every
         colour in one pass; None when a value's colour fails, which calling one at a time
         then reports."""
+        many = batch_evaluator(self.function) if values and type(values[0]) is not tuple else None
         try:
-            rows = [
-                self.function(*value) if type(value) is tuple else self.function(value)
-                for value in values
-            ]
-            converted = convert_components(
-                numpy.asarray(rows, dtype=numpy.float64), self.space, rendering=self.rendering
-            )
+            if many is not None:
+                rows = many(numpy.asarray(values, dtype=numpy.float64))
+                if not numpy.isfinite(rows).all():
+                    raise ValueError("a colour that is not finite is converted one at a time")
+            else:
+                rows = numpy.asarray(
+                    [
+                        self.function(*value) if type(value) is tuple else self.function(value)
+                        for value in values
+                    ],
+                    dtype=numpy.float64,
+                )
+            converted = convert_components(rows, self.space, rendering=self.rendering)
         except TypeError, ValueError, ArithmeticError:
             return None
         if converted.ndim != 2 or len(converted) != len(rows):

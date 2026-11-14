@@ -9,6 +9,8 @@ from bisect import bisect_right
 from collections.abc import Callable
 from typing import Any
 
+lazy import numpy
+
 from core_pdf.impl.postscript.calculator import bounds, compile_calculator
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
@@ -19,6 +21,30 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
+# The batch form of a one-input evaluator: from a float64 array of inputs to a float64 array of
+# their outputs, one row each, found with the same float operations in the same order, so equal
+# bit for bit to calling the evaluator on each. It raises where the evaluator would raise for
+# one of them, or where it cannot be sure of the same result (a NaN), so the caller then
+# evaluates one at a time.
+type BatchEvaluator = Callable[[Any], Any]
+
+
+def batch_evaluator(evaluate: object) -> BatchEvaluator | None:
+    """The batch form of evaluate, or None when it has none."""
+    return getattr(evaluate, "batch", None)
+
+
+def with_batch(evaluate: PdfFunctionEvaluator, batch: BatchEvaluator) -> PdfFunctionEvaluator:
+    setattr(evaluate, "batch", batch)  # noqa: B010 - an attribute of a function object
+    return evaluate
+
+
+def clamped_inputs(inputs: Any, low: float, high: float) -> Any:
+    """max(low, min(high, value)) of each input, which must all be finite."""
+    values = numpy.asarray(inputs, dtype=numpy.float64)
+    if values.ndim != 1 or not numpy.isfinite(values).all():
+        raise ValueError("a batch of PDF function inputs must be finite numbers")
+    return numpy.maximum(low, numpy.minimum(high, values))
 
 
 def calculator_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:
@@ -45,7 +71,20 @@ def with_pdf_function_range(
             for output, (lower, upper) in zip(outputs, ranges, strict=True)
         )
 
-    return evaluate_clipped
+    inner = batch_evaluator(evaluate)
+    if inner is None:
+        return evaluate_clipped
+    lowers = numpy.asarray([lower for lower, _ in ranges], dtype=numpy.float64)
+    uppers = numpy.asarray([upper for _, upper in ranges], dtype=numpy.float64)
+
+    def batch_clipped(inputs: Any) -> Any:
+        outputs = inner(inputs)
+        # min(upper, NaN) is upper, which numpy.minimum does not give.
+        if outputs.shape[1] != len(ranges) or numpy.isnan(outputs).any():
+            raise ValueError("PDF function range has incorrect output count")
+        return numpy.maximum(lowers, numpy.minimum(uppers, outputs))
+
+    return with_batch(evaluate_clipped, batch_clipped)
 
 
 def scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
@@ -198,7 +237,20 @@ def compile_pdf_function(
                     outputs.extend(part(*inputs))
                 return tuple(outputs) if outputs else tuple(inputs)
 
-            return evaluate_array
+            part_batches = [
+                batch for batch in (batch_evaluator(part) for part in parts) if batch is not None
+            ]
+            if len(part_batches) != len(parts):
+                return evaluate_array
+
+            def batch_array(inputs: Any) -> Any:
+                found = [batch(inputs) for batch in part_batches]
+                outputs = numpy.concatenate(found, axis=1)
+                if not outputs.shape[1]:
+                    raise ValueError("PDF function array has no outputs")
+                return outputs
+
+            return with_batch(evaluate_array, batch_array)
         raise ValueError("invalid PDF function array")
 
     if isinstance(function, PdfStream):
@@ -250,8 +302,25 @@ def compile_pdf_function(
                 for start_value, delta in zip(start_values, deltas, strict=True)
             )
 
+        starts = numpy.asarray(start_values, dtype=numpy.float64)
+        steps = numpy.asarray(deltas, dtype=numpy.float64)
+
+        def batch_exponential(inputs: Any) -> Any:
+            values = clamped_inputs(inputs, domain_min, domain_max)
+            if exponent == 1:
+                # math.pow(value, 1.0) is value.
+                factors = values
+            else:
+                # math.pow for each, raising as one call would; numpy.power may differ in an ulp.
+                factors = numpy.asarray(
+                    [math.pow(value, exponent) for value in values.tolist()], dtype=numpy.float64
+                )
+            return starts + factors[:, None] * steps
+
         return with_pdf_function_range(
-            evaluate_exponential, dictionary.get("Range"), output_count=count
+            with_batch(evaluate_exponential, batch_exponential),
+            dictionary.get("Range"),
+            output_count=count,
         )
 
     if function_type == 3:
@@ -287,9 +356,52 @@ def compile_pdf_function(
             encoded = enc0 if high == low else enc0 + (value - low) * (enc1 - enc0) / (high - low)
             return parts[index](encoded)
 
-        return with_pdf_function_range(evaluate_stitching, dictionary.get("Range"))
+        part_batches = [
+            batch for batch in (batch_evaluator(part) for part in parts) if batch is not None
+        ]
+        if len(part_batches) != len(parts):
+            return with_pdf_function_range(evaluate_stitching, dictionary.get("Range"))
+        lows = numpy.asarray([domain_min, *bounds], dtype=numpy.float64)
+        highs = numpy.asarray([*bounds, domain_max], dtype=numpy.float64)
+        bound_array = numpy.asarray(bounds, dtype=numpy.float64)
+        encode_starts = numpy.asarray(encode[0::2], dtype=numpy.float64)
+        encode_ends = numpy.asarray(encode[1::2], dtype=numpy.float64)
+
+        def batch_stitching(inputs: Any) -> Any:
+            values = clamped_inputs(inputs, domain_min, domain_max)
+            index = numpy.searchsorted(bound_array, values, side="right")
+            low = lows[index]
+            high = highs[index]
+            enc0 = encode_starts[index]
+            enc1 = encode_ends[index]
+            with numpy.errstate(divide="ignore", invalid="ignore"):
+                encoded = numpy.where(
+                    high == low, enc0, enc0 + (values - low) * (enc1 - enc0) / (high - low)
+                )
+            outputs: Any = None
+            for part in numpy.unique(index).tolist():
+                chosen = index == part
+                found = part_batches[part](encoded[chosen])
+                if outputs is None:
+                    outputs = numpy.empty((len(values), found.shape[1]), dtype=numpy.float64)
+                elif found.shape[1] != outputs.shape[1]:
+                    raise ValueError("stitched PDF functions differ in output count")
+                outputs[chosen] = found
+            if outputs is None:
+                return numpy.empty((0, 0), dtype=numpy.float64)
+            return outputs
+
+        return with_pdf_function_range(
+            with_batch(evaluate_stitching, batch_stitching), dictionary.get("Range")
+        )
 
     raise ValueError(f"unsupported PDF function type: {function_type}")
 
 
-__all__ = ("PdfFunctionEvaluator", "with_pdf_function_range", "compile_pdf_function")
+__all__ = (
+    "BatchEvaluator",
+    "PdfFunctionEvaluator",
+    "batch_evaluator",
+    "compile_pdf_function",
+    "with_pdf_function_range",
+)

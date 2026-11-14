@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+lazy import numpy
+
 from core_pdf.impl.base.values import lenient_float, lenient_int
 from core_pdf.impl.spec.exceptions import PdfParseError, PdfUnsupportedError
 from core_pdf.impl.spec.s_07_filters.errors import FilterError
@@ -73,7 +75,22 @@ def compile_pdf_function(function: Any) -> PdfFunctionEvaluator:
             def evaluate_array(*inputs: float) -> tuple[float, ...]:
                 return tuple(value for part in parts for value in part(*inputs)) or tuple(inputs)
 
-            return evaluate_array
+            part_batches = [
+                batch
+                for batch in (pdf_function.batch_evaluator(part) for part in parts)
+                if batch is not None
+            ]
+            if len(part_batches) != len(parts):
+                return evaluate_array
+
+            def batch_array(inputs: Any) -> Any:
+                found = [batch(inputs) for batch in part_batches]
+                outputs = numpy.concatenate(found, axis=1)
+                if not outputs.shape[1]:
+                    raise ValueError("PDF function array has no outputs")
+                return outputs
+
+            return pdf_function.with_batch(evaluate_array, batch_array)
         try:
             constants = tuple(float(value) for value in function)
         except (TypeError, ValueError) as exc:
