@@ -15,6 +15,7 @@ from core_pdf.impl.base.pages import PageSelection, resolve_page_selection
 from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.output.model import (
     Annotation,
+    AssociatedFile,
     Block,
     BlockKind,
     ContentNode,
@@ -184,7 +185,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             }
         )
 
-    return {
+    result: dict[str, JsonValue] = {
         "schema_version": document.schema_version,
         "metadata": json_safe(document.metadata, path="$.metadata"),
         "pages": pages,
@@ -197,6 +198,49 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
         "annotations": annotations,
         "form_fields": form_fields,
         "diagnostics": [diagnostic_to_json_dict(diagnostic) for diagnostic in document.diagnostics],
+    }
+    # Present only when the document has associated files, so other output is unchanged.
+    if document.associated_files:
+        result["associated_files"] = [
+            {"id": f"af:{index}", **associated_file_to_json_dict(associated)}
+            for index, associated in enumerate(document.associated_files)
+        ]
+    return result
+
+
+def reference_to_json(reference: tuple[int, int] | None) -> JsonValue:
+    return None if reference is None else f"{reference[0]} {reference[1]} R"
+
+
+def associated_file_to_json_dict(associated: AssociatedFile) -> dict[str, JsonValue]:
+    page_number = associated.page_number
+    page_id = None if page_number is None else f"p{page_number}"
+    annotation_index = associated.annotation_index
+    file = associated.file
+    return {
+        "owner": str(associated.owner),
+        "page_id": page_id,
+        "annotation_id": (
+            None
+            if page_number is None or annotation_index is None
+            else f"{page_id}:annotation:{annotation_index}"
+        ),
+        "structure_type": associated.structure_type,
+        "structure_id": associated.structure_id,
+        "structure_ref": reference_to_json(associated.structure_reference),
+        "resource_name": associated.resource_name,
+        "relationship": file.relationship,
+        "name": file.name,
+        "file_name": file.file_name,
+        "unicode_file_name": file.unicode_file_name,
+        "description": file.description,
+        "mime_type": file.mime_type,
+        "size": file.size,
+        "creation_date": file.creation_date,
+        "modification_date": file.modification_date,
+        "checksum": file.checksum,
+        "embedded": file.embedded,
+        "stream_ref": reference_to_json(file.stream_reference),
     }
 
 

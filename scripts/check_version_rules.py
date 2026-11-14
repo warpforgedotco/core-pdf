@@ -28,6 +28,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace, parse_color_
 from core_pdf.impl.spec.s_08_graphics.image_spec import image_decode_array_applies
 from core_pdf.impl.spec.s_09_fonts.helpers import get_base_encoding_glyph_names
 from core_pdf.impl.spec.s_11_transparency.blend import revised_blending
+from core_pdf.impl.spec.s_14_structure.associated_files import structure_elements_hold_af
 from core_pdf.impl.spec.s_14_structure.roles import resolve_structure_role
 from core_pdf.impl.spec.standards import (
     DocumentStandards,
@@ -187,6 +188,14 @@ CASES: dict[tuple[str, str], Callable[[], bool]] = {
         "core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role",
         "a role map can remap standard structure types",
     ): lambda: mapped_role("1.4") == "P" and mapped_role("1.5") == "H1",
+    (
+        "core_pdf.impl.spec.s_14_structure.associated_files.structure_elements_hold_af",
+        "structure elements hold AF",
+    ): lambda: (
+        not structure_elements_hold_af(context("1.7"))
+        and structure_elements_hold_af(context("1.7"), ("pdfa-3b",))
+        and structure_elements_hold_af(context("2.0"))
+    ),
     (
         "core_pdf.impl.document.standards.extension_diagnostics",
         "a developer extension declares its URL",

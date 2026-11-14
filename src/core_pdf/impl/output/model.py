@@ -687,11 +687,71 @@ class Diagnostic(GeneratedRecord):
     page_number: int | None = None
 
 
+class EmbeddedFile(GeneratedRecord):
+    """A file specification dictionary and, when the file is embedded, its stream's entries.
+
+    The names and description are decoded text; dates stay PDF date strings and the checksum
+    is the MD5 digest as hex. PdfDocument.embedded_file_data reads the bytes, which no record
+    holds.
+    """
+
+    file_name: str | None = None
+    unicode_file_name: str | None = None
+    description: str | None = None
+    relationship: str = "Unspecified"
+    mime_type: str | None = None
+    size: int | None = None
+    creation_date: str | None = None
+    modification_date: str | None = None
+    checksum: str | None = None
+    embedded: bool = False
+    # The embedded file stream's object and generation numbers.
+    stream_reference: tuple[int, int] | None = None
+    # The key naming the file in the catalog's EmbeddedFiles name tree, when it is listed there.
+    tree_key: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self.unicode_file_name or self.file_name or self.tree_key or ""
+
+
+class AssociatedFileOwner(StrEnum):
+    DOCUMENT = "document"
+    PAGE = "page"
+    ANNOTATION = "annotation"
+    STRUCTURE_ELEMENT = "structure-element"
+    XOBJECT = "xobject"
+    MARKED_CONTENT = "marked-content"
+
+
+class AssociatedFile(GeneratedRecord):
+    """A file an object's AF array associates with it, and which object that is.
+
+    page_number is set for every owner but the document; annotation_index is the annotation's
+    position in its Page.annotations; resource_name is the XObject's or property list's name
+    in the page's resources.
+    """
+
+    owner: AssociatedFileOwner
+    file: EmbeddedFile
+    page_number: int | None = None
+    annotation_index: int | None = None
+    structure_type: str | None = None
+    structure_id: str | None = None
+    structure_reference: tuple[int, int] | None = None
+    resource_name: str | None = None
+
+    @property
+    def relationship(self) -> str:
+        return self.file.relationship
+
+
 class Document(FrozenMetadataFields, ViewCache, GeneratedRecord):
     pages: tuple[Page, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     diagnostics: tuple[Diagnostic, ...] = ()
     schema_version: str = SCHEMA_VERSION
+    associated_files: tuple[AssociatedFile, ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version != SCHEMA_VERSION:

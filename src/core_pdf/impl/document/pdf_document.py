@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_syntax.types import Decipher
 
 
+from core_pdf.impl.document import associated_files as attached
 from core_pdf.impl.document import fields as form_fields
 from core_pdf.impl.document import navigation, page_tree, security, xref_recovery
 from core_pdf.impl.document.operations import DocumentOperation
@@ -259,7 +260,7 @@ class PdfDocument(Generic[PageT]):
     @property
     def structured_document(self) -> Document:
         if self.page_count() == 0:
-            return Document(metadata=self.metadata)
+            return Document(metadata=self.metadata, associated_files=self.associated_files())
         return self.extract()
 
     def extract_images(
@@ -426,6 +427,14 @@ class PdfDocument(Generic[PageT]):
     named_destinations = navigation.named_destinations
     oc_hidden_layers = navigation.oc_hidden_layers
     build_oc_hidden_layers = navigation.build_oc_hidden_layers
+
+    # Associated files and the catalog's embedded files.
+    associated_files = attached.associated_files
+    collect_associated_files = attached.collect_associated_files
+    embedded_files = property(attached.embedded_files)
+    file_attachments = attached.file_attachments
+    embedded_file_data = attached.embedded_file_data
+    embedded_file_record = attached.embedded_file_record
 
     # Encryption.
     negotiate_security = security.negotiate_security

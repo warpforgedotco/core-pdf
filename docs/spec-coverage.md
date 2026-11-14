@@ -24,15 +24,15 @@ still passes it through). Deprecated keys are left out. See also the
 
 | Added by | Keys, by object | Read by core | Never read |
 | --- | --- | --- | --- |
-| PDF 2.0 | 668 | 312 | 356 |
-| PDF 1.7 | 150 | 57 | 93 |
-| PDF 1.6 | 207 | 108 | 99 |
-| PDF 1.5 | 587 | 252 | 335 |
-| PDF 1.4 | 208 | 136 | 72 |
-| PDF 1.3 | 554 | 368 | 186 |
+| PDF 2.0 | 668 | 364 | 304 |
+| PDF 1.7 | 150 | 62 | 88 |
+| PDF 1.6 | 207 | 109 | 98 |
+| PDF 1.5 | 587 | 267 | 320 |
+| PDF 1.4 | 208 | 137 | 71 |
+| PDF 1.3 | 554 | 374 | 180 |
 | PDF 1.2 | 366 | 244 | 122 |
-| PDF 1.1 | 90 | 73 | 17 |
-| PDF 1.0 | 193 | 150 | 43 |
+| PDF 1.1 | 90 | 75 | 15 |
+| PDF 1.0 | 193 | 151 | 42 |
 | extension AAPL | 9 | 3 | 6 |
 | extension EAPDF_1 | 2 | 0 | 2 |
 | extension ISO_19593 | 4 | 0 | 4 |
@@ -56,8 +56,6 @@ Keys core never reads:
 - `A2` in 3DMeasureAD3, 3DMeasureLD3, 3DMeasurePD3, 3DMeasureRD3
 - `A3` in 3DMeasureRD3
 - `A4` in 3DMeasureRD3
-- `AF` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 29 more
-- `AFRelationship` in AFFileSpecification, FileSpecification
 - `Activation` in RichMediaSettings
 - `Animation` in RichMediaActivation
 - `AppearanceFilter` in SigFieldSeedValue
@@ -77,7 +75,6 @@ Keys core never reads:
 - `Cert` in DocTimeStamp, VRI
 - `Certs` in DSS
 - `Changes` in DocTimeStamp
-- `CheckSum` in AFEmbeddedFileParameter, DestOutputProfileRef
 - `Child` in CollectionFolder
 - `ColorantTable` in DestOutputProfileRef
 - `Condition` in RichMediaActivation, RichMediaDeactivation
@@ -86,7 +83,6 @@ Keys core never reads:
 - `ContactInfo` in DocTimeStamp
 - `ContinuedFrom` in StructureAttributesDict
 - `ContinuedList` in StructureAttributesDict
-- `CreationDate` in AFEmbeddedFileParameter, AnnotProjection, CollectionFolder
 - `D1` in 3DMeasureAD3, 3DMeasurePD3
 - `D2` in 3DMeasureAD3
 - `DCS` in MeasureGEO
@@ -104,19 +100,16 @@ Keys core never reads:
 - `Data` in 3DNode, ViewParams
 - `Deactivation` in RichMediaSettings
 - `Default` in RichMediaHeight, RichMediaWidth
-- `Desc` in AFFileSpecification, CollectionFolder
 - `DestOutputProfileRef` in OutputIntents
 - `DigSig` in RequirementsDigSig, RequirementsDigSigMDP, RequirementsDigSigValidation
 - `Direction` in CollectionSplit
 - `Dp` in ActionGoToDp
-- `EF` in AFFileSpecification
 - `EL` in 3DMeasureRD3
 - `EP` in AFFileSpecification, FileSpecification
 - `EPSG` in GeographicCoordinateSystem, ProjectedCoordinateSystem
 - `End` in DPart
 - `Enforce` in ViewerPreferences
 - `ExData` in AnnotProjection
-- `FS` in AFFileSpecification
 - `Folders` in Collection
 - `Free` in CollectionFolder
 - `GCS` in MeasureGEO
@@ -143,7 +136,6 @@ Keys core never reads:
 - `Max` in RichMediaHeight, RichMediaWidth
 - `Measure` in XObjectFormPrinterMark, XObjectFormType1, XObjectImage, XObjectImageMask
 - `Min` in RichMediaHeight, RichMediaWidth
-- `ModDate` in AFEmbeddedFileParameter, CollectionFolder
 - `N1` in 3DMeasure3DC, 3DMeasureAD3, 3DMeasureLD3, 3DMeasurePD3
 - `N2` in 3DMeasureAD3, 3DMeasureLD3, 3DMeasurePD3, 3DMeasureRD3
 - `NA` in 3DViewAddEntries
@@ -158,7 +150,6 @@ Keys core never reads:
 - `OutputIntents` in PageObject
 - `PCSM` in MeasureGEO
 - `PDU` in MeasureGEO
-- `Params` in 3DViewAddEntries, AFEmbeddedFileStream
 - `PassContextClick` in RichMediaPresentation
 - `Path` in AnnotInk, AnnotPolyLine, AnnotPolygon
 - `Penalty` in Requirements3DMarkup, RequirementsAcroFormInteract, RequirementsAction, RequirementsAttachment, RequirementsAttachmentEditing, RequirementsCollection and 20 more
@@ -224,7 +215,6 @@ Keys core never reads:
 - `Toolbar` in RichMediaPresentation
 - `Transparent` in 3DActivation, RichMediaPresentation
 - `U3DPath` in 3DViewAddEntries
-- `UF` in AFFileSpecEF, AFFileSpecification
 - `URLs` in DestOutputProfileRef
 - `USm` in 3DUnits
 - `USn` in 3DUnits
@@ -295,7 +285,6 @@ Values core never compares, of keys it reads:
 - `Type` `DPart` in DPart
 - `Type` `DPartRoot` in DPartRoot
 - `Type` `DSS` in DSS
-- `Type` `EncryptedPayload` in EncryptedPayload
 - `Type` `ExData` in ExDataMarkupGeo, ExDataProjection
 - `Type` `Filespec` in AFFileSpecification
 - `Type` `Folder` in CollectionFolder
@@ -339,9 +328,7 @@ Keys core never reads:
 - `CV` in 3DRenderMode
 - `Checked` in StructureAttributesDict
 - `Collection` in Catalog
-- `CreationDate` in AnnotRedact
 - `DA` in AnnotRedact
-- `Desc` in StructureAttributesDict
 - `DigestMethod` in SigFieldSeedValue
 - `Duplex` in ViewerPreferences
 - `E` in CollectionField
@@ -393,7 +380,6 @@ Keys core never reads:
 - `Summary` in StructureAttributesDict
 - `TB` in 3DActivation
 - `TM` in 3DAnimationStyle
-- `UF` in FileSpecEF, FileSpecRF, FileSpecification
 - `URLType` in CertSeedValue
 - `View` in Collection
 
@@ -468,7 +454,6 @@ Keys core never reads:
 - `DL` in 3DStream, FontFile3OpenType
 - `DV` in 3DStream
 - `Default` in DictionaryOfFunctions, Solidities
-- `Desc` in FileSpecification
 - `DotGain` in DeviceNMixingHints
 - `EA` in 3DBackground
 - `FD` in NumberFormat
@@ -562,7 +547,6 @@ Keys core never reads:
 - `Cert` in SigFieldSeedValue
 - `Color` in StructureAttributesDict
 - `Configs` in OptContentProperties
-- `CreationDate` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 9 more
 - `Creator` in OptContentConfig, OptContentCreatorInfo
 - `CreatorInfo` in OptContentUsage
 - `DL` in CMapStream, EmbeddedFileStream, FontFile, FontFile2, FontFile3CIDType0, FontFile3Type1 and 24 more
@@ -763,7 +747,6 @@ Keys core never reads:
 - `DS` in AddActionCatalog
 - `DestOutputProfile` in OutputIntents
 - `DisplayDocTitle` in ViewerPreferences
-- `EmbeddedFiles` in Name
 - `EndIndent` in StructureAttributesDict
 - `FormType` in XObjectFormPrinterMark
 - `Headers` in StructureAttributesDict
@@ -848,19 +831,15 @@ Keys core never reads:
 - `CO` in InteractiveForm
 - `Cert` in Signature
 - `Changes` in Signature
-- `CheckSum` in EmbeddedFileParameter
 - `ClassMap` in StructTreeRoot
 - `ContactInfo` in Signature
-- `CreationDate` in EmbeddedFileParameter
 - `DA` in AnnotFreeText, FieldSig
 - `DV` in FieldSig
 - `DefaultCMYK` in ColorSpaceMap
 - `DefaultForPrinting` in AlternateImage
 - `DeviceColorant` in Separation
 - `Direction` in ViewerPreferences
-- `EF` in FileSpecification
 - `FL` in GraphicsStateParameter
-- `FS` in AnnotFileAttachment
 - `HalftoneName` in HalftoneType16
 - `HalftoneType` in HalftoneType16
 - `Height2` in HalftoneType16
@@ -881,12 +860,10 @@ Keys core never reads:
 - `Location` in Signature
 - `M` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 6 more
 - `ML` in GraphicsStateParameter
-- `ModDate` in EmbeddedFileParameter
 - `OPM` in GraphicsStateParameter
 - `Open` in AnnotPopup
 - `PA` in AnnotLink
 - `PZ` in PageObject
-- `Params` in EmbeddedFileStream
 - `ParentTreeNextKey` in StructTreeRoot
 - `PieceInfo` in PageObject, XObjectFormType1
 - `Popup` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 5 more
@@ -939,7 +916,6 @@ Values core never compares, of keys it reads:
 - `Name` `TopSecret` in AnnotStamp
 - `S` `JavaScript` in ActionECMAScript
 - `Subtype` `CIDFontType0C` in FontFile3CIDType0
-- `Subtype` `FileAttachment` in AnnotFileAttachment
 - `Subtype` `FreeText` in AnnotFreeText
 - `Subtype` `Highlight` in AnnotHighlight
 - `Subtype` `Ink` in AnnotInk
@@ -1072,10 +1048,8 @@ Keys core never reads:
 - `Di` in Transition
 - `Dm` in Transition
 - `Dur` in PageObject
-- `FS` in FileSpecification
 - `IsMap` in ActionURI
 - `M` in AnnotLink, AnnotText, Transition
-- `ModDate` in DocInfo
 - `OpenAction` in Catalog
 - `Threads` in Catalog
 - `Trans` in PageObject
@@ -1109,7 +1083,6 @@ Keys core never reads:
 - `Border` in AnnotLink, AnnotText
 - `CapHeight` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `ColorTransform` in FilterDCTDecode
-- `CreationDate` in DocInfo
 - `EndOfBlock` in FilterCCITTFaxDecode
 - `EndOfLine` in FilterCCITTFaxDecode
 - `Flags` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3

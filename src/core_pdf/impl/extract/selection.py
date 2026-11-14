@@ -69,9 +69,11 @@ def assemble_document(
     document: PdfDocument[Any], extractions: Iterable[PageExtraction], context: ExtractionScope
 ) -> Document:
     pages: list[Page] = []
+    source_pages: list[PdfPage] = []
     for extraction in extractions:
         context.raise_if_cancelled()
         pages.append(extraction.assembled_page(context))
+        source_pages.append(extraction.page)
     assembled_pages = tuple(pages)
     diagnostics = tuple(diagnostic for page in assembled_pages for diagnostic in page.diagnostics)
     metadata = {key: plain_pdf_value(value) for key, value in document.get_metadata().items()}
@@ -80,6 +82,7 @@ def assemble_document(
         metadata=metadata,
         diagnostics=diagnostics,
         schema_version=SCHEMA_VERSION,
+        associated_files=document.collect_associated_files(source_pages),
     )
 
 
