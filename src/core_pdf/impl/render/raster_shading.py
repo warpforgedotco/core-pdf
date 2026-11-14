@@ -27,8 +27,11 @@ from core_pdf.impl.render.raster_support import (
     tiling_pattern_uses_normal_blends,
 )
 from core_pdf.impl.render.raster_support import prepared_shading as cached_shading
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
+from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
+from core_pdf.impl.spec.s_08_graphics.matrix import invert_affine
 lazy from core_pdf_cythonized import shading_blend, shading_values
 
 if TYPE_CHECKING:
@@ -39,6 +42,8 @@ def shading_box(
     self: RasterTarget, item: ShadingItem, shading: PreparedShading
 ) -> tuple[float, float, float, float]:
     box = shading.bbox
+    if box is not None and item.matrix is not None:
+        box = transform_bbox(normalize_rect(box), item.matrix)
     if box is None:
         box = rect_tuple(item.bbox)
     if box is None:
@@ -52,10 +57,26 @@ def prepared_shading(
     return cached_shading(self.resources, dictionary, rendering)
 
 
+@cites(
+    "ISO 32000-2",
+    "8.7.4.5.3",
+    introduced="1.3",
+    rule="axial and radial shadings are computed in shading space, clipped by BBox there",
+)
 def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None) -> None:
     shading = self.prepared_shading(item.dictionary, item.color_rendering)
     if shading is None:
         return
+    # A shading under a transform is computed in its own space: each pixel centre goes back
+    # through the inverse, and the BBox clips there (8.7.4.2, 8.7.4.3).
+    to_shading = None
+    shading_bbox = None
+    if item.matrix is not None:
+        to_shading = invert_affine(item.matrix)
+        if to_shading is None:
+            return
+        if shading.bbox is not None:
+            shading_bbox = normalize_rect(shading.bbox)
     clipped_box = self.clip.clipped_pixel_box(self.shading_box(item, shading))
     if clipped_box is None:
         return
@@ -84,6 +105,8 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
         domain[0],
         domain[1] - domain[0],
         0.5,
+        to_shading,
+        shading_bbox,
     )
     ordered = values[painted.view(numpy.bool_)]
     if not len(ordered):
@@ -225,6 +248,8 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
                 "soft_mask_alpha": data.soft_mask_alpha,
                 "color_rendering": pattern.color_rendering,
             }
+            if pattern.matrix is not None:
+                shading_data["matrix"] = pattern.matrix
             self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), blend_mode)
             return True
         return self.paint_tiling_pattern(pattern, data, blend_mode)

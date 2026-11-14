@@ -20,6 +20,8 @@ def shading_values(
     domain0: float,
     domain_span: float,
     half: float,
+    inverse: tuple[float, float, float, float, float, float] | None = None,
+    bbox: tuple[float, float, float, float] | None = None,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]: ...
 def shading_t(kind: int, coords: Any, px: float, py: float, half: float) -> float | None: ...
 def shading_blend(

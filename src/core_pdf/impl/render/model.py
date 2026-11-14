@@ -352,7 +352,12 @@ def translated_data(
     path = data.get("path")
     if isinstance(path, CapturedPath):
         data["path"] = path.translated(tx, ty)
-    if kind == "shading" and isinstance(data.get("dictionary"), dict):
+    matrix = data.get("matrix") if kind == "shading" else None
+    if matrix is not None:
+        # A shading with its own space moves by moving that space onto the page.
+        a, b, c, d, e, f = matrix
+        data["matrix"] = (a, b, c, d, e + tx, f + ty)
+    elif kind == "shading" and isinstance(data.get("dictionary"), dict):
         dictionary = dict(data["dictionary"])
         coords = dictionary.get("Coords")
         if isinstance(coords, (list, tuple)):
@@ -471,12 +476,14 @@ class ShadingItem(
     soft_mask_alpha: float | None
     alpha_is_shape: bool
     graphics_soft_mask: CapturedSoftMask | None
-    __slots__ = ("rect", "dictionary", "color_rendering", "payload")
+    __slots__ = ("rect", "dictionary", "color_rendering", "matrix", "payload")
 
     kind = "shading"
     rect: Any
     dictionary: Any
     color_rendering: ColorRendering
+    # The map from shading space to default user space, or None for the identity.
+    matrix: tuple[float, float, float, float, float, float] | None
     payload: dict[str, Any]
 
     __match_args__ = ("seqno", "bbox", "dictionary")
@@ -495,6 +502,7 @@ class ShadingItem(
             data.get("rect"),
             data.get("dictionary"),
             data.get("color_rendering", DEFAULT_COLOR_RENDERING),
+            data.get("matrix"),
             data,
         )
 

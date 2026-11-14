@@ -122,7 +122,13 @@ def shading_values(
     domain0: cython.double,
     domain_span: cython.double,
     half: cython.double,
+    inverse=None,
+    bbox=None,
 ):
+    """Each pixel's function input and whether the shading paints it. Without inverse the
+    pixel centre's default user space point is the shading-space point; with it, inverse
+    (a, b, c, d, e, f) maps that point to shading space, and bbox, when given, keeps only the
+    points inside it there."""
     height: cython.Py_ssize_t = iy1 - iy0
     width: cython.Py_ssize_t = ix1 - ix0
     if allowed.shape[0] != height or allowed.shape[1] != width:
@@ -134,6 +140,22 @@ def shading_values(
     i: cython.Py_ssize_t
     for i in range(need):
         c[i] = coords[i]
+    m = cython.declare(cython.double[6])
+    box = cython.declare(cython.double[4])
+    mapped: cython.bint = inverse is not None
+    boxed: cython.bint = bbox is not None
+    if mapped:
+        if len(inverse) != 6:
+            raise ValueError("inverse must hold six numbers")
+        for i in range(6):
+            m[i] = inverse[i]
+    if boxed:
+        if not mapped:
+            raise ValueError("bbox needs an inverse")
+        if len(bbox) != 4:
+            raise ValueError("bbox must hold four numbers")
+        for i in range(4):
+            box[i] = bbox[i]
     values_array = numpy.zeros((height, width), dtype=numpy.float64)
     painted_array = numpy.zeros((height, width), dtype=numpy.uint8)
     values: cython.double[:, ::1] = values_array
@@ -142,6 +164,8 @@ def shading_values(
     col: cython.Py_ssize_t
     page_x: cython.double
     page_y: cython.double
+    shading_x: cython.double
+    shading_y: cython.double
     t = cython.declare(cython.double)
     found: cython.bint
     with cython.nogil:
@@ -151,10 +175,20 @@ def shading_values(
                 if not allowed[r, col]:
                     continue
                 page_x = crop_x0 + (cython.cast(cython.double, ix0 + col) + 0.5) / scale
-                if kind == 2:
-                    found = axial_t(c, page_x, page_y, cython.address(t))
+                if mapped:
+                    shading_x = m[0] * page_x + m[2] * page_y + m[4]
+                    shading_y = m[1] * page_x + m[3] * page_y + m[5]
+                    if boxed and not (
+                        box[0] <= shading_x <= box[2] and box[1] <= shading_y <= box[3]
+                    ):
+                        continue
                 else:
-                    found = radial_t(c, page_x, page_y, half, cython.address(t))
+                    shading_x = page_x
+                    shading_y = page_y
+                if kind == 2:
+                    found = axial_t(c, shading_x, shading_y, cython.address(t))
+                else:
+                    found = radial_t(c, shading_x, shading_y, half, cython.address(t))
                 if not found:
                     continue
                 if t < 0.0:

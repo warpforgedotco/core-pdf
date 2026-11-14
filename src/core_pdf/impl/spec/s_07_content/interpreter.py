@@ -10,6 +10,7 @@ from copy import copy
 from math import isfinite
 from typing import Any, ClassVar
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.model import (
     NON_PAINTING_RENDER_MODES,
@@ -103,6 +104,9 @@ class ContentInterpreter:
         self.in_text_object = False
         self.text_matrix = IDENTITY_MATRIX
         self.line_matrix = IDENTITY_MATRIX
+        # The CTM the running content stream started with: its default coordinate space,
+        # which a pattern's matrix maps pattern space to (8.7.3.1).
+        self.stream_ctm = IDENTITY_MATRIX
         self.stack: list[GraphicsState] = []
         self.graphics_stack_floor = 0
         self.current_path = PdfPath()
@@ -162,6 +166,7 @@ class ContentInterpreter:
             initial_alpha_is_shape=self.initial_alpha_is_shape,
             initial_text_knockout=self.initial_text_knockout,
             in_text_object=self.in_text_object,
+            stream_ctm=self.stream_ctm,
         )
 
     def restore_stream_state(self, state: StreamState) -> None:
@@ -175,6 +180,7 @@ class ContentInterpreter:
         self.initial_alpha_is_shape = state.initial_alpha_is_shape
         self.initial_text_knockout = state.initial_text_knockout
         self.in_text_object = state.in_text_object
+        self.stream_ctm = state.stream_ctm
         while len(self.stack) > state.graphics_stack_len:
             self.pop_graphics_save()
         del self.marked_content_stack[state.marked_content_stack_len :]
@@ -1237,6 +1243,12 @@ class ContentInterpreter:
             pattern_dict = self.resolver.resolve_dict(pattern) if pattern is not None else None
         return (pattern, pattern_dict) if isinstance(pattern_dict, dict) else None
 
+    @cites(
+        "ISO 32000-2",
+        "8.7.3.1",
+        introduced="1.3",
+        rule="a shading pattern's space: its Matrix on the parent content stream's default space",
+    )
     def resolve_pattern_color(
         self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
     ) -> PatternPaint | None:
@@ -1259,7 +1271,10 @@ class ContentInterpreter:
             if not isinstance(shading_dict, dict):
                 return self.reject(PdfParseError(invalid), "pattern", None)
             extgstate = self.resolver.resolve_dict(pattern_dict.get("ExtGState"))
-            return ShadingPattern(dict(shading_dict), extgstate=extgstate)
+            matrix = self.matrix_operand(pattern_dict.get("Matrix"), "pattern")
+            return ShadingPattern(
+                dict(shading_dict), extgstate=extgstate, matrix=matrix.multiply(self.stream_ctm)
+            )
         if pattern_type != 1 or not isinstance(pattern, PdfStream):
             return self.reject(PdfParseError(invalid), "pattern", None)
         paint_type = self.resolver.resolve_int(pattern_dict.get("PaintType"))

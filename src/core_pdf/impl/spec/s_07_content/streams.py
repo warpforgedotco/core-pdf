@@ -11,7 +11,7 @@ from core_pdf.impl.spec.s_07_content.model import GraphicsState
 from core_pdf.impl.spec.s_07_content.operations import iter_content_operations
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.types import Rectangle
 from core_records import FrozenFields, PickleFields, RecordType, ReplaceFields, ReprFields, field
 
@@ -38,6 +38,7 @@ class StreamState(FrozenFields, PickleFields, ReprFields, ReplaceFields, metacla
     initial_alpha_is_shape: bool = field(default=False, kw_only=True)
     initial_text_knockout: bool = field(default=True, kw_only=True)
     in_text_object: bool = field(default=False, kw_only=True)
+    stream_ctm: Matrix = field(default=IDENTITY_MATRIX, kw_only=True)
 
     __match_args__ = (
         "graphics_state",
@@ -230,6 +231,7 @@ class ContentStreamExecutor:
             state.graphics.soft_mask = None
         state.resources = frame.resources
         state.graphics.ctm = frame.ctm
+        state.stream_ctm = frame.ctm
         state.xobject_depth = frame.depth
         return True
 
