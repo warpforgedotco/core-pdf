@@ -241,6 +241,8 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
         if is_pdf_number(soft_mask_alpha):
             stroke_rgba = scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
         self.set_shape_alpha(stroke_rgba[3] / 255.0)
+        if item.stroke_pattern is not None and self.paint_stroke_pattern(item, blend_mode):
+            return
         if self.group_source_shape is not None:
             paint_stroke_once(
                 self,

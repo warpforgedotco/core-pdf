@@ -8,7 +8,8 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from copy import replace
+from typing import TYPE_CHECKING, Any
 
 lazy import numpy
 
@@ -18,7 +19,13 @@ from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPa
 from core_pdf.impl.graphics.shading import PreparedShading, SpaceEvaluator
 from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.model import PathPaintItem, ShadingItem, SpaceMode
+from core_pdf.impl.render.model import (
+    PathPaintItem,
+    PathPaintKind,
+    ShadingItem,
+    SoftMaskPlane,
+    SpaceMode,
+)
 from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
@@ -336,6 +343,74 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     finally:
         if pushed_clip:
             clip_state.pop()
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="S with a pattern as its colour paints the pattern through the stroke's outline",
+)
+def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str | None) -> bool:
+    """Paint a stroke whose colour is a pattern: the stroke's coverage is the mask of an
+    isolated group the pattern fills over the stroke's box (8.7.1, 8.7.3.1)."""
+    pattern = data.stroke_pattern
+    path = data.path
+    if not isinstance(pattern, (ShadingPattern, TilingPattern)) or type(path) is not CapturedPath:
+        return False
+    box = replace(data, paint_kind=PathPaintKind.STROKE).page_box(self.scale)
+    if box is None:
+        return True
+    clip_box = self.clip.current_clip()
+    if clip_box is not None and intersect_box(box, clip_box) is None:
+        return True
+    # The stroke's coverage, drawn opaque on a blank page of its own.
+    coverage, view = self.blank_sibling()
+    coverage.stroke_path(
+        path,
+        data.line_width,
+        (255, 255, 255, 255),
+        data.dash_pattern,
+        None,
+        data.line_cap,
+        data.line_join,
+    )
+    self.push_group(
+        bytearray(len(self.pixels)),
+        None,
+        blend_mode,
+        isolated=True,
+        alpha_is_shape=data.alpha_is_shape,
+        mask_alpha=SoftMaskPlane(view[..., 3], None),
+    )
+    try:
+        self.paint_pattern_over(pattern, data, box, data.stroke_opacity)
+    finally:
+        self.composite_group(self.pop_group())
+    return True
+
+
+def paint_pattern_over(
+    self: RasterTarget,
+    pattern: ShadingPattern | TilingPattern,
+    data: PathPaintItem,
+    box: tuple[float, float, float, float],
+    opacity: float | None,
+) -> None:
+    """Paint pattern over box, in the Normal blend mode, at opacity and data's soft mask alpha."""
+    if isinstance(pattern, ShadingPattern):
+        shading_data: dict[str, Any] = {
+            "dictionary": pattern.dictionary,
+            "bbox": box,
+            "fill_opacity": opacity,
+            "soft_mask_alpha": data.soft_mask_alpha,
+            "color_rendering": pattern.color_rendering,
+        }
+        if pattern.matrix is not None:
+            shading_data["matrix"] = pattern.matrix
+        self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), None)
+        return
+    self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), None)
 
 
 def blank_sibling(self: RasterTarget) -> tuple[RasterTarget, UInt8Array]:

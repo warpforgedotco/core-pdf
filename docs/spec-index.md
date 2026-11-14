@@ -35,6 +35,7 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
 | PDF 1.3 | an embedded file's Subtype and Params | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters` |
@@ -216,6 +217,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
+- 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.paint_stroke_pattern`: S with a pattern as its colour paints the pattern through the stroke's outline
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.tiling_offsets`: tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there
 - 8.7.4.2 (Shading operator) `core_pdf.impl.capture.image_painting.paint_shading`: sh paints in the current user space
 - 8.7.4.5.3 (Type 2 (axial) shadings) `core_pdf.impl.render.raster_shading.paint_shading`: axial and radial shadings are computed in shading space, clipped by BBox there

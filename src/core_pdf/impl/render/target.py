@@ -198,6 +198,8 @@ class RasterTarget:
     paint_shading = shading.paint_shading
     paint_tiling_pattern = shading.paint_tiling_pattern
     paint_fill_pattern = shading.paint_fill_pattern
+    paint_stroke_pattern = shading.paint_stroke_pattern
+    paint_pattern_over = shading.paint_pattern_over
     blank_sibling = shading.blank_sibling
 
     # Painting a display list: each item goes to the handler for its type.
