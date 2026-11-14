@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe Glyph List: the ITC Zapf Dingbats glyph list."""
+
 from __future__ import annotations
 
 ZAPF_DINGBATS_GLYPHS: dict[str, str] = {

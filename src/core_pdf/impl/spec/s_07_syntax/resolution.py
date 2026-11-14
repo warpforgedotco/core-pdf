@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.3.10: following indirect references through a value and its contents."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

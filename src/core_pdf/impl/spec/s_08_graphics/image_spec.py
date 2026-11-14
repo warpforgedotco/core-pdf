@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.9.5: image dictionaries: their entries, Decode arrays and soft masks."""
+
 from __future__ import annotations
 
 from typing import Any

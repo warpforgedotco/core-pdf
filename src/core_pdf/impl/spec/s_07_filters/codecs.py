@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.4: the ASCIIHex, ASCII85, LZW, Flate and RunLength decode filters."""
+
 from __future__ import annotations
 
 import binascii

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.8.2: content stream operations: their tokens, operand checks and serialization."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence

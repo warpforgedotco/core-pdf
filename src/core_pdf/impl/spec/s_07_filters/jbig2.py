@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.4.7: the JBIG2Decode filter and its JBIG2Globals stream."""
+
 from __future__ import annotations
 
 from core_pdf.impl.jbig2.codec import JBIG2PageDecoder, parse_embedded_segments

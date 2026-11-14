@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The specifications core implements, and the marker that cites one from code.
+"""ISO 32000-2 2: the specifications core implements, and the marker citing one from code.
 
 Every rule whose meaning depends on the PDF version, and every feature one edition, extension
 or external standard adds, carries a `cites` marker naming the specification and clause. A

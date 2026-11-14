@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.10.5: PostScript calculator (Type 4) functions."""
+
 from __future__ import annotations
 
 import math

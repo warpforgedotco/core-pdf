@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe Glyph List: glyph names and the Unicode text they map to."""
+
 from __future__ import annotations
 
 GLYPH_DATA: dict[str, str] = {

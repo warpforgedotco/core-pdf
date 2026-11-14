@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe TN 5014: tokenizing a CMap file into its mapping blocks."""
+
 from __future__ import annotations
 
 import binascii

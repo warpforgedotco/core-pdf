@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe AFM: the widths and properties of the standard 14 fonts, from their AFM files."""
+
 from __future__ import annotations
 
 from typing import TypedDict

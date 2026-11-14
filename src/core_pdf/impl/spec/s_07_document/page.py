@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.7.3: page tree nodes, and a page's inherited boxes, rotation and user unit."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping

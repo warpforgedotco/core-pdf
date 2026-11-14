@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""PostScript LRM 3.2: the white space, delimiters and literal strings of CMap files."""
+
 from __future__ import annotations
 
 import re

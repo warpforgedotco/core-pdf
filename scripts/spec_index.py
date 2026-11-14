@@ -13,7 +13,9 @@ uv run --all-packages python scripts/spec_index.py --check   # fail if it would 
 
 --check also fails on a function that compares a PDF version (against PdfVersion(...) or a
 PDF_x_y constant) without a cites marker giving since or until, and on a marker whose
-arguments are not literals.
+arguments are not literals. Every module of spec and of the floor packages below it
+(CITED_PACKAGES, other than __init__.py) must start its docstring with a module citation, and
+a docstring anywhere whose first line looks like a citation must name a known specification.
 """
 
 from __future__ import annotations
@@ -40,8 +42,12 @@ SPEC_IDS = sorted(SPECIFICATIONS, key=len, reverse=True)
 MODULE_CITATION = re.compile(
     r"^(?P<spec>"
     + "|".join(re.escape(spec) for spec in SPEC_IDS)
-    + r")(?: (?P<clause>(?:Annex )?[A-Z]?[0-9][0-9.]*|[A-Z]))?: (?P<title>.+)$"
+    + r")(?: (?P<clause>Annex [A-Z]|[A-Z]?[0-9][0-9.]*|[A-Z](?:\.[0-9]+)*))?: (?P<title>.+)$"
 )
+# A first line that starts like a citation, to catch a misspelt or unregistered specification.
+CITATION_LIKE = re.compile(r"^(?:ISO|ITU|RFC|Adobe|FIPS|ICC|PDF|PostScript|TIFF)\b[^:]*: ")
+# The packages whose every module, other than __init__.py, carries a module citation.
+CITED_PACKAGES = ("spec", "adobe_fonts", "jbig2", "crypto", "postscript", "data")
 KINDS = (
     ("pdf", "The PDF standard"),
     ("extension", "ISO extensions"),
@@ -141,12 +147,22 @@ def survey() -> Survey:
         module = path.relative_to(IMPL.parent.parent).with_suffix("").as_posix().replace("/", ".")
         tree = ast.parse(path.read_text(), str(path))
         docstring = ast.get_docstring(tree)
-        if docstring:
-            match = MODULE_CITATION.match(docstring.splitlines()[0])
-            if match:
-                found.modules.append(
-                    (match["spec"], match["clause"] or "", module, match["title"].rstrip("."))
-                )
+        first_line = docstring.splitlines()[0] if docstring else ""
+        match = MODULE_CITATION.match(first_line)
+        if match:
+            found.modules.append(
+                (match["spec"], match["clause"] or "", module, match["title"].rstrip("."))
+            )
+        elif CITATION_LIKE.match(first_line):
+            found.problems.append(
+                f"{path.relative_to(ROOT)}: the docstring starts like a citation but names no "
+                f"known specification and clause: {first_line!r}"
+            )
+        elif path.name != "__init__.py" and path.relative_to(IMPL).parts[0] in CITED_PACKAGES:
+            found.problems.append(
+                f"{path.relative_to(ROOT)}: a spec or floor module needs a docstring starting "
+                'with a citation, such as "ISO 32000-2 7.8: ..."'
+            )
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -180,6 +196,13 @@ def version_key(version: str) -> tuple[int, int]:
 
 def where(marked: Marked) -> str:
     return f"`{marked.module}.{marked.name}`"
+
+
+def clause_order(entry: tuple[str, str, str]) -> tuple[object, ...]:
+    """Order entries by clause as the specification does: 7.2, 7.10, 11, then the annexes."""
+    clause, code, text = entry
+    parts = [part for part in re.split(r"[ .]", clause) if part]
+    return (tuple((0, int(part)) if part.isdigit() else (1, part) for part in parts), code, text)
 
 
 def cited(citation: Citation) -> str:
@@ -274,10 +297,10 @@ def render(found: Survey) -> str:
                 continue
             entries = [
                 f"- {clause + ' ' if clause else ''}`{module}`: {title}"
-                for clause, module, title in sorted(modules.get(spec, []))
+                for clause, module, title in sorted(modules.get(spec, []), key=clause_order)
             ] + [
                 f"- {clause + ' ' if clause else ''}{code}: {rule}"
-                for clause, code, rule in sorted(functions.get(spec, []))
+                for clause, code, rule in sorted(functions.get(spec, []), key=clause_order)
             ]
             lines += ["", f"**{spec}**: {specification.title} ({specification.edition})", ""]
             lines += entries or ["- not cited in code yet"]

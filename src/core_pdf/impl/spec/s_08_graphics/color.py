@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.6: colour components: their ranges, initial values and Indexed lookups."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

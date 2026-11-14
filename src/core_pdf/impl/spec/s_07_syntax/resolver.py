@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.3.10: resolving indirect references through the xref and object streams."""
+
 from __future__ import annotations
 
 import contextlib

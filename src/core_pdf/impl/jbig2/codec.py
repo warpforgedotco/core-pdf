@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ITU-T T.88: JBIG2 segment headers, page information and page assembly."""
+
 from __future__ import annotations
 
 from typing import ClassVar

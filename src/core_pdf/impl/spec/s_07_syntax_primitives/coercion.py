@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.3: reading PDF numbers, names, strings and rectangles as Python values."""
+
 from __future__ import annotations
 
 import math

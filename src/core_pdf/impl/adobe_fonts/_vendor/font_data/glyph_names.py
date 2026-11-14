@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Glyph names TrueType fonts use without storing them, taken from fontTools.
+"""Adobe Glyph List: AGLFN names, and the Macintosh glyph order TrueType post tables use.
+
+Glyph names TrueType fonts use without storing them, taken from fontTools.
 
 MACINTOSH_GLYPH_NAMES is the Macintosh standard order of 258 glyph names (TrueType
 reference manual, "post" table), which post formats 1 and 2 index into.

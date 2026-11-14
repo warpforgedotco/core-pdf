@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32004: finding and checking the PDF MAC token of an encrypted document."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.citations import cites

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.6.4: the standard security handler: passwords, file keys and crypt filters."""
+
 from __future__ import annotations
 
 import stringprep

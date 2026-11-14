@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 D.2: the glyph names of the standard, Mac Roman and WinAnsi encodings."""
+
 from __future__ import annotations
 
 from core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names import (

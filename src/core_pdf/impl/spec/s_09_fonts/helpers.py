@@ -1,3 +1,5 @@
+"""ISO 32000-2 9.6: a simple font's base encoding and Differences."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 
+"""ISO 32000-2 D.2: the glyph names of the standard, Mac Roman and WinAnsi encodings."""
+
 __all__ = [
     "STANDARD_ENCODING_GLYPH_NAMES",
     "MAC_ROMAN_ENCODING_GLYPH_NAMES",

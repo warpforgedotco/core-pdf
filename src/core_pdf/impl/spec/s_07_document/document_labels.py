@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 12.4.2: page labels and their numbering styles."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 11.6.5: undoing the Matte preblending of a soft-mask image."""
+
 from __future__ import annotations
 
 from typing import Any
