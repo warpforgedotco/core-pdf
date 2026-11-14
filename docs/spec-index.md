@@ -34,6 +34,8 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.3 | an embedded file's Subtype and Params | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters` |
+| PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
 | PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
 | PDF 1.4 | non-separable blending in gray and CMYK | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend` |
@@ -41,6 +43,10 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.4 | the page group's blending colour space | ISO 32000-2 11.4.7 (Page group) | `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space` |
 | PDF 1.4 | the standard non-separable blend modes | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend` |
 | PDF 1.4 | the standard separable blend modes | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.separable_blend` |
+| PDF 1.6 | Desc, a file specification's description | ISO 32000-2 7.11.3 (File specification dictionaries) | `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings` |
+| PDF 1.7 | UF, a file name as a text string | ISO 32000-2 7.11.3 (File specification dictionaries) | `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings` |
+| PDF 2.0 | AF, an object's associated files | ISO 32000-2 14.13 (Associated files) | `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications` |
+| PDF 2.0 | AFRelationship, how an associated file relates to its object; Unspecified by default | ISO 32000-2 7.11.3 (File specification dictionaries) | `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_relationship` |
 | PDF 2.0 | black point compensation (UseBlackPtComp) | ISO 32000-2 8.6.5.9 (Use of black point compensation) | `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation` |
 | PDF 2.0 | revision 6 password hash (Algorithm 2.B) | ISO 32000-2 7.6.4.3.4 (Algorithm 2.B: Computing a hash (revision 6 and later)) | `core_pdf.impl.spec.s_07_security.standard.r6_password_hash` |
 | PDF 2.0 | structure namespaces and RoleMapNS | ISO 32000-2 14.7.4 (Namespaces) | `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace` |
@@ -144,6 +150,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string`: text strings in PDFDocEncoding, UTF-16BE or UTF-8
 - 7.10 (Functions) `core_pdf.impl.spec.s_08_graphics.pdf_function`: functions: sampled, exponential, stitching and PostScript calculator
 - 7.10.5 (Type 4 (PostScript calculator) functions) `core_pdf.impl.postscript.calculator`: PostScript calculator (Type 4) functions
+- 7.11 (File specifications) `core_pdf.impl.spec.s_07_document.file_specification`: file specification dictionaries and their embedded file streams
 - 7.12 (Extensions dictionary) `core_pdf.impl.spec.standards`: PDF versions, the extensions core implements, and known profiles
 - 8.3 (Coordinate systems) `core_pdf.impl.spec.s_08_graphics.geometry`: bounding boxes in transformed coordinate systems
 - 8.3.4 (Transformation matrices) `core_pdf.impl.spec.s_08_graphics.matrix`: transformation matrices
@@ -174,6 +181,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 14.3 (Metadata) `core_pdf.impl.spec.s_07_document.metadata`: the document information dictionary and the catalog's metadata stream
 - 14.7 (Logical structure) `core_pdf.impl.spec.s_14_structure.dictionaries`: structure role maps, attributes and marked-content identifiers
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles`: standard structure types, namespaces and role mapping
+- 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files`: associated files, the AF arrays linking files to PDF objects
 - Annex A ((informative) Operator Summary) `core_pdf.impl.spec.s_07_syntax_primitives.content_operators`: the content stream operators and their operands
 - D.2 (Latin character set and encodings) `core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names`: the glyph names of the standard, Mac Roman and WinAnsi encodings
 - D.2 (Latin character set and encodings) `core_pdf.impl.adobe_fonts.encodings`: the glyph names of the standard, Mac Roman and WinAnsi encodings
@@ -189,6 +197,12 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.6.4.3.4 (Algorithm 2.B: Computing a hash (revision 6 and later)) `core_pdf.impl.spec.s_07_security.standard.r6_password_hash`: revision 6 password hash (Algorithm 2.B)
 - 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-16BE text strings, after the byte order mark FE FF
 - 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-8 text strings, after the byte order mark EF BB BF
+- 7.11.3 (File specification dictionaries) `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings`: Desc, a file specification's description
+- 7.11.3 (File specification dictionaries) `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings`: UF, a file name as a text string
+- 7.11.3 (File specification dictionaries) `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings`: a file specification's F file name
+- 7.11.3 (File specification dictionaries) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_relationship`: AFRelationship, how an associated file relates to its object; Unspecified by default
+- 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters`: an embedded file's Subtype and Params
+- 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream`: the embedded file streams of EF
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
@@ -206,6 +220,8 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
+- 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: AF, an object's associated files
+- 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: PDF/A-3 allows AF in PDF 1.7 files
 - D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
 - D.3 (PDFDocEncoding character set) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: PDFDocEncoding defines byte A0 (Euro sign)
 

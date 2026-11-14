@@ -30,10 +30,13 @@ if TYPE_CHECKING:
     )
     from core_pdf.impl.output.media import DrawingRecord, ImageMetadata, ImageRecord
     from core_pdf.impl.output.model import (
+        AssociatedFile,
+        AssociatedFileOwner,
         ContentNode,
         Document,
         DocumentTableView,
         DocumentTextView,
+        EmbeddedFile,
         TableAssociatedText,
         TableColumnBand,
         TableReference,
@@ -55,6 +58,9 @@ EXPORTS = {
     "PdfRasterFontRequest": ("core_pdf.impl.fonts.fallback", "PdfRasterFontRequest"),
     "PdfError": ("core_pdf.impl.base.exceptions", "PdfError"),
     "PdfContractError": ("core_pdf.impl.base.exceptions", "PdfContractError"),
+    "AssociatedFile": ("core_pdf.impl.output.model", "AssociatedFile"),
+    "AssociatedFileOwner": ("core_pdf.impl.output.model", "AssociatedFileOwner"),
+    "EmbeddedFile": ("core_pdf.impl.output.model", "EmbeddedFile"),
     "ContentNode": ("core_pdf.impl.output.model", "ContentNode"),
     "DocumentTableView": ("core_pdf.impl.output.model", "DocumentTableView"),
     "DocumentTextView": ("core_pdf.impl.output.model", "DocumentTextView"),
@@ -93,6 +99,9 @@ __all__ = (
     "PdfDocument",
     "PdfError",
     "PdfContractError",
+    "AssociatedFile",
+    "AssociatedFileOwner",
+    "EmbeddedFile",
     "ContentNode",
     "DocumentTableView",
     "DocumentTextView",

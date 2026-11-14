@@ -19,8 +19,9 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 TEXT_PDF = REPOSITORY_ROOT / "tests/upstream/pdfplumber/tests/pdfs/federal-register-2020-17221.pdf"
 
-# Rendering, tables, images and their codecs, transparency, structure trees, the PDF MAC and
-# cipher stacks, and TrueType programs: none of them is needed to read text from this page.
+# Rendering, tables, images and their codecs, transparency, structure trees, associated files,
+# the PDF MAC and cipher stacks, and TrueType programs: none of them is needed to read text from
+# this page.
 DEFERRED = (
     "asn1crypto",
     "cryptography",
@@ -34,7 +35,9 @@ DEFERRED = (
     "core_pdf.impl.graphics.shading",
     "core_pdf.impl.render.page",
     "core_pdf.impl.render.target",
+    "core_pdf.impl.spec.s_07_document.file_specification",
     "core_pdf.impl.spec.s_11_transparency.blend",
+    "core_pdf.impl.spec.s_14_structure.associated_files",
 )
 
 WORKLOADS = {

@@ -98,6 +98,56 @@ payload, and blocks reference canonical lines. IDs have the form
 Metadata must already consist of JSON scalars, mappings, lists, or tuples. Anything
 else raises a `TypeError` naming the offending path rather than being stringified.
 
+## Associated and embedded files
+
+`Document.associated_files` lists the files that `AF` arrays (ISO 32000-2 14.13, PDF 2.0,
+and PDF/A-3 in PDF 1.7 files) attach to the catalog, to the extracted pages, and to the
+annotations, structure elements, XObjects, and marked-content property lists on those pages.
+Hybrid invoices such as ZUGFeRD and Factur-X carry their XML this way. Each `AssociatedFile`
+names its `owner` (`document`, `page`, `annotation`, `structure-element`, `xobject`, or
+`marked-content`) and where it is: `page_number`, the annotation's index in
+`Page.annotations`, the structure element's type, `/ID`, and object reference, or the
+resource name. Its `file` is an `EmbeddedFile` with the `F` and `UF` names, `name` (the first
+of them set), `description`, `relationship` (`AFRelationship`, `Unspecified` when absent),
+`mime_type`, and the `Params` entries `size`, `creation_date`, `modification_date` (PDF date
+strings), and `checksum` (hex). Structure elements are found through the selected pages'
+marked content, so an element with no content on those pages is not listed.
+
+No record holds file bytes. `PdfDocument.embedded_file_data(file)` reads them, decrypted and
+decoded through the stream's filters. `PdfDocument.associated_files(pages=...)` returns the
+same records without extracting text; `embedded_files` lists the catalog's `EmbeddedFiles`
+name tree, with each key in `tree_key`; and `file_attachments(pages=...)` returns the files
+of `FileAttachment` annotations as `PageScoped` records.
+
+```python
+with PdfDocument.open("invoice.pdf") as document:
+    for associated in document.associated_files():
+        if associated.relationship in {"Data", "Alternative"}:
+            xml = document.embedded_file_data(associated.file)
+```
+
+JSON output carries a top-level `associated_files` list only when the document has
+associated files, so other documents serialize as before:
+
+```json
+"associated_files": [
+  {
+    "id": "af:0", "owner": "document", "page_id": null, "annotation_id": null,
+    "structure_type": null, "structure_id": null, "structure_ref": null,
+    "resource_name": null, "relationship": "Data", "name": "factur-x.xml",
+    "file_name": "factur-x.xml", "unicode_file_name": "factur-x.xml",
+    "description": "Factur-X invoice", "mime_type": "text/xml", "size": 1566,
+    "creation_date": "D:20240102030405+01'00'", "modification_date": "D:20240203040506Z",
+    "checksum": "56e9d732896717cab89ac9800a125675", "embedded": true, "stream_ref": "1 0 R"
+  },
+  {
+    "id": "af:6", "owner": "structure-element", "page_id": "p1", "annotation_id": null,
+    "structure_type": "Formula", "structure_id": "formula-1", "structure_ref": "26 0 R",
+    "resource_name": null, "relationship": "Source", "name": "formula.tex", "...": "..."
+  }
+]
+```
+
 ## Compatibility facades
 
 `core_pdf_compat` holds local projections of common third-party PDF interfaces:
