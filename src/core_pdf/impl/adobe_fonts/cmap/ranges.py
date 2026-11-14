@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe TN 5014: codespace, CID and notdef ranges."""
+
 from __future__ import annotations
 
 import typing

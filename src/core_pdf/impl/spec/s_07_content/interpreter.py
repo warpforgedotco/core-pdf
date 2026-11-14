@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.8: interpreting a content stream's graphics, text and XObject operators."""
+
 from __future__ import annotations
 
 import typing

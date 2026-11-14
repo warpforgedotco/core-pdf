@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""RFC 2083 6: the PNG predictors, and TIFF predictor 2, that LZWDecode and FlateDecode undo."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

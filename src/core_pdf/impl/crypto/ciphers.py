@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""FIPS 197: AES in CBC, ECB and GCM modes, and RC4, the ciphers PDF encryption uses."""
+
 from __future__ import annotations
 
 from os import urandom

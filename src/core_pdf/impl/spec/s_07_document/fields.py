@@ -1,3 +1,5 @@
+"""ISO 32000-2 12.7: interactive form fields: Kids and fully qualified field names."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.s_07_syntax.types import PdfObject

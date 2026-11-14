@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.7.3.4: values a dictionary inherits from its Parent chain."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

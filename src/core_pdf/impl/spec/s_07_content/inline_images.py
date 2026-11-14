@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.9.7: inline images: the BI dictionary, its abbreviations, and the data up to EI."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.exceptions import PdfParseError

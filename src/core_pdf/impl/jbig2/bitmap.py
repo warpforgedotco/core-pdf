@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ITU-T T.88: composing region bitmaps onto the page with the combination operators."""
+
 from __future__ import annotations
 
 from operator import index

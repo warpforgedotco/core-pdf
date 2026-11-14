@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7: the errors raised for a file that breaks the syntax or cannot be read."""
+
 from __future__ import annotations
 
 

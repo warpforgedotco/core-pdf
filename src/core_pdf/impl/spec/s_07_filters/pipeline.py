@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.4: applying a stream's filters in order."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping

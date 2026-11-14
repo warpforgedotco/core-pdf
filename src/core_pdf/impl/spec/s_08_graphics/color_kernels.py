@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.9: unpacking and decoding image samples, and colour key masking (8.9.6.4)."""
+
 from __future__ import annotations
 
 from typing import Any

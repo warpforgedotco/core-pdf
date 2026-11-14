@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32004: the PDF MAC token, a CMS AuthenticatedData (RFC 5652), and its key unwrapping."""
+
 from __future__ import annotations
 
 from collections.abc import Buffer

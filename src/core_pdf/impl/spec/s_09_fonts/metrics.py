@@ -1,3 +1,5 @@
+"""ISO 32000-2 9.4.4: glyph displacement, and the widths of the standard 14 fonts."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

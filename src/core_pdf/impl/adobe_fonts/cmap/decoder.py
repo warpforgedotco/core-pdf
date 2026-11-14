@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe TN 5014: decoding character codes to CIDs with a CMap's codespace and CID ranges."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

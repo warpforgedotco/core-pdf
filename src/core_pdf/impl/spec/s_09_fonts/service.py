@@ -1,3 +1,5 @@
+"""ISO 32000-2 9: the font interface the content interpreter decodes and advances text with."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

@@ -13,7 +13,9 @@ uv run --all-packages python scripts/spec_index.py --check   # fail if it would 
 
 --check also fails on a function that compares a PDF version (against PdfVersion(...) or a
 PDF_x_y constant) without a cites marker giving since or until, and on a marker whose
-arguments are not literals.
+arguments are not literals. Every module of spec and of the floor packages below it
+(CITED_PACKAGES, other than __init__.py) must start its docstring with a module citation, and
+a docstring anywhere whose first line looks like a citation must name a known specification.
 """
 
 from __future__ import annotations
@@ -36,12 +38,23 @@ ROOT = Path(__file__).resolve().parent.parent
 IMPL = ROOT / "src" / "core_pdf" / "impl"
 INDEX = ROOT / "docs" / "spec-index.md"
 VERSION_CONSTANT = re.compile(r"^PDF_\d_\d$")
+# The clause numbers and headings of each specification scripts/spec_clauses.py extracted.
+CLAUSES: dict[str, dict[str, str]] = {
+    path.stem.replace("_", " "): dict(
+        line.split("\t", 1) for line in path.read_text().splitlines() if "\t" in line
+    )
+    for path in sorted((ROOT / "scripts" / "spec_clauses").glob("*.tsv"))
+}
 SPEC_IDS = sorted(SPECIFICATIONS, key=len, reverse=True)
 MODULE_CITATION = re.compile(
     r"^(?P<spec>"
     + "|".join(re.escape(spec) for spec in SPEC_IDS)
-    + r")(?: (?P<clause>(?:Annex )?[A-Z]?[0-9][0-9.]*|[A-Z]))?: (?P<title>.+)$"
+    + r")(?: (?P<clause>Annex [A-Z]|[A-Z]?[0-9][0-9.]*|[A-Z](?:\.[0-9]+)*))?: (?P<title>.+)$"
 )
+# A first line that starts like a citation, to catch a misspelt or unregistered specification.
+CITATION_LIKE = re.compile(r"^(?:ISO|ITU|RFC|Adobe|FIPS|ICC|PDF|PostScript|TIFF)\b[^:]*: ")
+# The packages whose every module, other than __init__.py, carries a module citation.
+CITED_PACKAGES = ("spec", "adobe_fonts", "jbig2", "crypto", "postscript", "data")
 KINDS = (
     ("pdf", "The PDF standard"),
     ("extension", "ISO extensions"),
@@ -117,10 +130,26 @@ def citation_of(decorator: ast.expr) -> Citation | None | str:
     return Citation(*positional, **keywords)
 
 
+def clause_problem(specification: str, clause: str) -> str | None:
+    """Why a cited clause is wrong: one the specification's outline does not have."""
+    known = CLAUSES.get(specification)
+    if known is None or not clause or clause in known:
+        return None
+    return f"{specification} has no clause {clause!r} (see scripts/spec_clauses)"
+
+
+def clause_title(specification: str, clause: str) -> str:
+    title = CLAUSES.get(specification, {}).get(clause)
+    return f" ({title})" if title else ""
+
+
 def citation_problems(citation: Citation) -> list[str]:
     problems = []
     if citation.specification not in SPECIFICATIONS:
         problems.append(f"unknown specification {citation.specification!r}")
+    wrong_clause = clause_problem(citation.specification, citation.clause)
+    if wrong_clause:
+        problems.append(wrong_clause)
     problems.extend(
         f"malformed PDF version {version!r}"
         for version in (citation.since, citation.until, citation.introduced)
@@ -141,12 +170,25 @@ def survey() -> Survey:
         module = path.relative_to(IMPL.parent.parent).with_suffix("").as_posix().replace("/", ".")
         tree = ast.parse(path.read_text(), str(path))
         docstring = ast.get_docstring(tree)
-        if docstring:
-            match = MODULE_CITATION.match(docstring.splitlines()[0])
-            if match:
-                found.modules.append(
-                    (match["spec"], match["clause"] or "", module, match["title"].rstrip("."))
-                )
+        first_line = docstring.splitlines()[0] if docstring else ""
+        match = MODULE_CITATION.match(first_line)
+        if match:
+            found.modules.append(
+                (match["spec"], match["clause"] or "", module, match["title"].rstrip("."))
+            )
+            wrong_clause = clause_problem(match["spec"], match["clause"] or "")
+            if wrong_clause:
+                found.problems.append(f"{path.relative_to(ROOT)}: {wrong_clause}")
+        elif CITATION_LIKE.match(first_line):
+            found.problems.append(
+                f"{path.relative_to(ROOT)}: the docstring starts like a citation but names no "
+                f"known specification and clause: {first_line!r}"
+            )
+        elif path.name != "__init__.py" and path.relative_to(IMPL).parts[0] in CITED_PACKAGES:
+            found.problems.append(
+                f"{path.relative_to(ROOT)}: a spec or floor module needs a docstring starting "
+                'with a citation, such as "ISO 32000-2 7.8: ..."'
+            )
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -182,8 +224,22 @@ def where(marked: Marked) -> str:
     return f"`{marked.module}.{marked.name}`"
 
 
+def clause_order(entry: tuple[str, str, str]) -> tuple[object, ...]:
+    """Order entries by clause as the specification does: 7.2, 7.10, 11, then the annexes."""
+    clause, code, text = entry
+    parts = [part for part in re.split(r"[ .]", clause) if part]
+    return (tuple((0, int(part)) if part.isdigit() else (1, part) for part in parts), code, text)
+
+
+def labelled(specification: str, clause: str) -> str:
+    """A clause and its heading, ahead of what cites it."""
+    return f"{clause}{clause_title(specification, clause)} " if clause else ""
+
+
 def cited(citation: Citation) -> str:
-    return f"{citation.specification} {citation.clause}".strip()
+    return f"{citation.specification} {citation.clause}".strip() + clause_title(
+        citation.specification, citation.clause
+    )
 
 
 def render(found: Survey) -> str:
@@ -273,11 +329,11 @@ def render(found: Survey) -> str:
             if specification.kind != kind:
                 continue
             entries = [
-                f"- {clause + ' ' if clause else ''}`{module}`: {title}"
-                for clause, module, title in sorted(modules.get(spec, []))
+                f"- {labelled(spec, clause)}`{module}`: {title}"
+                for clause, module, title in sorted(modules.get(spec, []), key=clause_order)
             ] + [
-                f"- {clause + ' ' if clause else ''}{code}: {rule}"
-                for clause, code, rule in sorted(functions.get(spec, []))
+                f"- {labelled(spec, clause)}{code}: {rule}"
+                for clause, code, rule in sorted(functions.get(spec, []), key=clause_order)
             ]
             lines += ["", f"**{spec}**: {specification.title} ({specification.edition})", ""]
             lines += entries or ["- not cited in code yet"]

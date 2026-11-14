@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe Glyph List: mapping a glyph name, including uniXXXX and uXXXX names, to Unicode."""
+
 from __future__ import annotations
 
 from core_pdf.impl.adobe_fonts.agl.glyph_list import GLYPH_DATA

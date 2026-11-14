@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 14.7.3: standard structure types, namespaces and role mapping."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
