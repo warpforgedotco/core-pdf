@@ -464,6 +464,9 @@ class KeyReads:
                             sinks.append(("keys", right, scope))
                     else:
                         sinks += [("key", left, scope), ("values", right, scope)]
+                        if self.dictionary_keys(left, scope):
+                            # A collection passed in: its entries are keys where it is built.
+                            sinks.append(("keys", right, scope))
         elif isinstance(node, ast.Match):
             keys = self.dictionary_keys(node.subject, scope)
             sinks.append(("value", node.subject, scope))
