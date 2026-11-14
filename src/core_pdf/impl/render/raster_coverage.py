@@ -190,7 +190,7 @@ def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
     ):
         rgba = memo[3]
     else:
-        rgba = item.fill_rgba()
+        rgba = self.item_fill_rgba(item)
         self.fill_memo = (fill, fill_opacity, soft_mask_alpha, rgba)
     if len(edge_array) == 0:
         return True

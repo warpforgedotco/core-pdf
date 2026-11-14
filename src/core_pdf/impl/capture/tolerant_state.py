@@ -104,7 +104,7 @@ class CaptureCaches:
     capture_font_decoders: dict[object, list[tuple[object, object, FontService]]]
     capture_font_companions: FontCompanionsCache
     capture_colors: BoundedDict[
-        tuple[int, tuple[float, ...], str | None, BlackPointCompensation],
+        tuple[int, tuple[float, ...], str | None, BlackPointCompensation, bool],
         tuple[object, tuple[float, ...]],
     ]
     capture_shadings: IdentityCache[dict]

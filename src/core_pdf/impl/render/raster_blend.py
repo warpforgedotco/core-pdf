@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.render.blend import (
+    BLACK_BLEND_OPS,
     BLEND_OP_MODES,
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     BlendOp,
@@ -19,6 +20,7 @@ from core_pdf.impl.render.blend import (
     blend_op,
     kernel_blend_code,
 )
+from core_pdf.impl.render.model import SpaceMode
 from core_pdf.impl.spec.s_11_transparency.blend import blend_color, blend_component
 lazy from core_pdf_cythonized import blend_coverage_counts
 
@@ -26,8 +28,15 @@ if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
 
-def resolved_blend(self: RasterTarget, blend_mode: str | None) -> BlendOp | None:
-    return blend_op(blend_mode)
+def resolved_blend(
+    self: RasterTarget, blend_mode: str | None, *, casefold: bool = False
+) -> BlendOp | None:
+    """The op paint in blend_mode blends with: on the K plane of a CMYK group, the op of
+    the K component."""
+    op = blend_op(blend_mode, casefold=casefold)
+    if self.space_mode is SpaceMode.BLACK and op is not None:
+        return BLACK_BLEND_OPS.get(op, op)
+    return op
 
 
 def blend_px(
@@ -78,6 +87,14 @@ def blend_px(
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
+    elif mode is BlendOp.BACKDROP:
+        src_r = src_r * (1.0 - dst_a) + dst_a * dst_r
+        src_g = src_g * (1.0 - dst_a) + dst_a * dst_g
+        src_b = src_b * (1.0 - dst_a) + dst_a * dst_b
+    elif mode is BlendOp.SOURCE:
+        src_r = src_r * (1.0 - dst_a) + dst_a * src_r
+        src_g = src_g * (1.0 - dst_a) + dst_a * src_g
+        src_b = src_b * (1.0 - dst_a) + dst_a * src_b
     elif mode is not None and mode is not BlendOp.NORMAL and mode is not BlendOp.UNSUPPORTED:
         blend_r, blend_g, blend_b = blend_color(
             (dst_r, dst_g, dst_b),

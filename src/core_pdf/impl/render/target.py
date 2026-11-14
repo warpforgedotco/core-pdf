@@ -10,10 +10,11 @@ from core_pdf.impl.render import raster_fills as fills
 from core_pdf.impl.render import raster_groups as groups
 from core_pdf.impl.render import raster_images as images
 from core_pdf.impl.render import raster_shading as shading
+from core_pdf.impl.render import raster_spaces as spaces
 from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
-from core_pdf.impl.render.model import PixelWindow, RasterGroup
+from core_pdf.impl.render.model import PixelWindow, RasterGroup, SpaceMode
 from core_pdf.impl.render.raster_support import ElementaryScratch, FloatPlane, RenderResources
 from core_pdf.impl.spec.standards import SemanticContext
 
@@ -51,6 +52,10 @@ class RasterTarget:
         "elementary_scratch",
         "group_member_boxes",
         "stroke_scratch",
+        "space_mode",
+        "space_profile",
+        "space_colors",
+        "space_images",
     )
     pixels: bytearray
     pixel_array: UInt8Array
@@ -80,6 +85,12 @@ class RasterTarget:
     group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None
     stroke_scratch: bytearray | None
     fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None
+    # What the colour components hold (raster_spaces): sRGB unless inside a group that
+    # blends in DeviceGray or DeviceCMYK.
+    space_mode: SpaceMode
+    space_profile: bytes | None
+    space_colors: dict[tuple[int, int, int], tuple[int, int, int, int]]
+    space_images: dict[tuple[int, int], tuple[object, UInt8Array]]
 
     KNOCKOUT_DISJOINT_LIMIT = 96
 
@@ -118,6 +129,10 @@ class RasterTarget:
         self.fill_memo = None
         self.group_member_boxes = None
         self.stroke_scratch = None
+        self.space_mode = SpaceMode.RGB
+        self.space_profile = None
+        self.space_colors = {}
+        self.space_images = {}
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -196,3 +211,15 @@ class RasterTarget:
     paint_glyph_bitmap = dispatch.paint_glyph_bitmap
     paint_shading_item = dispatch.paint_shading_item
     paint_typed_path = dispatch.paint_typed_path
+
+    # Groups that blend in another colour space than their parent's.
+    set_space_mode = spaces.set_space_mode
+    srgb_cmyk = spaces.srgb_cmyk
+    color_cmyk = spaces.color_cmyk
+    space_color = spaces.space_color
+    paint_rgba = spaces.paint_rgba
+    item_fill_rgba = spaces.item_fill_rgba
+    shading_space_color = spaces.shading_space_color
+    space_samples = spaces.space_samples
+    switches_space = spaces.switches_space
+    paint_space_group = spaces.paint_space_group

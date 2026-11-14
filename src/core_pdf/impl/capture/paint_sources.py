@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.types import MISSING, MissingObject
 from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
-from core_pdf.impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
+from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
@@ -51,13 +52,21 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
         return last[4]
     if not color_space_paints(spec):
         return color
-    key = (id(spec), color, intent, black_point)
+    cmyk = self.capture_cmyk
+    key = (id(spec), color, intent, black_point, cmyk)
     caches = self.caches
     previous = caches.capture_colors.get(key)
     if previous is not None:
         result = previous[1]
     else:
-        converted = color_operands_to_srgb(spec, list(color), rendering=graphics.color_rendering)
+        converted: tuple[float, ...] | None = None
+        if cmyk and spec.kind not in GRAY_RGB_KINDS:
+            # A CMYK blending space takes a colour that comes down to CMYK as that CMYK.
+            converted = color_operands_to_cmyk(spec, color)
+        if converted is None:
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=graphics.color_rendering
+            )
         result = converted if converted is not None else color
         caches.capture_colors.put(key, (spec, result))
     memo = (spec, color, intent, black_point, result)

@@ -24,6 +24,7 @@ lazy from core_pdf_cythonized import fill_edge_rows, path_bounds
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.program import CapturedProgram
+    from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
@@ -444,6 +445,7 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     group_knockout: bool = False
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
+    group_color_space: ColorSpace | None = None
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -500,6 +502,7 @@ def marker_drawing(
     group_knockout: bool = False,
     alpha_is_shape: bool = False,
     graphics_soft_mask: CapturedSoftMask | None = None,
+    group_color_space: ColorSpace | None = None,
 ) -> CapturedDrawing:
     return CapturedDrawing(
         seqno=seqno,
@@ -511,6 +514,7 @@ def marker_drawing(
         group_knockout=group_knockout,
         alpha_is_shape=alpha_is_shape,
         graphics_soft_mask=graphics_soft_mask,
+        group_color_space=group_color_space,
         kind=kind,
     )
 

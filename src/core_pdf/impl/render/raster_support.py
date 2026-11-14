@@ -264,13 +264,12 @@ def composite_nonisolated_group(
     rendered: UInt8Array,
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
     opacity: float,
-    blend_mode: str | None,
+    mode: BlendOp | None,
     *,
     semantic_context: SemanticContext,
     mask_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None = None,
 ) -> UInt8Array:
     opacity = clamp01(opacity)
-    mode = blend_op(blend_mode, casefold=True)
     normal = mode is None or mode is BlendOp.NORMAL
     if opacity == 1.0 and normal and mask_alpha is None:
         return composite_elementary_normal(destination, rendered, source_alpha)
@@ -291,13 +290,12 @@ def composite_masked_group(
     rendered: UInt8Array,
     source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]] | None,
     opacity: float,
-    blend_mode: str | None,
+    mode: BlendOp | None,
     mask: SoftMaskPlane,
     window: tuple[slice, slice],
     *,
     semantic_context: SemanticContext,
 ) -> UInt8Array:
-    mode = blend_op(blend_mode, casefold=True)
     if source_alpha is None and (mode is None or mode is BlendOp.NORMAL):
         return composite_masked_normal(
             destination, rendered, opacity, mask.alpha[window], mask.values()
@@ -309,7 +307,7 @@ def composite_masked_group(
             rendered,
             source_alpha,
             opacity,
-            blend_mode,
+            mode,
             semantic_context=semantic_context,
             mask_alpha=mask_alpha,
         )

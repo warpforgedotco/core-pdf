@@ -562,6 +562,38 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     return PreparedImage(apply_soft_mask(raster, soft_mask), soft_mask=soft_mask)
 
 
+def decode_cmyk_samples(source: ImageSource) -> numpy.ndarray[Any, Any] | None:
+    """An 8-bit CMYK image's samples, (height, width, 4), as its colour space holds them
+    (DeviceCMYK, or an ICCBased space of four components), not converted to sRGB: the colour
+    a CMYK blending space takes them in. None for any other image, and for one whose samples
+    a Decode array, a colour key mask or a matte would change."""
+    dictionary = source.dictionary
+    if dictionary.get("ImageMask") is True or dictionary.get("Mask") is not None:
+        return None
+    if source.soft_mask is not None and source.soft_mask.dictionary.get("Matte") is not None:
+        return None
+    header = ImageHeader(dictionary)
+    try:
+        space = header.space()
+    except ValueError:
+        return None
+    if space.kind not in {"DeviceCMYK", "ICCBased"} or len(space.component_ranges) != 4:
+        return None
+    if header.bits != 8 or not image_decode_is_identity(dictionary):
+        return None
+    width, height = header.width, header.height
+    if width <= 0 or height <= 0:
+        return None
+    samples = decode_image_samples(source.raw, dictionary, size=(width, height), header=header)
+    if isinstance(samples, DecodedImage):
+        if samples.array.dtype != numpy.uint8 or samples.array.size != width * height * 4:
+            return None
+        return samples.array.reshape(height, width, 4)
+    if samples is None or len(samples) != width * height * 4:
+        return None
+    return numpy.frombuffer(samples, dtype=numpy.uint8).reshape(height, width, 4)
+
+
 def decode_image(source: ImageSource) -> ImageRaster | None:
     prepared = prepare_image(source)
     return prepared.raster if prepared is not None else None
@@ -705,6 +737,7 @@ __all__ = (
     "ImageSource",
     "PreparedImage",
     "SoftMask",
+    "decode_cmyk_samples",
     "decode_image",
     "decode_pdf_image",
     "prepare_image",

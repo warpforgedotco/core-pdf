@@ -45,6 +45,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
@@ -286,6 +287,11 @@ class TextState(RecoveringTextState):
     capture_patterns: IdentityCache[PatternPaint | None]
     scale_cache: tuple[Matrix, float] | None
     shared_glyph_paint: GlyphPaint | None
+    # Whether paint lands in a DeviceCMYK blending space (the page group's, or an isolated
+    # group's), where a colour that comes down to CMYK is captured as that CMYK; and the
+    # value to restore when each group that changed it ends.
+    capture_cmyk: bool
+    capture_cmyk_frames: dict[int, bool]
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
@@ -329,6 +335,8 @@ class TextState(RecoveringTextState):
         self.capture_patterns = IdentityCache()
         self.last_fill_color: CaptureColorMemo | None = None
         self.last_stroke_color: CaptureColorMemo | None = None
+        self.capture_cmyk = False
+        self.capture_cmyk_frames = {}
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
         resolver_context = getattr(document.resolver, "semantic_context", None)
@@ -489,6 +497,9 @@ class TextState(RecoveringTextState):
                 )
             )
             self.sequence += 1
+        if frame.group_alpha is not None and frame.group_color_space is not None:
+            self.capture_cmyk_frames[id(frame)] = self.capture_cmyk
+            self.set_capture_cmyk(blending_space_of(frame.group_color_space) == "DeviceCMYK")
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -501,6 +512,7 @@ class TextState(RecoveringTextState):
                     group_knockout=frame.group_knockout,
                     alpha_is_shape=self.graphics.alpha_is_shape,
                     graphics_soft_mask=self.capture_graphics_soft_mask(),
+                    group_color_space=frame.group_color_space,
                 )
             )
             self.sequence += 1
@@ -560,6 +572,15 @@ class TextState(RecoveringTextState):
         if old is not None and frame.form_bbox is not None:
             self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
+        if id(frame) in self.capture_cmyk_frames:
+            self.set_capture_cmyk(self.capture_cmyk_frames.pop(id(frame)))
+
+    def set_capture_cmyk(self, cmyk: bool) -> None:
+        if cmyk is not self.capture_cmyk and self.options.render_details:
+            self.capture_cmyk = cmyk
+            self.last_fill_color = None
+            self.last_stroke_color = None
+            self.shared_glyph_paint = None
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         mask = super().resolve_soft_mask(value)

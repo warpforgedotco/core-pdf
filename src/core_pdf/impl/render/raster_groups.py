@@ -15,7 +15,7 @@ lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.render.blend import BlendOp, blend_op, composite_blended_group_numpy
+from core_pdf.impl.render.blend import BlendOp, composite_blended_group_numpy
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SoftMaskPlane
 from core_pdf.impl.render.raster_support import (
     ElementaryScratch,
@@ -58,9 +58,7 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
         and group.mask_alpha is None
         and group.source_alpha is not None
         and group.source_scale == 1.0
-        and (
-            group.blend_mode is None or blend_op(group.blend_mode, casefold=True) is BlendOp.NORMAL
-        )
+        and self.resolved_blend(group.blend_mode, casefold=True) in {None, BlendOp.NORMAL}
     ):
         assert parent.source_alpha is not None
         assert shape is not None
@@ -109,8 +107,7 @@ def composite_group_into(
 ) -> UInt8Array:
     child = group.view[rows, columns]
     group_alpha = group.composite_alpha
-    group_blend_mode = group.blend_mode
-    normalized_blend_mode = blend_op(group_blend_mode, casefold=True)
+    normalized_blend_mode = self.resolved_blend(group.blend_mode, casefold=True)
     source_scale = group.source_scale
     if group.mask_alpha is not None:
         return composite_masked_group(
@@ -120,7 +117,7 @@ def composite_group_into(
             if group.backdrop is not None and group.source_alpha is not None
             else None,
             source_scale,
-            group_blend_mode,
+            normalized_blend_mode,
             group.mask_alpha,
             (rows, columns),
             semantic_context=self.semantic_context,
@@ -132,7 +129,7 @@ def composite_group_into(
             child,
             group.source_alpha[rows, columns],
             source_scale,
-            group_blend_mode,
+            normalized_blend_mode,
             semantic_context=self.semantic_context,
         )
     if (normalized_blend_mode is None or normalized_blend_mode is BlendOp.NORMAL) and len(
@@ -149,7 +146,7 @@ def composite_group_into(
         child,
         float(group_alpha) if is_pdf_number(group_alpha) else None,
         None,
-        group_blend_mode,
+        normalized_blend_mode,
         semantic_context=self.semantic_context,
     )
     return effective_alpha

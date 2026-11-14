@@ -236,7 +236,7 @@ def composite_nonisolated_blend(
     uint8, then for each visible pixel the group backdrop removed as
     backdrop_removed computes it, clipped to [0, 1], and blended
     over the destination as core_pdf.impl.render.blend.blend_visible_pixels does. mode is a
-    blend code, 0 to 15 (core_pdf.impl.render.blend.BlendOp), the separable modes blended
+    blend code, 0 to 17 (core_pdf.impl.render.blend.BlendOp), the separable modes blended
     per channel and the non-separable ones on the clipped colour; revised selects the
     PDF 2.0 dodge and burn endpoints. With
     copy_unmasked, a visible pixel whose mask is exactly 1 takes the rendered

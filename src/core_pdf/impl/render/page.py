@@ -17,13 +17,26 @@ from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
 from core_pdf.impl.render.commands import append_captured_program
 from core_pdf.impl.render.display import DisplayList
-from core_pdf.impl.render.model import DisplayItem, DisplayListItem, RasterImage, RenderOptions
+from core_pdf.impl.render.model import (
+    DisplayItem,
+    DisplayListItem,
+    GroupBeginItem,
+    RasterImage,
+    RenderOptions,
+)
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_11_transparency.blending_space import (
+    OUTPUT_BLENDING_SPACE,
+    blending_profile,
+    blending_space_of,
+    page_blending_space,
+)
 from core_pdf.impl.spec.standards import SemanticContext
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_page import PdfPage
+    from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 
 
 def raster_scale(value: float) -> float:
@@ -152,7 +165,12 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         )
         rotate = self.rotate % 360
         raster_target.group_member_boxes = self.display_list.group_member_boxes
-        raster_target.paint_items(self.render_items(crop, scale=device_scale))
+        items = self.render_items(crop, scale=device_scale)
+        page_group = page_space_group(self.metadata.get("group_color_space"))
+        if page_group is not None and raster_target.switches_space(page_group):
+            raster_target.paint_space_group(page_group, items)
+        else:
+            raster_target.paint_items(items)
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())
         if rotate in {90, 180, 270}:
@@ -182,6 +200,17 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
             ],
             "metadata": dict(self.metadata),
         }
+
+
+def page_space_group(color_space: ColorSpace | None) -> GroupBeginItem | None:
+    """The page group as an isolated group of its blending space (11.4.7), for a page whose
+    Group entry names a space other than DeviceRGB; the page's paint goes into it, and its
+    colour is converted to sRGB when it composites onto the page."""
+    space = page_blending_space(blending_space_of(color_space))
+    if space == OUTPUT_BLENDING_SPACE:
+        return None
+    profile = blending_profile(color_space)
+    return GroupBeginItem(-1, None, None, None, True, False, False, False, None, space, profile, {})
 
 
 def compose_page(
@@ -287,6 +316,7 @@ def compose_page(
             "crop": options.crop,
             "media_box": media_box,
             "group_alpha": (page.resolve_transparency_group_alpha()),
+            "group_color_space": page.resolve_transparency_group_space(),
         },
     )
 

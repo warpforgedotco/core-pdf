@@ -16,6 +16,7 @@ from core_pdf.impl.capture.recording_support import (
     DRAWING_BBOX,
     DRAWING_COLOR_RENDERING,
     DRAWING_DICTIONARY,
+    DRAWING_GROUP_COLOR_SPACE,
     DRAWING_GROUP_ISOLATED,
     DRAWING_GROUP_KNOCKOUT,
     DRAWING_IMAGE_CLIP,
@@ -164,6 +165,7 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 DRAWING_GROUP_KNOCKOUT,
                 graphics.alpha_is_shape,
                 self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
+                DRAWING_GROUP_COLOR_SPACE,
             )
         )
     )

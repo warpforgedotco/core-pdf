@@ -12,12 +12,7 @@ from copy import replace
 from typing import TYPE_CHECKING, Any
 
 from core_pdf.impl.capture.records import CapturedPath
-from core_pdf.impl.render.blend import (
-    color_rgba,
-    declared_blend,
-    resolve_constant_alpha,
-    scale_rgba_alpha,
-)
+from core_pdf.impl.render.blend import declared_blend, resolve_constant_alpha, scale_rgba_alpha
 from core_pdf.impl.render.model import (
     ClipItem,
     ControlItem,
@@ -33,6 +28,7 @@ from core_pdf.impl.render.model import (
     is_plain_fill,
 )
 from core_pdf.impl.render.raster_images import blit_image
+from core_pdf.impl.render.raster_spaces import group_members
 from core_pdf.impl.render.raster_support import (
     EMPTY_PIXEL_BOX,
     paint_stroke_once,
@@ -53,13 +49,21 @@ def paint_items(
     clip_path: CapturedPath | None = None,
 ) -> None:
     if translation is None:
-        for item in items:
+        iterator = iter(items)
+        for item in iterator:
+            if type(item) is GroupBeginItem and self.switches_space(item):
+                self.paint_space_group(item, group_members(iterator))
+                continue
             self.paint_item(item)
         return
     self.push_scope(clip_path.translated(*translation) if clip_path is not None else None)
     try:
-        for item in items:
-            self.paint_item(item.translated(*translation, parent_blend_mode))
+        translated = (item.translated(*translation, parent_blend_mode) for item in items)
+        for item in translated:
+            if type(item) is GroupBeginItem and self.switches_space(item):
+                self.paint_space_group(item, group_members(translated))
+                continue
+            self.paint_item(item)
     finally:
         self.pop_scope()
 
@@ -187,7 +191,7 @@ def paint_group_begin(self: RasterTarget, item: GroupBeginItem) -> None:
 def paint_glyph_bitmap(self: RasterTarget, item: GlyphBitmapItem) -> None:
     if item.visible is False:
         return
-    rgba = item.fill_rgba()
+    rgba = self.item_fill_rgba(item)
     self.set_shape_alpha(rgba[3] / 255.0)
     self.draw_glyph_bitmap(
         item.bbox,
@@ -220,7 +224,7 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
             self.composite_group(self.pop_group())
         return
     if paint_kind is not PathPaintKind.STROKE:
-        rgba = item.fill_rgba()
+        rgba = self.item_fill_rgba(item)
         self.set_shape_alpha(rgba[3] / 255.0)
         if item.fill_pattern is None or not self.paint_fill_pattern(item, blend_mode):
             edge_array = item.edge_array
@@ -233,7 +237,7 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
                 edge_array=edge_array,
             )
     if paint_kind is not PathPaintKind.FILL:
-        stroke_rgba = color_rgba(item.stroke_color, item.stroke_opacity)
+        stroke_rgba = self.paint_rgba(item.stroke_color, item.stroke_opacity)
         if is_pdf_number(soft_mask_alpha):
             stroke_rgba = scale_rgba_alpha(stroke_rgba, soft_mask_alpha)
         self.set_shape_alpha(stroke_rgba[3] / 255.0)

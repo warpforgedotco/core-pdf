@@ -14,6 +14,14 @@ C = (cs' as + cb ab (1 - as)) / ar, as each path computes it. It also checks the
 reference against the numpy one bit for bit, that each path's mode table agrees with
 BLEND_MODES, and that the kernels refuse a code they do not know.
 
+The same paths blend in the DeviceGray and DeviceCMYK blending spaces of transparency
+groups (core_pdf.impl.render.raster_spaces): a gray group holds its gray level in all three
+components, and a CMYK group paints twice, once holding the complements of C, M and Y and
+once the complement of K, the K pass in BLACK_BLEND_OPS's op. For every mode, gray and CMYK
+backdrops and sources go through each path that way, and the bytes they give back are
+compared with a compositing of each component written from the specification's
+blending_space.additive_blend.
+
 uv run --all-packages python scripts/check_blend_modes.py [random cases per mode]
 """
 
@@ -29,6 +37,7 @@ from typing import Any
 import numpy
 
 from core_pdf.impl.render.blend import (
+    BLACK_BLEND_OPS,
     BLEND_OPS,
     KERNEL_BLEND_CODES,
     BlendOp,
@@ -44,6 +53,12 @@ from core_pdf.impl.spec.s_11_transparency.blend import (
     blend_color,
     blend_colors,
     first_recognized_blend_mode,
+)
+from core_pdf.impl.spec.s_11_transparency.blending_space import (
+    BlendingSpace,
+    additive_blend,
+    additive_components,
+    blend_in_space,
 )
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 from core_pdf_cythonized import (
@@ -307,7 +322,14 @@ def check_tables(failures: list[str]) -> None:
             case, numpy.ones(1, numpy.float32), code, True
         ),
     }
-    for code in (-1, len(BLEND_MODES), 255):
+    for name, op in (("BACKDROP", BlendOp.BACKDROP), ("SOURCE", BlendOp.SOURCE)):
+        if KERNEL_BLEND_CODES[op] != op.value or kernel_blend_code(op) != op.value:
+            failures.append(f"{name}: kernel code {kernel_blend_code(op)} is not {op.value}")
+    for op, black in BLACK_BLEND_OPS.items():
+        mode = BLEND_MODES[op]
+        if mode not in NON_SEPARABLE_BLEND_MODES or black not in {BlendOp.BACKDROP, BlendOp.SOURCE}:
+            failures.append(f"{mode}: K blends as {black.name}")
+    for code in (-1, BlendOp.SOURCE.value + 1, 255):
         for name, call in kernels.items():
             try:
                 call(code)
@@ -334,6 +356,177 @@ def compare(
             return
 
 
+type SpacePixel = tuple[tuple[int, ...], int]
+type SpaceCase = tuple[SpacePixel, SpacePixel]
+
+
+def space_cases(space: BlendingSpace, count: int, seed: int) -> list[SpaceCase]:
+    """(backdrop, source) pairs of a blending space's colours, each its components as bytes
+    (colorant amounts for CMYK) and an alpha, the source alpha never 0."""
+    random = numpy.random.default_rng(seed)
+    n = 1 if space == "DeviceGray" else 4
+    levels = (0, 1, 127, 128, 254, 255)
+    edges = [tuple(int(v) for v in row) for row in itertools.product(levels, repeat=n)]
+    if n == 4:
+        edges = edges[:: max(1, len(edges) // 160)]
+    found: list[SpaceCase] = [
+        ((color, 255), (other, alpha))
+        for color in edges
+        for other, alpha in zip(edges[::7], itertools.cycle(EDGE_ALPHAS), strict=False)
+    ]
+    found.extend(((color, 255), (color, 255)) for color in edges)
+    found.extend(
+        ((color, backdrop_alpha), (edges[-1 - index], source_alpha))
+        for index, color in enumerate(edges)
+        for backdrop_alpha, source_alpha in itertools.product(EDGE_BACKDROP_ALPHAS, (1, 128, 255))
+    )
+    values = random.integers(0, 256, size=(count, 2 * n + 2))
+    values[:, -1] = numpy.maximum(values[:, -1], 1)
+    values[: count // 4, n] = 255
+    found.extend(
+        (
+            (tuple(int(v) for v in row[:n]), int(row[n])),
+            (tuple(int(v) for v in row[n + 1 : 2 * n + 1]), int(row[-1])),
+        )
+        for row in values
+    )
+    return found
+
+
+def space_planes(space: BlendingSpace, case: SpaceCase) -> list[Case]:
+    """A case as the (backdrop, source) RGBA pairs each pass of its group composites: a gray
+    level in all three components, or a CMYK colour's complemented C, M, Y, and then its
+    complemented K three times."""
+    (backdrop, backdrop_alpha), (source, source_alpha) = case
+    if space == "DeviceGray":
+        gray, level = backdrop[0], source[0]
+        return [((gray, gray, gray, backdrop_alpha), (level, level, level, source_alpha))]
+    cb = [255 - v for v in backdrop]
+    cs = [255 - v for v in source]
+    return [
+        ((cb[0], cb[1], cb[2], backdrop_alpha), (cs[0], cs[1], cs[2], source_alpha)),
+        ((cb[3], cb[3], cb[3], backdrop_alpha), (cs[3], cs[3], cs[3], source_alpha)),
+    ]
+
+
+def from_planes(space: BlendingSpace, planes: list[Pixel]) -> SpacePixel:
+    """The colour the passes give back, as components and an alpha; -1 for an alpha the
+    passes disagree on."""
+    if space == "DeviceGray":
+        return (planes[0][0],), planes[0][3]
+    cmy, black = planes
+    alpha = cmy[3] if cmy[3] == black[3] else -1
+    return (255 - cmy[0], 255 - cmy[1], 255 - cmy[2], 255 - black[0]), alpha
+
+
+def expected_in_space(
+    space: BlendingSpace, case: SpaceCase, mode: BlendMode, revised: bool, removed: float | None
+) -> SpacePixel:
+    """The reference: each component of the additive forms composited as composited does,
+    with B from additive_blend; for removed, a non-isolated group's backdrop removed first, as
+    expected_nonisolated does."""
+    (backdrop, backdrop_alpha), (source, source_alpha) = case
+    count = len(backdrop)
+    cb_bytes = [255 - v for v in backdrop] if space == "DeviceCMYK" else list(backdrop)
+    cs = tuple((255 - v if space == "DeviceCMYK" else v) / 255.0 for v in source)
+    dst_a = backdrop_alpha / 255.0
+    src_a = source_alpha / 255.0
+    if removed is not None:
+        level = int(numpy.rint(removed * 1.0 * 255.0))
+        if level == 0:
+            return backdrop, backdrop_alpha
+        cs = tuple(
+            backdrop_removed(cs[k], src_a, cb_bytes[k] / 255.0, dst_a, removed)
+            for k in range(count)
+        )
+        src_a = level / 255.0
+    out_a = src_a + dst_a * (1.0 - src_a)
+    if out_a <= 0.0:
+        return (0,) * count, 0
+    color = cs
+    if mode != "Normal":
+        cb = tuple(v / 255.0 for v in cb_bytes)
+        blended = additive_blend(cb, cs, mode, space, revised)
+        color = tuple(cs[k] * (1.0 - dst_a) + dst_a * blended[k] for k in range(count))
+    out = [
+        channel(((color[k] * 255.0) * src_a + cb_bytes[k] * dst_a * (1.0 - src_a)) / out_a)
+        for k in range(count)
+    ]
+    if space == "DeviceCMYK":
+        out = [255 - v for v in out]
+    return tuple(out), channel(out_a * 255.0)
+
+
+def check_space_references(failures: list[str]) -> None:
+    """blend_in_space is additive_blend between complements, and in CMYK takes K as 11.3.5.3
+    has it."""
+    random = numpy.random.default_rng(11)
+    for _ in range(400):
+        backdrop = tuple(float(v) for v in random.random(4))
+        source = tuple(float(v) for v in random.random(4))
+        for mode in BLEND_MODES:
+            colorants = blend_in_space(backdrop, source, mode, "DeviceCMYK")
+            additive = additive_blend(
+                additive_components("DeviceCMYK", backdrop),
+                additive_components("DeviceCMYK", source),
+                mode,
+                "DeviceCMYK",
+            )
+            if colorants != additive_components("DeviceCMYK", additive):
+                failures.append(f"{mode}: blend_in_space is not additive_blend complemented")
+                return
+            if mode in NON_SEPARABLE_BLEND_MODES:
+                black = source[3] if mode == "Luminosity" else backdrop[3]
+                if colorants[3] != black:
+                    failures.append(f"{mode}: CMYK K is {colorants[3]}, not {black}")
+                    return
+
+
+def through_space_path(
+    name: str, cases: list[Case], code: int, revised: bool, removed: numpy.ndarray
+) -> list[Pixel]:
+    if name == "composite_nonisolated_blend":
+        return through_nonisolated(cases, removed, code, revised)
+    return PATHS[name](cases, code, revised)
+
+
+def check_spaces(count: int, accumulated: numpy.ndarray, failures: list[str]) -> int:
+    checked = 0
+    for space in ("DeviceGray", "DeviceCMYK"):
+        batch = space_cases(space, count, 20261115)
+        removed = numpy.resize(accumulated, len(batch))
+        planes = [space_planes(space, case) for case in batch]
+        checked += len(batch)
+        for mode, revised in modes_and_revisions():
+            op = BlendOp(BLEND_MODES.index(mode))
+            codes = [op.value, BLACK_BLEND_OPS.get(op, op).value]
+            want = [expected_in_space(space, case, mode, revised, None) for case in batch]
+            want_removed = [
+                expected_in_space(space, case, mode, revised, float(alpha))
+                for case, alpha in zip(batch, removed, strict=True)
+            ]
+            for name in (*PATHS, "composite_nonisolated_blend"):
+                passes = [
+                    through_space_path(
+                        name, [rows[index] for rows in planes], codes[index], revised, removed
+                    )
+                    for index in range(len(planes[0]))
+                ]
+                got = [
+                    from_planes(space, [plane[row] for plane in passes])
+                    for row in range(len(batch))
+                ]
+                reference = want_removed if name == "composite_nonisolated_blend" else want
+                for case, value, expected_value in zip(batch, got, reference, strict=True):
+                    if value != expected_value:
+                        failures.append(
+                            f"{space} {name} {mode} (revised={revised}): backdrop {case[0]} "
+                            f"source {case[1]} gave {value}, the reference {expected_value}"
+                        )
+                        break
+    return checked
+
+
 def main(argv: list[str]) -> int:
     count = int(argv[0]) if argv else 4000
     batch = cases(count, 20261114)
@@ -357,10 +550,13 @@ def main(argv: list[str]) -> int:
         compare(
             "composite_nonisolated_blend", mode, revised, batch, got, want_nonisolated, failures
         )
+    check_space_references(failures)
+    in_spaces = check_spaces(count // 2, accumulated, failures)
     separable = len(BLEND_MODES) - len(NON_SEPARABLE_BLEND_MODES)
     print(
         f"{len(BLEND_MODES)} blend modes ({separable} separable), "
-        f"{len(batch)} cases each through {len(PATHS) + 1} paths: {len(failures)} failures"
+        f"{len(batch)} RGB cases each through {len(PATHS) + 1} paths, and {in_spaces} gray "
+        f"and CMYK cases through the passes of their groups: {len(failures)} failures"
     )
     for failure in failures[:20]:
         print(failure)

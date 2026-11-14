@@ -456,6 +456,11 @@ class DisplayList:
             **path_paint_fields(drawing),
             group_isolated=drawing.group_isolated,
             group_knockout=drawing.group_knockout,
+            **(
+                {"group_color_space": drawing.group_color_space}
+                if drawing.group_color_space is not None
+                else {}
+            ),
             raw_data=drawing.raw_data,
             dictionary=drawing.dictionary,
             image_source=drawing.image_source,

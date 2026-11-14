@@ -18,6 +18,7 @@ from core_records import FrozenFields, PickleFields, RecordType, ReplaceFields, 
 if TYPE_CHECKING:
     from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
     from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
+    from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 
 
 StreamKey = tuple[str, int, int]
@@ -59,6 +60,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
     group_alpha: float | None
     group_isolated: bool
     group_knockout: bool
+    group_color_space: ColorSpace | None
     form_bbox_operand: object
     form_bbox: Rectangle | None
     is_form: bool
@@ -80,6 +82,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         *,
         group_isolated: bool = True,
         group_knockout: bool = False,
+        group_color_space: ColorSpace | None = None,
         form_bbox_operand: object = None,
         form_bbox: Rectangle | None = None,
         is_form: bool = False,
@@ -94,6 +97,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         self.group_alpha = group_alpha
         self.group_isolated = group_isolated
         self.group_knockout = group_knockout
+        self.group_color_space = group_color_space
         self.form_bbox_operand = form_bbox_operand
         self.form_bbox = form_bbox
         self.is_form = is_form
@@ -113,6 +117,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         group_alpha = changes.pop("group_alpha", self.group_alpha)
         group_isolated = changes.pop("group_isolated", self.group_isolated)
         group_knockout = changes.pop("group_knockout", self.group_knockout)
+        group_color_space = changes.pop("group_color_space", self.group_color_space)
         form_bbox_operand = changes.pop("form_bbox_operand", self.form_bbox_operand)
         form_bbox = changes.pop("form_bbox", self.form_bbox)
         is_form = changes.pop("is_form", self.is_form)
@@ -129,6 +134,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
             group_alpha,
             group_isolated=group_isolated,
             group_knockout=group_knockout,
+            group_color_space=group_color_space,
             form_bbox_operand=form_bbox_operand,
             form_bbox=form_bbox,
             is_form=is_form,
