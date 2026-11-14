@@ -7,6 +7,7 @@ from core_pdf.impl.adobe_fonts.encodings import (
     STANDARD_ENCODING_GLYPH_NAMES,
     WIN_ANSI_ENCODING_GLYPH_NAMES,
 )
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 BASE_ENCODING_GLYPH_NAMES: dict[str, tuple[str, ...]] = {
@@ -29,6 +30,12 @@ def is_unicode_scalar(codepoint: int) -> bool:
     return 0 <= codepoint < 0x110000 and not 0xD800 <= codepoint <= 0xDFFF
 
 
+@cites(
+    "ISO 32000-2",
+    "D.2",
+    since="1.3",
+    rule="WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet",
+)
 def get_base_encoding_glyph_names(
     base_encoding: str, *, context: SemanticContext | None = None
 ) -> tuple[str, ...]:

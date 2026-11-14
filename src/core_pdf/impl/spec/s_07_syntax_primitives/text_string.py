@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import codecs
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 
 PDFDOC_ENCODING_OVERRIDES: dict[int, str] = {
@@ -56,6 +57,19 @@ PDFDOC_ENCODING_TABLE: list[str] = [
 PDFDOC_DECODE_MAP: str = "".join(PDFDOC_ENCODING_TABLE)
 
 
+@cites(
+    "ISO 32000-2",
+    "7.9.2.2",
+    since="1.2",
+    rule="UTF-16BE text strings, after the byte order mark FE FF",
+)
+@cites(
+    "ISO 32000-2",
+    "7.9.2.2",
+    since="2.0",
+    rule="UTF-8 text strings, after the byte order mark EF BB BF",
+)
+@cites("ISO 32000-2", "D.3", since="1.3", rule="PDFDocEncoding defines byte A0 (Euro sign)")
 def decode_pdf_text_string(
     data: bytes | memoryview, *, context: SemanticContext | None = None
 ) -> str:

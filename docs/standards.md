@@ -56,6 +56,11 @@ assert decode_pdf_text_string(raw, context=SemanticContext(PdfVersion(1, 7))) ==
 assert decode_pdf_text_string(raw, context=SemanticContext(PdfVersion(2, 0))) == "Example"
 ```
 
+Every rule below, and every feature an edition, extension or embedded standard adds, is
+cited in the code with `core_pdf.impl.spec.citations.cites`; the
+[specification index](spec-index.md) lists them by PDF version, extension, profile and
+specification.
+
 Algorithms take a `SemanticContext` only where the standard's meaning changed between
 versions. Calls that omit it keep their earlier behavior, and core owns best-effort
 recovery for under-declared encodings and unknown versions. The version-sensitive

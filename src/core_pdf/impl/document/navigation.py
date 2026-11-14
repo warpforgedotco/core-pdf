@@ -15,6 +15,7 @@ from core_pdf.impl.base.exceptions import PdfParseError
 from core_pdf.impl.base.raw_records import RawNamedDestination, RawOutlineItem
 from core_pdf.impl.document.page_tree import PageLookup
 from core_pdf.impl.document.pdf_page import goto_action_destination
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.types import PdfArray, PdfDict
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 lazy from core_pdf.impl.recovery.trees import iter_name_tree_items
@@ -27,6 +28,7 @@ def unresolved_destination(name: str) -> RawNamedDestination:
     return RawNamedDestination(page_index=None, type=None, args=[], raw=name)
 
 
+@cites("ISO 32000-2", "7.3.5", until="1.2", rule="a # in a name is a literal character")
 def legacy_name_context(context: SemanticContext | None) -> bool:
     return context is not None and context.version in {PdfVersion(1, 0), PdfVersion(1, 1)}
 

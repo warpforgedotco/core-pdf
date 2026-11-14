@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar, Self
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext, require_recognized_version
 from core_records import FrozenFields, PickleFields, RecordType, ReprFields, frozen_setattr
 
@@ -125,6 +126,14 @@ PDF_1_3 = PdfVersion(1, 3)
 PDF_2_0 = PdfVersion(2, 0)
 
 
+@cites("ISO 32000-2", "7.3.5", since="1.2", rule="a # in a name starts a hexadecimal escape")
+@cites("ISO 32000-2", "7.2.3", since="1.3", rule="NUL is a white-space character")
+@cites(
+    "ISO 32000-2", "7.2.3", since="2.0", rule="{ and } delimit only PostScript calculator functions"
+)
+@cites(
+    "ISO 32000-2", "7.3.10", since="2.0", rule="object identifiers are written in canonical form"
+)
 def lexical_rules(context: SemanticContext | None = None) -> LexicalRules:
     version = require_recognized_version(
         context, "lexical semantics require a recognized PDF version"
