@@ -367,9 +367,16 @@ class KeyReads:
         exprs, params = self.lookup(expr.id, scope)
         if params or not exprs:
             return False
+        # A local sequence of literals is a table, as it is inline; one filled later
+        # (keys = [], then appended to) may hold dictionary keys, so is not.
         return all(
             not isinstance(value_scope.node, (ast.FunctionDef, ast.AsyncFunctionDef))
             or isinstance(value, (ast.Dict, ast.DictComp, ast.Set, ast.SetComp))
+            or (
+                isinstance(value, (ast.Tuple, ast.List))
+                and bool(value.elts)
+                and all(isinstance(element, ast.Constant) for element in value.elts)
+            )
             for value, value_scope in exprs
         )
 
