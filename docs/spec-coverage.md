@@ -13,13 +13,13 @@ are left out. See also the [specification index](spec-index.md).
 | PDF 2.0 | 668 | 322 | 346 |
 | PDF 1.7 | 150 | 64 | 86 |
 | PDF 1.6 | 207 | 133 | 74 |
-| PDF 1.5 | 587 | 289 | 298 |
+| PDF 1.5 | 587 | 290 | 297 |
 | PDF 1.4 | 208 | 143 | 65 |
 | PDF 1.3 | 554 | 405 | 149 |
 | PDF 1.2 | 366 | 274 | 92 |
 | PDF 1.1 | 90 | 78 | 12 |
 | PDF 1.0 | 193 | 163 | 30 |
-| extension AAPL | 9 | 3 | 6 |
+| extension AAPL | 9 | 4 | 5 |
 | extension EAPDF_1 | 2 | 0 | 2 |
 | extension ISO_19593 | 4 | 0 | 4 |
 | extension ISO_21812 | 137 | 30 | 107 |
@@ -222,15 +222,6 @@ Keys core never names:
 
 Values core never names, of keys it reads:
 
-- `BM` `Color` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Darken` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Difference` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Exclusion` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `HardLight` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Hue` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Lighten` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `Overlay` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
-- `BM` `SoftLight` in Annot3D, AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight and 19 more
 - `O` `ARIA-1.1` in StructureAttributesDict
 - `O` `CSS-3` in StructureAttributesDict
 - `O` `HTML-5.00` in StructureAttributesDict
@@ -535,7 +526,6 @@ Keys core never names:
 - `CT` in MediaClipData
 - `Category` in OptContentUsageApplication
 - `Cert` in SigFieldSeedValue
-- `Color` in StructureAttributesDict
 - `Configs` in OptContentProperties
 - `CreationDate` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 9 more
 - `Creator` in OptContentConfig, OptContentCreatorInfo
@@ -760,15 +750,6 @@ Keys core never names:
 
 Values core never names, of keys it reads:
 
-- `BM` `Color` in GraphicsStateParameter
-- `BM` `Darken` in GraphicsStateParameter
-- `BM` `Difference` in GraphicsStateParameter
-- `BM` `Exclusion` in GraphicsStateParameter
-- `BM` `HardLight` in GraphicsStateParameter
-- `BM` `Hue` in GraphicsStateParameter
-- `BM` `Lighten` in GraphicsStateParameter
-- `BM` `Overlay` in GraphicsStateParameter
-- `BM` `SoftLight` in GraphicsStateParameter
 - `O` `CSS-1` in StructureAttributesDict
 - `O` `CSS-2` in StructureAttributesDict
 - `O` `HTML-3.20` in StructureAttributesDict
@@ -1077,7 +1058,6 @@ Keys core never names:
 - `AAPL:AA` in GraphicsStateParameter
 - `AAPL:Keywords` in DocInfo
 - `AAPL:ST` in GraphicsStateParameter
-- `Color` in AAPL_ST
 - `Offset` in AAPL_ST
 - `Radius` in AAPL_ST
 

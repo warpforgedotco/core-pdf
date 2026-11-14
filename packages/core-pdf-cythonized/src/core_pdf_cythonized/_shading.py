@@ -5,6 +5,7 @@ import typing
 import cython
 import numpy
 from cython.cimports.core_pdf_cythonized._pixel_blend import (
+    MODE_COUNT,
     MODE_NORMAL,
     blend_mode_pixel,
     blend_normal_pixel,
@@ -189,6 +190,8 @@ def shading_blend(
         raise ValueError("box runs past the pixels")
     if colors.shape[1] != 4:
         raise ValueError("colors must be (n, 4)")
+    if mode < MODE_NORMAL or mode >= MODE_COUNT:
+        raise ValueError("unsupported blend mode")
     has_alpha: cython.bint = alpha_plane is not None
     has_shape: cython.bint = shape_plane is not None
     if has_alpha and (

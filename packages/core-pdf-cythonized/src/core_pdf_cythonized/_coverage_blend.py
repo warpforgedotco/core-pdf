@@ -5,6 +5,7 @@ import typing
 import cython
 from cython.cimports.core_pdf_cythonized._byte_clamp import round_to_byte
 from cython.cimports.core_pdf_cythonized._pixel_blend import (
+    MODE_COUNT,
     MODE_NORMAL,
     blend_mode_pixel,
     blend_normal_pixel,
@@ -37,6 +38,8 @@ def blend_coverage_counts(
     cols: cython.Py_ssize_t = counts.shape[1]
     if left < 0 or top < 0 or top + rows > pixels.shape[0] or left + cols > pixels.shape[1]:
         raise ValueError("counts run past the pixels given")
+    if mode < MODE_NORMAL or mode >= MODE_COUNT:
+        raise ValueError("unsupported blend mode")
     masked: cython.bint = allowed is not None
     if masked and allowed.shape[0] != rows * cols:
         raise ValueError("allowed must hold one byte per count")

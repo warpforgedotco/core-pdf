@@ -5,15 +5,7 @@ import typing
 import cython
 import numpy
 from cython.cimports.core_pdf_cythonized._nonisolated import OUT_OF_RANGE, VISIBLE
-from cython.cimports.core_pdf_cythonized._pixel_blend import (
-    MODE_COLOR_BURN,
-    MODE_COLOR_DODGE,
-    MODE_MULTIPLY,
-    MODE_NORMAL,
-    MODE_SCREEN,
-    color_burn,
-    color_dodge,
-)
+from cython.cimports.core_pdf_cythonized._pixel_blend import MODE_COUNT, MODE_NORMAL, blend_rgb
 from cython.cimports.libc.math import rint
 from cython.cimports.libc.stdint import uint32_t, uint64_t
 from cython.cimports.libc.string import memcpy, memset
@@ -72,29 +64,6 @@ def channel_byte(value: cython.double) -> cython.uchar:
     elif value > 255.0:
         value = 255.0
     return cython.cast(cython.uchar, value)
-
-
-@cython.cfunc
-@cython.inline
-@cython.nogil
-@cython.exceptval(check=False)
-def blended(
-    source: cython.double,
-    backdrop: cython.double,
-    dst_a: cython.double,
-    mode: cython.int,
-    revised: cython.bint,
-) -> cython.double:
-    # backdrop is the destination channel already divided by 255.0.
-    if mode == MODE_MULTIPLY:
-        return source * (1.0 - dst_a) + dst_a * (source * backdrop)
-    if mode == MODE_SCREEN:
-        return source * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - source) * (1.0 - backdrop))
-    if mode == MODE_COLOR_DODGE:
-        return source * (1.0 - dst_a) + dst_a * color_dodge(backdrop, source, revised)
-    if mode == MODE_COLOR_BURN:
-        return source * (1.0 - dst_a) + dst_a * color_burn(backdrop, source, revised)
-    return source
 
 
 @cython.cfunc
@@ -165,15 +134,24 @@ def composite_pixel(
     src_a: cython.double = unit[level]
     one_minus_src_a: cython.double = 1.0 - src_a
     out_a: cython.double = src_a + dst_a * one_minus_src_a
-    color: cython.double
+    color = cython.declare(cython.double[3])
+    backdrop = cython.declare(cython.double[3])
+    blended = cython.declare(cython.double[3])
     k: cython.int
     if out_a <= 0.0:
         return 0
     for k in range(3):
-        color = unit_clip(backdrop_removed(unit[s[k]], complete, unit[b[k]], dst_a, accumulated))
-        color = blended(color, unit[b[k]], dst_a, mode, revised)
+        backdrop[k] = unit[b[k]]
+        color[k] = unit_clip(
+            backdrop_removed(unit[s[k]], complete, backdrop[k], dst_a, accumulated)
+        )
+    if mode != MODE_NORMAL:
+        blend_rgb(backdrop, color, blended, mode, revised)
+        for k in range(3):
+            color[k] = color[k] * (1.0 - dst_a) + dst_a * blended[k]
+    for k in range(3):
         o[k] = channel_byte(
-            rint(((color * 255.0) * src_a + b[k] * dst_a * one_minus_src_a) / out_a)
+            rint(((color[k] * 255.0) * src_a + b[k] * dst_a * one_minus_src_a) / out_a)
         )
     o[3] = channel_byte(rint(out_a * 255.0))
     packed = cython.declare(uint32_t)
@@ -258,8 +236,9 @@ def composite_nonisolated_blend(
     uint8, then for each visible pixel the group backdrop removed as
     backdrop_removed computes it, clipped to [0, 1], and blended
     over the destination as core_pdf.impl.render.blend.blend_visible_pixels does. mode is a
-    kernel blend code (0 normal, 1 multiply, 2 screen, 3 color dodge, 4 color
-    burn); revised selects the PDF 2.0 dodge and burn endpoints. With
+    blend code, 0 to 15 (core_pdf.impl.render.blend.BlendOp), the separable modes blended
+    per channel and the non-separable ones on the clipped colour; revised selects the
+    PDF 2.0 dodge and burn endpoints. With
     copy_unmasked, a visible pixel whose mask is exactly 1 takes the rendered
     pixel unchanged. Returns the effective alpha plane.
     """
@@ -272,7 +251,7 @@ def composite_nonisolated_blend(
     masked: cython.bint = mask_alpha is not None
     if masked and (mask_alpha.shape[0] != height or mask_alpha.shape[1] != width):
         raise ValueError("mask_alpha differs from source_alpha in shape")
-    if mode < MODE_NORMAL or mode > MODE_COLOR_BURN:
+    if mode < MODE_NORMAL or mode >= MODE_COUNT:
         raise ValueError("unsupported blend mode")
 
     effective = numpy.empty((height, width), dtype=numpy.uint8)

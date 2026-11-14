@@ -2,7 +2,7 @@
 
 import cython
 import numpy
-from cython.cimports.core_pdf_cythonized._blend_visible import MULTIPLY, NORMAL, SCREEN
+from cython.cimports.core_pdf_cythonized._pixel_blend import MODE_COUNT, MODE_NORMAL, blend_rgb
 from cython.cimports.libc.math import rint
 
 
@@ -18,20 +18,6 @@ def channel_byte(value: cython.double) -> cython.uchar:
     return cython.cast(cython.uchar, value)
 
 
-@cython.cfunc
-@cython.inline
-@cython.nogil
-@cython.exceptval(check=False)
-def blended(
-    source: cython.double, backdrop: cython.double, dst_a: cython.double, mode: cython.int
-) -> cython.double:
-    if mode == MULTIPLY:
-        return source * (1.0 - dst_a) + dst_a * (source * (backdrop / 255.0))
-    if mode == SCREEN:
-        return source * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - source) * (1.0 - backdrop / 255.0))
-    return source
-
-
 def blend_visible_rgba(
     destination: cython.uchar[:, :, :],
     visible: cython.const[cython.uchar][:, :],
@@ -40,19 +26,21 @@ def blend_visible_rgba(
     blue,
     alpha: cython.const[cython.double][:],
     mode: cython.int,
+    revised: cython.bint = True,
 ):
     """Composite one source colour per visible pixel over an RGBA destination.
 
     red, green and blue are each a float or one value per visible pixel, in the
-    row-major order of the mask; alpha is one value per visible pixel. mode is
-    0 (normal), 1 (multiply) or 2 (screen). The arithmetic is float64 in the
-    order core_pdf.impl.render.blend.blend_channels_f64 computes it.
+    row-major order of the mask; alpha is one value per visible pixel. mode is a
+    blend code, 0 to 15 (core_pdf.impl.render.blend.BlendOp); revised selects the
+    PDF 2.0 dodge and burn endpoints. The arithmetic is float64 in the order
+    core_pdf.impl.render.blend.blend_channels_f64 computes it.
     """
     height: cython.Py_ssize_t = visible.shape[0]
     width: cython.Py_ssize_t = visible.shape[1]
     if destination.shape[0] != height or destination.shape[1] != width or destination.shape[2] < 4:
         raise ValueError("destination does not match the visibility mask")
-    if mode < NORMAL or mode > SCREEN:
+    if mode < MODE_NORMAL or mode >= MODE_COUNT:
         raise ValueError("unsupported blend mode")
     red_values: cython.const[cython.double][:]
     green_values: cython.const[cython.double][:]
@@ -101,6 +89,9 @@ def blend_visible_rgba(
     dst_a: cython.double
     out_a: cython.double
     safe_out_a: cython.double
+    backdrop = cython.declare(cython.double[3])
+    source = cython.declare(cython.double[3])
+    blended = cython.declare(cython.double[3])
     with cython.nogil:
         for y in range(height):
             for x in range(width):
@@ -117,9 +108,17 @@ def blend_visible_rgba(
                 da = destination[y, x, 3]
                 one_minus_src_a = 1.0 - src_a
                 dst_a = da / 255.0
-                src_r = blended(src_r, dr, dst_a, mode)
-                src_g = blended(src_g, dg, dst_a, mode)
-                src_b = blended(src_b, db, dst_a, mode)
+                if mode != MODE_NORMAL:
+                    backdrop[0] = dr / 255.0
+                    backdrop[1] = dg / 255.0
+                    backdrop[2] = db / 255.0
+                    source[0] = src_r
+                    source[1] = src_g
+                    source[2] = src_b
+                    blend_rgb(backdrop, source, blended, mode, revised)
+                    src_r = src_r * (1.0 - dst_a) + dst_a * blended[0]
+                    src_g = src_g * (1.0 - dst_a) + dst_a * blended[1]
+                    src_b = src_b * (1.0 - dst_a) + dst_a * blended[2]
                 out_a = src_a + dst_a * one_minus_src_a
                 if out_a <= 0.0:
                     destination[y, x, 0] = 0

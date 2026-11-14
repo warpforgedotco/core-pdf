@@ -12,13 +12,14 @@ from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.render.blend import (
+    BLEND_OP_MODES,
     RASTER_NUMPY_SPAN_MIN_PIXELS,
     BlendOp,
     blend_normal_solid_array_numpy,
     blend_op,
     kernel_blend_code,
 )
-from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_component
+from core_pdf.impl.spec.s_11_transparency.blend import blend_color, blend_component
 lazy from core_pdf_cythonized import blend_coverage_counts
 
 if TYPE_CHECKING:
@@ -77,17 +78,16 @@ def blend_px(
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dst_r))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dst_g))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - dst_b))
-    elif mode is BlendOp.COLOR_DODGE or mode is BlendOp.COLOR_BURN:
-        component_mode: BlendMode = "ColorDodge" if mode is BlendOp.COLOR_DODGE else "ColorBurn"
-        src_r = src_r * (1.0 - dst_a) + dst_a * blend_component(
-            dst_r, src_r, component_mode, context=self.semantic_context
+    elif mode is not None and mode is not BlendOp.NORMAL and mode is not BlendOp.UNSUPPORTED:
+        blend_r, blend_g, blend_b = blend_color(
+            (dst_r, dst_g, dst_b),
+            (src_r, src_g, src_b),
+            BLEND_OP_MODES[mode],
+            context=self.semantic_context,
         )
-        src_g = src_g * (1.0 - dst_a) + dst_a * blend_component(
-            dst_g, src_g, component_mode, context=self.semantic_context
-        )
-        src_b = src_b * (1.0 - dst_a) + dst_a * blend_component(
-            dst_b, src_b, component_mode, context=self.semantic_context
-        )
+        src_r = src_r * (1.0 - dst_a) + dst_a * blend_r
+        src_g = src_g * (1.0 - dst_a) + dst_a * blend_g
+        src_b = src_b * (1.0 - dst_a) + dst_a * blend_b
     out_a = src_a + dst_a * (1.0 - src_a)
     out_r = int(round(((src_r * 255.0) * src_a + dr * dst_a * (1.0 - src_a)) / out_a))
     out_g = int(round(((src_g * 255.0) * src_a + dg * dst_a * (1.0 - src_a)) / out_a))
@@ -155,6 +155,8 @@ def clip_pixel_mask(self: RasterTarget, ix0: int, iy0: int, ix1: int, iy1: int) 
 
 
 def blend_rules(self: RasterTarget, mode: int) -> tuple[bool, Exception | None]:
+    """Whether a kernel blending in mode (a blend code) uses the revised dodge and burn, or
+    the error deciding that raised, which the kernel raises at the first pixel it blends."""
     if mode not in {BlendOp.COLOR_DODGE, BlendOp.COLOR_BURN}:
         return True, None
     try:

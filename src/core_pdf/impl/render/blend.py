@@ -11,7 +11,12 @@ from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.geometry import clamp01
 from core_pdf.impl.graphics.device_profiles import cmyk_floats_to_srgb, component_byte
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
-from core_pdf.impl.spec.s_11_transparency.blend import BlendMode, blend_components
+from core_pdf.impl.spec.s_11_transparency.blend import (
+    BLEND_MODES,
+    BlendMode,
+    blend_colors,
+    revised_blending,
+)
 from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 lazy from core_pdf_cythonized import blend_visible_rgba
 
@@ -19,22 +24,37 @@ RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 
 
 class BlendOp(IntEnum):
+    """Each standard blend mode, its value the mode's index in BLEND_MODES: the blend code
+    the compiled kernels take. UNSUPPORTED stands for a name core does not know, which
+    paints as Normal."""
+
     NORMAL = 0
     MULTIPLY = 1
     SCREEN = 2
     COLOR_DODGE = 3
     COLOR_BURN = 4
-    UNSUPPORTED = 5
+    OVERLAY = 5
+    DARKEN = 6
+    LIGHTEN = 7
+    HARD_LIGHT = 8
+    SOFT_LIGHT = 9
+    DIFFERENCE = 10
+    EXCLUSION = 11
+    HUE = 12
+    SATURATION = 13
+    COLOR = 14
+    LUMINOSITY = 15
+    UNSUPPORTED = 16
 
 
 BLEND_OPS: dict[str, BlendOp] = {
-    "normal": BlendOp.NORMAL,
-    "multiply": BlendOp.MULTIPLY,
-    "screen": BlendOp.SCREEN,
-    "colordodge": BlendOp.COLOR_DODGE,
-    "colorburn": BlendOp.COLOR_BURN,
+    mode.lower(): BlendOp(code) for code, mode in enumerate(BLEND_MODES)
 }
-KERNEL_BLEND_CODES = (0, 1, 2, 3, 4, 0)
+# The specification's name of each supported op.
+BLEND_OP_MODES: dict[BlendOp, BlendMode] = {
+    BlendOp(code): mode for code, mode in enumerate(BLEND_MODES)
+}
+KERNEL_BLEND_CODES = (*range(len(BLEND_MODES)), 0)
 
 
 def blend_op(name: object, *, casefold: bool = False) -> BlendOp | None:
@@ -131,18 +151,16 @@ def blend_channels_f64(
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dr / 255.0))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dg / 255.0))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
-    elif mode is BlendOp.COLOR_DODGE or mode is BlendOp.COLOR_BURN:
-        component_mode: BlendMode = "ColorDodge" if mode is BlendOp.COLOR_DODGE else "ColorBurn"
-        context = blend_context(semantic_context)
-        src_r = src_r * (1.0 - dst_a) + dst_a * blend_components(
-            dr / 255.0, src_r, component_mode, context=context
+    elif mode is not None and mode is not BlendOp.NORMAL and mode is not BlendOp.UNSUPPORTED:
+        blend_r, blend_g, blend_b = blend_colors(
+            (dr / 255.0, dg / 255.0, db / 255.0),
+            (src_r, src_g, src_b),
+            BLEND_OP_MODES[mode],
+            context=blend_context(semantic_context),
         )
-        src_g = src_g * (1.0 - dst_a) + dst_a * blend_components(
-            dg / 255.0, src_g, component_mode, context=context
-        )
-        src_b = src_b * (1.0 - dst_a) + dst_a * blend_components(
-            db / 255.0, src_b, component_mode, context=context
-        )
+        src_r = src_r * (1.0 - dst_a) + dst_a * blend_r
+        src_g = src_g * (1.0 - dst_a) + dst_a * blend_g
+        src_b = src_b * (1.0 - dst_a) + dst_a * blend_b
     out_a = src_a + dst_a * one_minus_src_a
     safe_out_a = numpy.where(out_a > 0.0, out_a, 1.0)
     out_r = numpy.round(((src_r * 255.0) * src_a + dr * dst_a * one_minus_src_a) / safe_out_a)
@@ -251,15 +269,6 @@ def resolve_constant_alpha(opacity: object, soft_mask_alpha: object) -> float:
     )
 
 
-KERNEL_BLEND_MODES: dict[BlendOp | None, int] = {
-    None: 0,
-    BlendOp.NORMAL: 0,
-    BlendOp.UNSUPPORTED: 0,
-    BlendOp.MULTIPLY: 1,
-    BlendOp.SCREEN: 2,
-}
-
-
 def blend_visible_pixels(
     destination: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     visible: numpy.ndarray[Any, numpy.dtype[numpy.bool_]],
@@ -271,26 +280,15 @@ def blend_visible_pixels(
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
-    kernel_mode = KERNEL_BLEND_MODES.get(blend_mode)
-    if kernel_mode is not None:
-        blend_visible_rgba(
-            destination, visible.view(numpy.uint8), red, green, blue, alpha, kernel_mode
-        )
-        return
-    backdrop = destination[visible].astype(numpy.float64)
-    channels = blend_channels_f64(
-        red,
-        green,
-        blue,
-        alpha,
-        backdrop[:, 0],
-        backdrop[:, 1],
-        backdrop[:, 2],
-        backdrop[:, 3],
-        blend_mode,
-        semantic_context=semantic_context,
+    code = kernel_blend_code(blend_mode)
+    revised = (
+        revised_blending(blend_context(semantic_context))
+        if code in {BlendOp.COLOR_DODGE, BlendOp.COLOR_BURN}
+        else True
     )
-    destination[visible] = numpy.clip(numpy.column_stack(channels), 0, 255).astype(numpy.uint8)
+    blend_visible_rgba(
+        destination, visible.view(numpy.uint8), red, green, blue, alpha, code, revised
+    )
 
 
 COLOR_RGBA_CACHE_LIMIT = 4096
