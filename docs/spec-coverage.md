@@ -24,12 +24,12 @@ still passes it through). Deprecated keys are left out. See also the
 
 | Added by | Keys, by object | Read by core | Never read |
 | --- | --- | --- | --- |
-| PDF 2.0 | 668 | 364 | 304 |
+| PDF 2.0 | 668 | 365 | 303 |
 | PDF 1.7 | 150 | 62 | 88 |
 | PDF 1.6 | 207 | 109 | 98 |
 | PDF 1.5 | 587 | 277 | 310 |
 | PDF 1.4 | 208 | 137 | 71 |
-| PDF 1.3 | 554 | 374 | 180 |
+| PDF 1.3 | 554 | 389 | 165 |
 | PDF 1.2 | 366 | 252 | 114 |
 | PDF 1.1 | 90 | 75 | 15 |
 | PDF 1.0 | 193 | 157 | 36 |
@@ -62,7 +62,6 @@ Keys core never reads:
 - `Asset` in RichMediaInstance
 - `Assets` in RichMediaContent
 - `BG` in 3DViewAddEntries
-- `Background` in CollectionColors
 - `Border` in AnnotProjection, AnnotRichMedia
 - `C2W` in 3DViewAddEntries
 - `CI` in AFFileSpecification, CollectionFolder
@@ -822,9 +821,6 @@ Keys core never reads:
 - `AntiAlias` in ShadingType1, ShadingType2, ShadingType3, ShadingType4, ShadingType5, ShadingType6 and 1 more
 - `BG2` in GraphicsStateParameter
 - `BS` in AnnotCircle, AnnotInk, AnnotLine, AnnotSquare
-- `Background` in ShadingType1, ShadingType2, ShadingType3, ShadingType4, ShadingType5, ShadingType6 and 1 more
-- `BitsPerCoordinate` in ShadingType4, ShadingType5, ShadingType6, ShadingType7
-- `BitsPerFlag` in ShadingType4, ShadingType6, ShadingType7
 - `Border` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 5 more
 - `CO` in InteractiveForm
 - `Cert` in Signature
@@ -884,7 +880,6 @@ Keys core never reads:
 - `Templates` in Name
 - `TransferFunction` in HalftoneType16
 - `UCR2` in GraphicsStateParameter
-- `VerticesPerRow` in ShadingType5
 - `Width2` in HalftoneType16
 - `op` in GraphicsStateParameter
 
