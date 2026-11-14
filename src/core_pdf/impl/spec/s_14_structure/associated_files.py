@@ -9,10 +9,11 @@ version a file declares.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
+from core_pdf.impl.spec.standards import PdfVersion, SemanticContext
 
 # ISO 32000-2 Table 43: the AFRelationship values. Other names are second-class names.
 AF_RELATIONSHIPS = (
@@ -81,9 +82,30 @@ def associated_file_relationship(resolver: PdfValueResolver, specification: PdfD
     return name
 
 
+# The PDF/A parts that allow AF: PDF/A-3 in PDF 1.7 files, and PDF/A-4, which is PDF 2.0.
+AF_PROFILE_PREFIXES = ("pdfa-3", "pdfa-4")
+
+
+@cites("ISO 32000-2", "14.13.6", since="2.0", rule="structure elements hold AF")
+@cites("ISO 32000-2", "14.13.6", profile="pdfa-3b", rule="PDF/A-3 structure elements hold AF")
+def structure_elements_hold_af(
+    context: SemanticContext | None, profiles: Iterable[str | None] = ()
+) -> bool:
+    """Whether a structure element of this document may carry AF.
+
+    True from PDF 2.0, in a file claiming PDF/A-3 or PDF/A-4, and when the version is unknown.
+    """
+    version = None if context is None else context.version
+    if version is None or version >= PdfVersion(2, 0):
+        return True
+    return any(profile and profile.startswith(AF_PROFILE_PREFIXES) for profile in profiles)
+
+
 __all__ = (
+    "AF_PROFILE_PREFIXES",
     "AF_RELATIONSHIPS",
     "DEFAULT_AF_RELATIONSHIP",
     "associated_file_relationship",
     "associated_file_specifications",
+    "structure_elements_hold_af",
 )

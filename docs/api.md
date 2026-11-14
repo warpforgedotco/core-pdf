@@ -111,7 +111,10 @@ resource name. Its `file` is an `EmbeddedFile` with the `F` and `UF` names, `nam
 of them set), `description`, `relationship` (`AFRelationship`, `Unspecified` when absent),
 `mime_type`, and the `Params` entries `size`, `creation_date`, `modification_date` (PDF date
 strings), and `checksum` (hex). Structure elements are found through the selected pages'
-marked content, so an element with no content on those pages is not listed.
+marked content, so an element with no content on those pages is not listed. Structure
+elements are read only where they may hold `AF`: from PDF 2.0, in files claiming PDF/A-3 or
+PDF/A-4, or once an `AF` has turned up elsewhere in the document; other tagged files skip
+the walk up their structure trees.
 
 No record holds file bytes. `PdfDocument.embedded_file_data(file)` reads them, decrypted and
 decoded through the stream's filters. `PdfDocument.associated_files(pages=...)` returns the

@@ -28,6 +28,7 @@ Rules that depend on the document's effective PDF version (`SemanticContext`).
 | from PDF 2.0 | a developer extension declares its URL | ISO 32000-2 7.12.6 (URL) | `core_pdf.impl.document.standards.extension_diagnostics` |
 | from PDF 2.0 | object identifiers are written in canonical form | ISO 32000-2 7.3.10 (Indirect objects) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
 | from PDF 2.0 | revised ColorDodge and ColorBurn | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.revised_blending` |
+| from PDF 2.0 | structure elements hold AF | ISO 32000-2 14.13.6 (Associated files linked to structure elements) | `core_pdf.impl.spec.s_14_structure.associated_files.structure_elements_hold_af` |
 | from PDF 2.0 | { and } delimit only PostScript calculator functions | ISO 32000-2 7.2.3 (Character set) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
 
 Features a version introduced, which core reads whatever version a document declares:
@@ -222,6 +223,8 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: AF, an object's associated files
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: PDF/A-3 allows AF in PDF 1.7 files
+- 14.13.6 (Associated files linked to structure elements) `core_pdf.impl.spec.s_14_structure.associated_files.structure_elements_hold_af`: PDF/A-3 structure elements hold AF
+- 14.13.6 (Associated files linked to structure elements) `core_pdf.impl.spec.s_14_structure.associated_files.structure_elements_hold_af`: structure elements hold AF
 - D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
 - D.3 (PDFDocEncoding character set) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: PDFDocEncoding defines byte A0 (Euro sign)
 

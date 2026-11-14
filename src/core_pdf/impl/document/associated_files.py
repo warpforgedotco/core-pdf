@@ -160,13 +160,21 @@ def page_associated_files(
     page: PdfPage,
     results: list[AssociatedFile],
     structure_seen: set[object] | None,
+    *,
+    walk_structure: bool = True,
 ) -> None:
     page_number = int(page.page_number)
     owner_associated_files(
         self, page.page_dict, results, AssociatedFileOwner.PAGE, page_number=page_number
     )
     with suppress(*READ_ERRORS):
-        for index, annotation in enumerate(page.get_annotations()):
+        # get_annotations numbers the annotations as Page.annotations does, but reads every
+        # Rect and Contents: run it only when an annotation has AF.
+        if any(annotation.get("AF") is not None for annotation in page.annotation_dicts()):
+            annotations = page.get_annotations()
+        else:
+            annotations = []
+        for index, annotation in enumerate(annotations):
             owner_associated_files(
                 self,
                 annotation.dict,
@@ -190,7 +198,9 @@ def page_associated_files(
                     page_number=page_number,
                     resource_name=name,
                 )
-    if structure_seen is not None:
+    # Where structure elements cannot hold AF, an AF found elsewhere still sends the walk on:
+    # that producer writes AF whatever the version.
+    if structure_seen is not None and (walk_structure or results):
         with suppress(*READ_ERRORS):
             structure_associated_files(self, page, results, structure_seen)
 
@@ -241,6 +251,24 @@ def structure_associated_files(
             current = element.get("P")
 
 
+def structure_af_possible(self: PdfDocument[Any]) -> bool:
+    """Whether the document's structure elements may hold AF: PDF 2.0, PDF/A-3 or PDF/A-4.
+
+    The walk up the structure costs about as much as reading AF anywhere else; most tagged
+    files are PDF 1.x without a PDF/A-3 claim, and skip it.
+    """
+    context = self.resolver.semantic_context
+    if spec_associated_files.structure_elements_hold_af(context):
+        return True
+    try:
+        claims = self.get_standards().profile_claims
+    except READ_ERRORS:
+        return True
+    return spec_associated_files.structure_elements_hold_af(
+        context, [claim.identifier for claim in claims]
+    )
+
+
 def collect_associated_files(
     self: PdfDocument[Any], pages: Sequence[PdfPage]
 ) -> tuple[AssociatedFile, ...]:
@@ -259,8 +287,9 @@ def collect_associated_files(
         root_reference = reference_pair(root)
         if root_reference is not None:
             structure_seen.add(root_reference)
+    walk_structure = structure_seen is not None and structure_af_possible(self)
     for page in pages:
-        page_associated_files(self, page, results, structure_seen)
+        page_associated_files(self, page, results, structure_seen, walk_structure=walk_structure)
     return tuple(results)
 
 
