@@ -15,12 +15,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import ByteBuffer, UInt8Array, uint8_view
 from core_pdf.impl.base.geometry import points_bbox, rect_tuple
 from core_pdf.impl.graphics.images import PreparedImage, image_color_key_mask_is_shape
-from core_pdf.impl.render.blend import (
-    blend_visible_pixels,
-    color_rgba,
-    declared_blend,
-    resolve_constant_alpha,
-)
+from core_pdf.impl.render.blend import blend_visible_pixels, declared_blend, resolve_constant_alpha
 from core_pdf.impl.render.model import ImagePaintItem
 from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
@@ -357,6 +352,8 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
     source_alpha: numpy.ndarray[Any, Any] | None = None
     if raster.has_alpha and soft_mask is None:
         source_alpha = raster.array[:, :, components].reshape(-1)
+    if self.space_mode:
+        converted, components = self.space_samples(item.source, converted, components)
     device_extent = max(
         1,
         int(math.ceil((box[2] - box[0]) * self.scale)),
@@ -405,7 +402,7 @@ def blit_image_mask(
     raster = prepared.raster
     if quad is None or not raster.has_alpha:
         return
-    red, green, blue, alpha = color_rgba(item.fill, item.fill_opacity)
+    red, green, blue, alpha = self.paint_rgba(item.fill, item.fill_opacity)
     if is_pdf_number(item.soft_mask_alpha) and prepared.soft_mask is None:
         alpha = max(0, min(255, round(alpha * item.soft_mask_alpha)))
     self.set_shape_alpha(alpha / 255.0)

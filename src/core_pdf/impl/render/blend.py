@@ -25,8 +25,10 @@ RASTER_NUMPY_SPAN_MIN_PIXELS = 32
 
 class BlendOp(IntEnum):
     """Each standard blend mode, its value the mode's index in BLEND_MODES: the blend code
-    the compiled kernels take. UNSUPPORTED stands for a name core does not know, which
-    paints as Normal."""
+    the compiled kernels take. BACKDROP and SOURCE are no PDF blend modes but B(cb, cs) = cb
+    and B(cb, cs) = cs, which the K component of a CMYK colour takes under Hue, Saturation
+    and Color, and under Luminosity (ISO 32000-2 11.3.5.3); SOURCE, unlike NORMAL, blends.
+    UNSUPPORTED stands for a name core does not know, which paints as Normal."""
 
     NORMAL = 0
     MULTIPLY = 1
@@ -44,7 +46,9 @@ class BlendOp(IntEnum):
     SATURATION = 13
     COLOR = 14
     LUMINOSITY = 15
-    UNSUPPORTED = 16
+    BACKDROP = 16
+    SOURCE = 17
+    UNSUPPORTED = 18
 
 
 BLEND_OPS: dict[str, BlendOp] = {
@@ -54,7 +58,15 @@ BLEND_OPS: dict[str, BlendOp] = {
 BLEND_OP_MODES: dict[BlendOp, BlendMode] = {
     BlendOp(code): mode for code, mode in enumerate(BLEND_MODES)
 }
-KERNEL_BLEND_CODES = (*range(len(BLEND_MODES)), 0)
+KERNEL_BLEND_CODES = (*range(len(BLEND_MODES)), BlendOp.BACKDROP.value, BlendOp.SOURCE.value, 0)
+# The op that blends the K component of a CMYK colour painted in op: the backdrop's K for
+# Hue, Saturation and Color, the source's for Luminosity, and op itself for any other.
+BLACK_BLEND_OPS: dict[BlendOp, BlendOp] = {
+    BlendOp.HUE: BlendOp.BACKDROP,
+    BlendOp.SATURATION: BlendOp.BACKDROP,
+    BlendOp.COLOR: BlendOp.BACKDROP,
+    BlendOp.LUMINOSITY: BlendOp.SOURCE,
+}
 
 
 def blend_op(name: object, *, casefold: bool = False) -> BlendOp | None:
@@ -151,6 +163,14 @@ def blend_channels_f64(
         src_r = src_r * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_r) * (1.0 - dr / 255.0))
         src_g = src_g * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_g) * (1.0 - dg / 255.0))
         src_b = src_b * (1.0 - dst_a) + dst_a * (1.0 - (1.0 - src_b) * (1.0 - db / 255.0))
+    elif mode is BlendOp.BACKDROP:
+        src_r = src_r * (1.0 - dst_a) + dst_a * (dr / 255.0)
+        src_g = src_g * (1.0 - dst_a) + dst_a * (dg / 255.0)
+        src_b = src_b * (1.0 - dst_a) + dst_a * (db / 255.0)
+    elif mode is BlendOp.SOURCE:
+        src_r = src_r * (1.0 - dst_a) + dst_a * src_r
+        src_g = src_g * (1.0 - dst_a) + dst_a * src_g
+        src_b = src_b * (1.0 - dst_a) + dst_a * src_b
     elif mode is not None and mode is not BlendOp.NORMAL and mode is not BlendOp.UNSUPPORTED:
         blend_r, blend_g, blend_b = blend_colors(
             (dr / 255.0, dg / 255.0, db / 255.0),
@@ -178,14 +198,13 @@ def blend_channels_f64(
 def blend_solid_array_numpy(
     target: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     rgba: tuple[int, int, int, int],
-    blend_mode: str | None,
+    mode: BlendOp | None,
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
     sr, sg, sb, sa = rgba
     if sa <= 0 or target.size == 0:
         return
-    mode = blend_op(blend_mode)
     if sa >= 255 and mode is None:
         target[..., 0] = sr
         target[..., 1] = sg
@@ -219,7 +238,7 @@ def composite_blended_group_numpy(
     source: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
     source_alpha_scale: float | None,
     target_alpha_scale: float | None,
-    blend_mode: str | None,
+    mode: BlendOp | None,
     *,
     semantic_context: SemanticContext | None = None,
 ) -> None:
@@ -237,7 +256,6 @@ def composite_blended_group_numpy(
     dg = destination[..., 1][visible].astype(numpy.float64)
     db = destination[..., 2][visible].astype(numpy.float64)
     da = destination[..., 3][visible].astype(numpy.float64)
-    mode = blend_op(blend_mode)
     out_r, out_g, out_b, out_a_i = blend_channels_f64(
         source[..., 0][visible].astype(numpy.float64) / 255.0,
         source[..., 1][visible].astype(numpy.float64) / 255.0,

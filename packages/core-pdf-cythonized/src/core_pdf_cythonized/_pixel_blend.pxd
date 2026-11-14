@@ -6,7 +6,11 @@ from core_pdf_cythonized._byte_clamp cimport round_to_byte
 
 
 # The blend codes: a mode's index in core_pdf.impl.spec.s_11_transparency.blend.BLEND_MODES,
-# and core_pdf.impl.render.blend.BlendOp's value. Codes from MODE_HUE are non-separable.
+# and core_pdf.impl.render.blend.BlendOp's value. Codes from MODE_HUE to MODE_LUMINOSITY are
+# non-separable. MODE_BACKDROP and MODE_SOURCE are no PDF blend modes: B(cb, cs) = cb and
+# B(cb, cs) = cs, the rules ISO 32000-2 11.3.5.3 gives the K component of Hue, Saturation
+# and Color, and of Luminosity, in a CMYK blending space. Unlike MODE_NORMAL, MODE_SOURCE
+# blends: the source colour becomes (1 - ab) cs + ab cs.
 cdef enum:
     MODE_NORMAL = 0
     MODE_MULTIPLY = 1
@@ -24,7 +28,9 @@ cdef enum:
     MODE_SATURATION = 13
     MODE_COLOR = 14
     MODE_LUMINOSITY = 15
-    MODE_COUNT = 16
+    MODE_BACKDROP = 16
+    MODE_SOURCE = 17
+    MODE_COUNT = 18
 
 
 cdef inline int coverage_alpha(int alpha, int covered) noexcept nogil:
@@ -200,6 +206,16 @@ cdef inline void blend_rgb(
     if mode < MODE_HUE:
         for k in range(3):
             out[k] = separable_blend(cb[k], cs[k], mode, revised)
+        return
+    if mode == MODE_BACKDROP:
+        out[0] = cb[0]
+        out[1] = cb[1]
+        out[2] = cb[2]
+        return
+    if mode == MODE_SOURCE:
+        out[0] = cs[0]
+        out[1] = cs[1]
+        out[2] = cs[2]
         return
     if mode == MODE_HUE or mode == MODE_SATURATION:
         if mode == MODE_HUE:

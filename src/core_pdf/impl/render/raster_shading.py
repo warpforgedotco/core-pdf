@@ -18,7 +18,7 @@ from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPa
 from core_pdf.impl.graphics.shading import PreparedShading
 from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.model import PathPaintItem, ShadingItem
+from core_pdf.impl.render.model import PathPaintItem, ShadingItem, SpaceMode
 from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
@@ -96,16 +96,15 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     color_model = shading.color_model
     evaluate = shading.evaluator
     rendering = shading.color_rendering
+    in_space = self.space_mode is not SpaceMode.RGB
     for unique_index in by_first.tolist():
         position = int(first[unique_index])
         try:
-            colors[unique_index] = shading_rgba(
-                color_model,
-                evaluate(float(ordered[position])),
-                fill_opacity,
-                rendering,
-                shading_alpha,
-            )
+            components = evaluate(float(ordered[position]))
+            rgba = shading_rgba(color_model, components, fill_opacity, rendering, shading_alpha)
+            if in_space:
+                rgba = self.shading_space_color(color_model, components, rgba)
+            colors[unique_index] = rgba
         except Exception as error:
             color_error = error
             reached = position

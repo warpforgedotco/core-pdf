@@ -35,7 +35,9 @@ lazy from core_pdf.impl.output.media import DrawingRecord, ImageMetadata, ImageR
 lazy from core_pdf.impl.output.model import Page
 lazy from core_pdf.impl.render.model import RenderOptions
 lazy from core_pdf.impl.render.page import compose_page
+lazy from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
 
 if TYPE_CHECKING:
     from core_pdf.impl.base.raw_records import RawFormField
@@ -361,6 +363,22 @@ class PdfPage:
         if ca is None:
             return None
         return clamp01(ca)
+
+    def resolve_transparency_group_space(self) -> ColorSpace | None:
+        """The colour space of the page group's CS entry, if it can blend (11.4.7): the
+        page's blending space, or with None the output device's."""
+        resolver = self.document.resolver
+        group = resolver.dict_at(self.page_dict, "Group")
+        if group is None or resolver.name_at(group, "S") != "Transparency":
+            return None
+        value = group.get("CS")
+        if value is None:
+            return None
+        try:
+            space = parse_color_space(resolver.deep_resolve(value))
+        except ValueError, TypeError:
+            return None
+        return space if blending_space_of(space) is not None else None
 
     @property
     def structure(self) -> PageStructure:

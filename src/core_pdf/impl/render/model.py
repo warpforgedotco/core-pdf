@@ -27,6 +27,11 @@ from core_pdf.impl.render.paths import stroke_half_width, translate_rect
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_11_transparency.blending_space import (
+    BlendingSpace,
+    blending_profile,
+    blending_space_of,
+)
 
 
 class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
@@ -95,6 +100,18 @@ class LineJoin(IntEnum):
 
 
 PATH_PAINT_NAMES = ("fill", "stroke", "fillstroke")
+
+
+class SpaceMode(IntEnum):
+    """What a raster's three colour components hold. RGB: sRGB, for a DeviceRGB blending
+    space. GRAY: a DeviceGray group's gray level, in all three. CMY and BLACK: the two passes
+    of a DeviceCMYK group, each one plane of the colour's additive form -- the complements of
+    cyan, magenta and yellow, or the complement of black in all three."""
+
+    RGB = 0
+    GRAY = 1
+    CMY = 2
+    BLACK = 3
 
 
 @cache
@@ -567,6 +584,8 @@ class GroupBeginItem(ControlItemBase):
         "track_shape",
         "alpha_is_shape",
         "graphics_soft_mask",
+        "blending_space",
+        "blending_profile",
         "payload",
     )
 
@@ -579,6 +598,10 @@ class GroupBeginItem(ControlItemBase):
     track_shape: Any
     alpha_is_shape: Any
     graphics_soft_mask: CapturedSoftMask | None
+    # An isolated group's own colour space (11.6.6), as the blending space it names, or None
+    # for a group that blends in its parent's; and an ICCBased CMYK space's profile.
+    blending_space: BlendingSpace | None
+    blending_profile: bytes | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "seqno",
@@ -590,6 +613,8 @@ class GroupBeginItem(ControlItemBase):
         "track_shape",
         "alpha_is_shape",
         "graphics_soft_mask",
+        "blending_space",
+        "blending_profile",
         "payload",
     )
     __match_args__ = ("seqno", "isolated", "knockout")
@@ -605,6 +630,8 @@ class GroupBeginItem(ControlItemBase):
         track_shape: Any,
         alpha_is_shape: Any,
         graphics_soft_mask: CapturedSoftMask | None,
+        blending_space: BlendingSpace | None,
+        blending_profile: bytes | None,
         payload: dict[str, Any],
     ) -> None:
         self.seqno = seqno
@@ -616,10 +643,13 @@ class GroupBeginItem(ControlItemBase):
         self.track_shape = track_shape
         self.alpha_is_shape = alpha_is_shape
         self.graphics_soft_mask = graphics_soft_mask
+        self.blending_space = blending_space
+        self.blending_profile = blending_profile
         self.payload = payload
 
     @classmethod
     def from_data(cls, seqno: int, data: dict[str, Any]) -> Self:
+        space = data.get("group_color_space")
         return cls(
             seqno,
             data.get("fill_opacity"),
@@ -630,6 +660,8 @@ class GroupBeginItem(ControlItemBase):
             data.get("group_track_shape", False),
             data.get("alpha_is_shape", False),
             data.get("graphics_soft_mask"),
+            blending_space_of(space),
+            blending_profile(space),
             data,
         )
 
@@ -840,6 +872,7 @@ __all__ = (
     "PaintItemBase",
     "ScopeBeginItem",
     "ShadingItem",
+    "SpaceMode",
     "display_item",
     "LineCap",
     "LineJoin",

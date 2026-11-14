@@ -59,6 +59,7 @@ from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
 lazy from core_pdf.impl.spec.s_11_transparency.blend import first_recognized_blend_mode
+lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 lazy from core_pdf_cythonized._text_array import show_decoded, show_string, show_text_array
 
@@ -346,6 +347,7 @@ class ContentInterpreter:
         group_alpha = None
         group_isolated = True
         group_knockout = False
+        group_color_space = None
         group = xobj_dict.get("Group")
         if group is not None:
             group_dict = self.resolver.resolve_dict(group)
@@ -356,6 +358,8 @@ class ContentInterpreter:
                 group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
                 group_isolated = self.resolver.resolve(group_dict.get("I")) is True
                 group_knockout = self.resolver.resolve(group_dict.get("K")) is True
+                if group_isolated:
+                    group_color_space = self.group_color_space(group_dict.get("CS"))
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         xobj_matrix = xobj_dict.get("Matrix")
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
@@ -382,7 +386,19 @@ class ContentInterpreter:
             if group_alpha is not None:
                 frame.group_isolated = group_isolated
                 frame.group_knockout = group_knockout
+                frame.group_color_space = group_color_space
         return frame
+
+    def group_color_space(self, value: object) -> ColorSpace | None:
+        """The colour space a group attributes dictionary's CS entry names, if it can be a
+        blending space; None leaves the group in its parent's (11.6.6)."""
+        if value is None:
+            return None
+        try:
+            space = self.parse_color_space_value(self.resolver.deep_resolve(value))
+        except ValueError, TypeError:
+            return None
+        return space if blending_space_of(space) is not None else None
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
         """Show a string's glyphs at the text matrix, and move it past them."""

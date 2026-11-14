@@ -271,6 +271,7 @@ DRAWING_COLOR_RENDERING = PATH_PAINT_DEFAULTS["color_rendering"]
 DRAWING_PAINTS = PATH_PAINT_DEFAULTS["paints"]
 DRAWING_GROUP_ISOLATED = PATH_PAINT_DEFAULTS["group_isolated"]
 DRAWING_GROUP_KNOCKOUT = PATH_PAINT_DEFAULTS["group_knockout"]
+DRAWING_GROUP_COLOR_SPACE = PATH_PAINT_DEFAULTS["group_color_space"]
 
 
 # color_space_paints is True for every other kind.

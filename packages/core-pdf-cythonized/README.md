@@ -27,8 +27,11 @@ would turn every per-pixel call into a cross-module function-pointer call.
 `_pixel_blend` also holds the blend functions of all sixteen PDF blend modes,
 operation for operation as `core_pdf.impl.spec.s_11_transparency.blend` writes them,
 and the blend codes (a mode's index in that module's `BLEND_MODES`) every blending
-kernel takes; `scripts/check_blend_modes.py` compares each kernel's bytes with the
-specification module's.
+kernel takes, plus two more, `MODE_BACKDROP` (B(cb, cs) = cb) and `MODE_SOURCE`
+(B(cb, cs) = cs), the K component's rules for the non-separable modes in a CMYK
+blending space;
+`scripts/check_blend_modes.py` compares each kernel's bytes with the specification
+module's.
 
 The conversion from `.pyx` kept the generated C function-for-function; the
 pure-mode spellings that differ from what one would guess:

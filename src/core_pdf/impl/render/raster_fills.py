@@ -108,7 +108,7 @@ def fill_rect(
             blend_solid_array_numpy(
                 blend_target[iy0:iy1, ix0:ix1],
                 rgba,
-                blend_mode,
+                blend_resolved_mode,
                 semantic_context=self.semantic_context,
             )
             self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3])
@@ -134,7 +134,7 @@ def fill_rect(
                 blend_solid_array_numpy(
                     blend_target[y, start:end],
                     rgba,
-                    blend_mode,
+                    blend_resolved_mode,
                     semantic_context=self.semantic_context,
                 )
                 self.record_source_coverage(y, slice(start, end), rgba[3])
@@ -420,7 +420,7 @@ def fill_path_scanlines(
                     blend_solid_array_numpy(
                         blend_target[py, visible_start:visible_end],
                         rgba,
-                        blend_mode,
+                        blend_resolved_mode,
                         semantic_context=self.semantic_context,
                     )
                     self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])

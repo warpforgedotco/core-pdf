@@ -32,7 +32,7 @@ def blend_visible_rgba(
 
     red, green and blue are each a float or one value per visible pixel, in the
     row-major order of the mask; alpha is one value per visible pixel. mode is a
-    blend code, 0 to 15 (core_pdf.impl.render.blend.BlendOp); revised selects the
+    blend code, 0 to 17 (core_pdf.impl.render.blend.BlendOp); revised selects the
     PDF 2.0 dodge and burn endpoints. The arithmetic is float64 in the order
     core_pdf.impl.render.blend.blend_channels_f64 computes it.
     """
