@@ -39,9 +39,21 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
+| PDF 1.3 | Background fills the area a shading pattern paints, not one sh paints | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.render.raster_shading.shading_background` |
+| PDF 1.3 | Background holds one colour's components in the shading's colour space | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.graphics.shading.background_components` |
+| PDF 1.3 | a Coons patch's inner control points follow from its boundary curves | ISO 32000-2 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points` |
+| PDF 1.3 | a free-form mesh's edge flags join each vertex to the previous triangle | ISO 32000-2 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.free_form_triangles` |
+| PDF 1.3 | a function-based shading paints its Function over Domain, mapped by Matrix | ISO 32000-2 8.7.4.5.2 (Type 1 (function-based) shadings) | `core_pdf.impl.render.raster_shading.function_shading_values` |
+| PDF 1.3 | a function-based shading's Domain defaults to [0 1 0 1] and its Matrix to the identity | ISO 32000-2 8.7.4.5.2 (Type 1 (function-based) shadings) | `core_pdf.impl.spec.s_08_graphics.shading.parse_function_shading` |
+| PDF 1.3 | a lattice-form mesh splits each cell of its lattice into two triangles | ISO 32000-2 8.7.4.5.6 (Type 5 (lattice-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.lattice_triangles` |
+| PDF 1.3 | a patch with edge flag 1, 2 or 3 repeats an edge of the previous patch | ISO 32000-2 8.7.4.5.7 (Type 6 (Coons patch mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.patch_arrays` |
+| PDF 1.3 | an Indexed shading's colours are converted to the base space before interpolation | ISO 32000-2 8.7.4.4 (Colour space: special considerations) | `core_pdf.impl.graphics.shading.indexed_values` |
 | PDF 1.3 | an embedded file's Subtype and Params | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters` |
 | PDF 1.3 | axial and radial shadings are computed in shading space, clipped by BBox there | ISO 32000-2 8.7.4.5.3 (Type 2 (axial) shadings) | `core_pdf.impl.render.raster_shading.paint_shading` |
+| PDF 1.3 | each vertex of a triangle mesh fills a whole number of bytes | ISO 32000-2 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.vertex_fields` |
+| PDF 1.3 | mesh shadings interpolate each triangle's vertex colours, or t, by Gouraud shading | ISO 32000-2 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.render.raster_shading.mesh_shading_values` |
 | PDF 1.3 | sh paints in the current user space | ISO 32000-2 8.7.4.2 (Shading operator) | `core_pdf.impl.capture.image_painting.paint_shading` |
+| PDF 1.3 | shadings of types 4 to 7 are streams, whose data holds their geometry | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_shading` |
 | PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
 | PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
@@ -170,6 +182,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.5 (CIE-Based colour spaces) `core_pdf.impl.spec.s_08_graphics.color_math`: CIE-based colour arithmetic: Lab and XYZ, and black point compensation
 - 8.6.5.8 (Rendering intents) `core_pdf.impl.spec.s_08_graphics.color_rendering`: rendering intents, and black point compensation (8.6.5.9)
 - 8.7.4 (Shading patterns) `core_pdf.impl.spec.s_08_graphics.shading`: shading dictionaries
+- 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh`: the stream data of triangle and patch mesh shadings (types 4 to 7)
 - 8.9 (Images) `core_pdf.impl.spec.s_08_graphics.color_kernels`: unpacking and decoding image samples, and colour key masking (8.9.6.4)
 - 8.9.3 (Sample representation) `core_pdf.impl.spec.samples`: unpacking rows of 1-, 2- and 4-bit samples
 - 8.9.5 (Image dictionaries) `core_pdf.impl.spec.s_08_graphics.image_spec`: image dictionaries: their entries, Decode arrays and soft masks
@@ -222,7 +235,19 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.stamp_tiling_cells`: a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.tiling_offsets`: tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there
 - 8.7.4.2 (Shading operator) `core_pdf.impl.capture.image_painting.paint_shading`: sh paints in the current user space
+- 8.7.4.3 (Shading dictionaries) `core_pdf.impl.graphics.shading.background_components`: Background holds one colour's components in the shading's colour space
+- 8.7.4.3 (Shading dictionaries) `core_pdf.impl.render.raster_shading.shading_background`: Background fills the area a shading pattern paints, not one sh paints
+- 8.7.4.3 (Shading dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.resolve_shading`: shadings of types 4 to 7 are streams, whose data holds their geometry
+- 8.7.4.4 (Colour space: special considerations) `core_pdf.impl.graphics.shading.indexed_values`: an Indexed shading's colours are converted to the base space before interpolation
+- 8.7.4.5.2 (Type 1 (function-based) shadings) `core_pdf.impl.render.raster_shading.function_shading_values`: a function-based shading paints its Function over Domain, mapped by Matrix
+- 8.7.4.5.2 (Type 1 (function-based) shadings) `core_pdf.impl.spec.s_08_graphics.shading.parse_function_shading`: a function-based shading's Domain defaults to [0 1 0 1] and its Matrix to the identity
 - 8.7.4.5.3 (Type 2 (axial) shadings) `core_pdf.impl.render.raster_shading.paint_shading`: axial and radial shadings are computed in shading space, clipped by BBox there
+- 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.render.raster_shading.mesh_shading_values`: mesh shadings interpolate each triangle's vertex colours, or t, by Gouraud shading
+- 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.free_form_triangles`: a free-form mesh's edge flags join each vertex to the previous triangle
+- 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.vertex_fields`: each vertex of a triangle mesh fills a whole number of bytes
+- 8.7.4.5.6 (Type 5 (lattice-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.lattice_triangles`: a lattice-form mesh splits each cell of its lattice into two triangles
+- 8.7.4.5.7 (Type 6 (Coons patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.patch_arrays`: a patch with edge flag 1, 2 or 3 repeats an edge of the previous patch
+- 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points`: a Coons patch's inner control points follow from its boundary curves
 - 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.truetype_uses_symbolic_cmap`: a symbolic TrueType font maps codes by its (3,0) or (1,0) cmap, others by glyph name

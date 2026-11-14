@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from functools import lru_cache
-from typing import ClassVar
+from typing import Any, ClassVar
 
 lazy import numpy
 
@@ -18,11 +18,43 @@ from core_pdf.impl.graphics.color_spec import (
     raw_color_space_paints,
 )
 from core_pdf.impl.graphics.functions import compile_pdf_function, number_array
+from core_pdf.impl.spec.citations import cites
+from core_pdf.impl.spec.exceptions import PdfError
+from core_pdf.impl.spec.s_07_filters.errors import FilterError
+from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
-from core_pdf.impl.spec.s_08_graphics.shading import parse_shading
+from core_pdf.impl.spec.s_08_graphics.shading import (
+    SHADING_STREAM_KEY,
+    parse_function_shading,
+    parse_shading,
+)
 lazy from core_pdf.impl.graphics.image_samples import convert_components
+lazy from core_pdf.impl.spec.s_08_graphics.shading_mesh import decode_mesh
+
+# The colour components each device space has.
+DEVICE_COMPONENTS = {"DeviceGray": 1, "DeviceRGB": 3, "DeviceCMYK": 4}
+
+
+class FunctionGeometry(GeneratedRecord):
+    """A type 1 shading's Domain, normalized to (xmin, xmax, ymin, ymax), and its Matrix from
+    Domain to the shading's target space."""
+
+    domain: tuple[float, float, float, float]
+    matrix: tuple[float, float, float, float, float, float]
+
+
+class MeshGeometry(GeneratedRecord):
+    """A type 4 to 7 shading's triangles (T, 3, 2 + k), or its patches' control points
+    (P, 16, 2) and corner values (P, 4, k), in its target space; each value's range, and
+    whether the single value is the parametric t of a Function."""
+
+    triangles: Any
+    patches: Any
+    corners: Any
+    ranges: tuple[tuple[float, float], ...]
+    parametric: bool
 
 
 class PreparedShading(GeneratedRecord):
@@ -33,8 +65,12 @@ class PreparedShading(GeneratedRecord):
     extend_end: bool
     color_model: str
     bbox: tuple[float, float, float, float] | None
-    evaluator: Callable[[float], tuple[float, ...]]
+    # The colour of each function input, or for types 1 and 4 to 7 of each tuple of values.
+    evaluator: Callable[..., tuple[float, ...]]
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    geometry: FunctionGeometry | MeshGeometry | None = None
+    # Background's colour components, converted as the evaluator converts its colours.
+    background: tuple[float, ...] | None = None
 
     __repr_fields__: ClassVar[tuple[str, ...] | None] = (
         "shading_type",
@@ -45,6 +81,7 @@ class PreparedShading(GeneratedRecord):
         "color_model",
         "bbox",
         "color_rendering",
+        "background",
     )
 
     def __eq__(self, other: object) -> bool:
@@ -61,6 +98,8 @@ class PreparedShading(GeneratedRecord):
             and self.color_model == other.color_model
             and self.bbox == other.bbox
             and self.color_rendering == other.color_rendering
+            and self.geometry is other.geometry
+            and self.background == other.background
         )
 
     def __hash__(self) -> int:
@@ -74,12 +113,14 @@ class PreparedShading(GeneratedRecord):
                 self.color_model,
                 self.bbox,
                 self.color_rendering,
+                id(self.geometry),
+                self.background,
             )
         )
 
 
 type ShadingEvaluatorCache = IdentityCache[
-    tuple[PdfFunctionEvaluator, Callable[[float], tuple[float, ...]], str]
+    tuple[PdfFunctionEvaluator, Callable[..., tuple[float, ...]], str]
 ]
 
 
@@ -94,6 +135,10 @@ def prepare_shading(
     if not raw_color_space_paints(dictionary.get("ColorSpace")):
         return None
     shading_type = lenient_int(dictionary.get("ShadingType"), 0)
+    if shading_type == 1:
+        return prepare_function_shading(dictionary, rendering)
+    if shading_type in {4, 5, 6, 7}:
+        return prepare_mesh_shading(dictionary, shading_type, rendering)
     if shading_type not in {2, 3}:
         return None
     coords = number_array(dictionary.get("Coords"))
@@ -153,6 +198,142 @@ def prepare_shading(
         spec.bbox,
         evaluator,
         rendering,
+        background=background_components(dictionary.get("Background"), evaluator, color_model),
+    )
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.3",
+    introduced="1.3",
+    rule="Background holds one colour's components in the shading's colour space",
+)
+def background_components(
+    value: object, evaluator: Callable[..., tuple[float, ...]], color_model: str
+) -> tuple[float, ...] | None:
+    """Background's components, converted the way the evaluator converts a colour; None when
+    there is none, or it does not hold one colour of the shading's space."""
+    values = number_array(value)
+    if not values:
+        return None
+    if isinstance(evaluator, SpaceEvaluator):
+        if len(values) != len(evaluator.space.component_ranges):
+            return None
+        try:
+            converted = color_operands_to_srgb(
+                evaluator.space, values, rendering=evaluator.rendering
+            )
+        except ValueError, ArithmeticError, PdfError:
+            return None
+        return converted if converted is not None else values
+    return values if len(values) == DEVICE_COMPONENTS.get(color_model, len(values)) else None
+
+
+def prepare_function_shading(
+    dictionary: dict[Any, Any], rendering: ColorRendering
+) -> PreparedShading | None:
+    normalized = dict(dictionary)
+    normalized.update(ShadingType=1, ColorSpace=dictionary.get("ColorSpace") or "DeviceRGB")
+    try:
+        spec = parse_function_shading(normalized, compile_function=compile_pdf_function)
+        space = parse_color_space(spec.color_space)
+    except ValueError, ArithmeticError, PdfError:
+        return None
+    evaluator, color_model = shading_color_evaluator(spec.evaluator, space, rendering)
+    x0, x1, y0, y1 = spec.domain
+    domain = (min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1))
+    return PreparedShading(
+        1,
+        (),
+        (0.0, 1.0),
+        False,
+        False,
+        color_model,
+        spec.bbox,
+        evaluator,
+        rendering,
+        geometry=FunctionGeometry(domain, spec.matrix),
+        background=background_components(dictionary.get("Background"), evaluator, color_model),
+    )
+
+
+def components_of(*components: float) -> tuple[float, ...]:
+    """A mesh vertex's colour without a Function: its components."""
+    return components
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.4",
+    introduced="1.3",
+    rule="an Indexed shading's colours are converted to the base space before interpolation",
+)
+def indexed_values(values: Any, space: ColorSpace) -> Any:
+    """Indexed colour values (..., 1) as the base space's components (..., n)."""
+    base = space.base
+    assert base is not None
+    count = len(base.component_ranges)
+    flat = numpy.zeros(((space.hival + 1) * count,), dtype=numpy.float64)
+    lookup = numpy.frombuffer(space.lookup or b"", dtype=numpy.uint8)[: len(flat)]
+    flat[: len(lookup)] = lookup
+    table = flat.reshape(space.hival + 1, count)
+    index = numpy.clip(numpy.rint(values[..., 0]), 0, space.hival).astype(numpy.intp)
+    low, high = numpy.asarray(base.component_ranges, dtype=numpy.float64).T
+    return low + table[index] / 255.0 * (high - low)
+
+
+def prepare_mesh_shading(
+    dictionary: dict[Any, Any], shading_type: int, rendering: ColorRendering
+) -> PreparedShading | None:
+    stream = dictionary.get(SHADING_STREAM_KEY)
+    if not isinstance(stream, PdfStream):
+        return None
+    function_object = dictionary.get("Function")
+    try:
+        space = parse_color_space(dictionary.get("ColorSpace") or "DeviceRGB")
+        function = compile_pdf_function(function_object) if function_object is not None else None
+        value_count = 1 if function is not None else len(space.component_ranges)
+        mesh = decode_mesh(shading_type, dictionary, stream.data, value_count)
+    except ValueError, ArithmeticError, FilterError, PdfError:
+        return None
+    triangles, patches, corners, ranges = mesh.triangles, mesh.patches, mesh.corners, mesh.ranges
+    if function is None and space.kind == "Indexed" and space.base is not None:
+        if triangles is not None:
+            triangles = numpy.concatenate(
+                (triangles[..., :2], indexed_values(triangles[..., 2:], space)), axis=-1
+            )
+        if corners is not None:
+            corners = indexed_values(corners, space)
+        space = space.base
+        ranges = tuple((float(low), float(high)) for low, high in space.component_ranges)
+    evaluator, color_model = shading_color_evaluator(
+        function if function is not None else components_of, space, rendering
+    )
+    bbox_values = number_array(dictionary.get("BBox"))
+    bbox = (
+        (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3])
+        if len(bbox_values) >= 4
+        else None
+    )
+    geometry = MeshGeometry(
+        None if triangles is None else numpy.ascontiguousarray(triangles, dtype=numpy.float64),
+        None if patches is None else numpy.ascontiguousarray(patches, dtype=numpy.float64),
+        None if corners is None else numpy.ascontiguousarray(corners, dtype=numpy.float64),
+        ranges,
+        function is not None,
+    )
+    return PreparedShading(
+        shading_type,
+        (),
+        (0.0, 1.0),
+        False,
+        False,
+        color_model,
+        bbox,
+        evaluator,
+        rendering,
+        geometry=geometry,
+        background=background_components(dictionary.get("Background"), evaluator, color_model),
     )
 
 
@@ -170,20 +351,26 @@ class SpaceEvaluator:
         self.rendering = rendering
         self.convert = lru_cache(maxsize=8192)(self.convert_one)
 
-    def __call__(self, value: float) -> tuple[float, ...]:
-        return self.convert(value)
+    def __call__(self, *values: float) -> tuple[float, ...]:
+        return self.convert(*values)
 
-    def convert_one(self, value: float) -> tuple[float, ...]:
-        components = self.function(value)
+    def convert_one(self, *values: float) -> tuple[float, ...]:
+        components = self.function(*values)
         return (
             color_operands_to_srgb(self.space, components, rendering=self.rendering) or components
         )
 
-    def many(self, values: Sequence[float]) -> list[tuple[float, ...]] | None:
-        """What calling it on each value gives, converting every colour in one pass; None
-        when a value's colour fails, which calling one at a time then reports."""
+    def many(
+        self, values: Sequence[float] | Sequence[tuple[float, ...]]
+    ) -> list[tuple[float, ...]] | None:
+        """What calling it on each value, or each tuple of values, gives, converting every
+        colour in one pass; None when a value's colour fails, which calling one at a time
+        then reports."""
         try:
-            rows = [self.function(value) for value in values]
+            rows = [
+                self.function(*value) if type(value) is tuple else self.function(value)
+                for value in values
+            ]
             converted = convert_components(
                 numpy.asarray(rows, dtype=numpy.float64), self.space, rendering=self.rendering
             )
@@ -199,10 +386,17 @@ class SpaceEvaluator:
 
 def shading_color_evaluator(
     function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
-) -> tuple[Callable[[float], tuple[float, ...]], str]:
+) -> tuple[Callable[..., tuple[float, ...]], str]:
     if space.kind in DEVICE_KINDS:
         return function, space.kind
     return SpaceEvaluator(function, space, rendering), "DeviceRGB"
 
 
-__all__ = ("PreparedShading", "ShadingEvaluatorCache", "SpaceEvaluator", "prepare_shading")
+__all__ = (
+    "FunctionGeometry",
+    "MeshGeometry",
+    "PreparedShading",
+    "ShadingEvaluatorCache",
+    "SpaceEvaluator",
+    "prepare_shading",
+)
