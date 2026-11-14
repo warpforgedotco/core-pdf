@@ -59,7 +59,8 @@ assert decode_pdf_text_string(raw, context=SemanticContext(PdfVersion(2, 0))) ==
 Every rule below, and every feature an edition, extension or embedded standard adds, is
 cited in the code with `core_pdf.impl.spec.citations.cites`; the
 [specification index](spec-index.md) lists them by PDF version, extension, profile and
-specification.
+specification. [Specification coverage](spec-coverage.md) lists, from the Arlington PDF
+Model, the keys and values each version defines that core never reads.
 
 Algorithms take a `SemanticContext` only where the standard's meaning changed between
 versions. Calls that omit it keep their earlier behavior, and core owns best-effort

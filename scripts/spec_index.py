@@ -250,6 +250,8 @@ def render(found: Survey) -> str:
         "`core_pdf.impl`; run it after citing new code (`--check` runs in CI). Core shares one",
         "implementation of each chapter across PDF versions; this lists where it depends on the",
         "version, an extension or a profile, and which specification each piece implements.",
+        "[Specification coverage](spec-coverage.md) lists what each version defines that core",
+        "never reads.",
         "",
         "## By PDF version",
         "",
