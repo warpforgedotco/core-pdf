@@ -23,7 +23,15 @@ def shading_values(
     inverse: tuple[float, float, float, float, float, float] | None = None,
     bbox: tuple[float, float, float, float] | None = None,
 ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]: ...
-def shading_t(kind: int, coords: Any, px: float, py: float, half: float) -> float | None: ...
+def shading_t(
+    kind: int,
+    coords: Any,
+    px: float,
+    py: float,
+    half: float,
+    extend0: bool = True,
+    extend1: bool = True,
+) -> float | None: ...
 def shading_blend(
     pixels: numpy.ndarray[Any, Any],
     ix0: int,

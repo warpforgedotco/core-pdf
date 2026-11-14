@@ -37,6 +37,8 @@ def axial_t(c: list[float], px: float, py: float) -> float | None:
 
 
 def radial_t(c: list[float], px: float, py: float, extend0: bool, extend1: bool) -> float | None:
+    """The largest s whose circle passes through the point, with a radius of at least 0 and
+    inside the extended range (8.7.4.5.4)."""
     dx = c[3] - c[0]
     dy = c[4] - c[1]
     dr = c[5] - c[2]
@@ -45,29 +47,32 @@ def radial_t(c: list[float], px: float, py: float, extend0: bool, extend1: bool)
     a = dx * dx + dy * dy - dr * dr
     b = -2.0 * (qx * dx + qy * dy + c[2] * dr)
     cc = qx * qx + qy * qy - c[2] * c[2]
+
+    def usable(s: float) -> bool:
+        return (
+            math.isfinite(s)
+            and c[2] + s * dr >= 0.0
+            and (s >= 0.0 or extend0)
+            and (s <= 1.0 or extend1)
+        )
+
     if abs(a) <= 1e-12:
         if abs(b) <= 1e-12:
             return None
-        return -cc / b
+        s = -cc / b
+        return s if usable(s) else None
     disc = b * b - 4.0 * a * cc
     if disc < 0.0:
         return None
     root = disc**0.5
-    t0 = (-b - root) / (2.0 * a)
-    t1 = (-b + root) / (2.0 * a)
-    valid0 = math.isfinite(t0)
-    valid1 = math.isfinite(t1)
-    if not valid0 and not valid1:
-        return None
-    in0 = valid0 and 0.0 <= t0 <= 1.0
-    in1 = valid1 and 0.0 <= t1 <= 1.0
-    if in0 or in1:
-        if in0 and in1:
-            return max(t0, t1)
-        return t0 if in0 else t1
-    if valid0 and valid1:
-        return t1 if abs(t1 - 0.5) < abs(t0 - 0.5) else t0
-    return t0 if valid0 else t1
+    s0 = (-b - root) / (2.0 * a)
+    s1 = (-b + root) / (2.0 * a)
+    high, low = (s1, s0) if s1 > s0 else (s0, s1)
+    if usable(high):
+        return high
+    if usable(low):
+        return low
+    return None
 
 
 def reference(
