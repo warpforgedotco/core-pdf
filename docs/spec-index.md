@@ -34,10 +34,13 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
 | PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
 | PDF 1.4 | non-separable blending in gray and CMYK | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend` |
+| PDF 1.4 | the colour a luminosity mask is taken from | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_color` |
 | PDF 1.4 | the colour spaces that blend | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blending_space_family` |
+| PDF 1.4 | the luminosity of a device colour | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.spec.s_11_transparency.soft_masks.device_luminosity` |
 | PDF 1.4 | the page group's blending colour space | ISO 32000-2 11.4.7 (Page group) | `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space` |
 | PDF 1.4 | the standard non-separable blend modes | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend` |
 | PDF 1.4 | the standard separable blend modes | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.separable_blend` |
@@ -202,7 +205,10 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend`: the standard non-separable blend modes
 - 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend`: non-separable blending in gray and CMYK
 - 11.4.7 (Page group) `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space`: the page group's blending colour space
+- 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.device_luminosity`: the luminosity of a device colour
+- 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_color`: the colour a luminosity mask is taken from
 - 11.6.3 (Specifying blending colour space and blend mode) `core_pdf.impl.spec.s_11_transparency.blend.first_recognized_blend_mode`: an array of blend modes selects the first one recognized
+- 11.6.5.1 (Soft-mask dictionaries) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value`: a luminosity mask outside its group
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
