@@ -12,6 +12,7 @@ from core_pdf.impl.fonts.encoding import FontEncoding
 from core_pdf.impl.fonts.fallback import fallback_glyph_outline
 from core_pdf.impl.fonts.metrics import FontMetricsModel
 from core_pdf.impl.fonts.program_base import NULL_PROGRAM, GlyphProgram
+from core_pdf.impl.spec.s_09_fonts.descriptor_flags import NO_DESCRIPTOR_STYLE, FontDescriptorStyle
 lazy from core_pdf.impl.fonts.raster_kernel import Contours
 lazy from core_pdf_cythonized import outline_coordinate_arrays
 
@@ -64,6 +65,7 @@ class GlyphGeometry:
         "encoding",
         "metrics",
         "font_name",
+        "descriptor_style",
         "raster_font_provider",
         "glyph_id_cache",
         "glyph_bbox_cache",
@@ -74,6 +76,7 @@ class GlyphGeometry:
     encoding: FontEncoding
     metrics: FontMetricsModel
     font_name: str | None
+    descriptor_style: FontDescriptorStyle
     raster_font_provider: RasterFontProviderLike | None
     glyph_id_cache: dict[int, int | None]
     glyph_bbox_cache: dict[int, Rectangle | None]
@@ -87,11 +90,13 @@ class GlyphGeometry:
         *,
         font_name: str | None,
         raster_font_provider: RasterFontProviderLike | None,
+        descriptor_style: FontDescriptorStyle = NO_DESCRIPTOR_STYLE,
     ) -> None:
         self.program = program
         self.encoding = encoding
         self.metrics = metrics
         self.font_name = font_name
+        self.descriptor_style = descriptor_style
         self.raster_font_provider = raster_font_provider
         self.glyph_id_cache = {}
         self.glyph_bbox_cache = {}
@@ -172,4 +177,5 @@ class GlyphGeometry:
             cid_registry=encoding.cid_registry,
             cid_ordering=encoding.cid_ordering,
             provider=self.raster_font_provider,
+            style=self.descriptor_style,
         )

@@ -27,12 +27,12 @@ still passes it through). Deprecated keys are left out. See also the
 | PDF 2.0 | 668 | 364 | 304 |
 | PDF 1.7 | 150 | 62 | 88 |
 | PDF 1.6 | 207 | 109 | 98 |
-| PDF 1.5 | 587 | 267 | 320 |
+| PDF 1.5 | 587 | 277 | 310 |
 | PDF 1.4 | 208 | 137 | 71 |
 | PDF 1.3 | 554 | 374 | 180 |
-| PDF 1.2 | 366 | 244 | 122 |
+| PDF 1.2 | 366 | 252 | 114 |
 | PDF 1.1 | 90 | 75 | 15 |
-| PDF 1.0 | 193 | 151 | 42 |
+| PDF 1.0 | 193 | 157 | 36 |
 | extension AAPL | 9 | 3 | 6 |
 | extension EAPDF_1 | 2 | 0 | 2 |
 | extension ISO_19593 | 4 | 0 | 4 |
@@ -573,9 +573,7 @@ Keys core never reads:
 - `ExternalRefXobjects` in LegalAttestation
 - `ExternalStreams` in LegalAttestation
 - `FB` in IconFit
-- `FontFamily` in FontDescriptorCIDType0, FontDescriptorCIDType2, FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `FontStretch` in FontDescriptorCIDType0, FontDescriptorCIDType2, FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
-- `FontWeight` in FontDescriptorCIDType0, FontDescriptorCIDType2, FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `GlyphOrientationVertical` in StructureAttributesDict
 - `GoToRemoteActions` in LegalAttestation
 - `H` in SoftwareIdentifier
@@ -950,7 +948,6 @@ Keys core never reads:
 - `E` in AddActionWidgetAnnotation, LinearizationParameterDict
 - `FD` in FontDescriptorCIDType0, FontDescriptorCIDType2
 - `FitWindow` in ViewerPreferences
-- `Flags` in ActionResetForm, ActionSubmitForm, CIDFontDescriptorMetrics, FontDescriptorCIDType0, FontDescriptorCIDType2
 - `Fo` in AddActionWidgetAnnotation
 - `Frequency` in HalftoneType1
 - `H` in ActionHide, AnnotLink, AnnotWidget, LinearizationParameterDict
@@ -961,7 +958,6 @@ Keys core never reads:
 - `HideToolbar` in ViewerPreferences
 - `HideWindowUI` in ViewerPreferences
 - `IX` in AppearanceCharacteristics
-- `ItalicAngle` in CIDFontDescriptorMetrics, FontDescriptorCIDType0, FontDescriptorCIDType2
 - `L` in LinearizationParameterDict
 - `Leading` in CIDFontDescriptorMetrics, FontDescriptorCIDType0, FontDescriptorCIDType2
 - `Length2` in FontFile, FontFile2, FontFile3Type1
@@ -1085,10 +1081,8 @@ Keys core never reads:
 - `ColorTransform` in FilterDCTDecode
 - `EndOfBlock` in FilterCCITTFaxDecode
 - `EndOfLine` in FilterCCITTFaxDecode
-- `Flags` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `FormType` in XObjectFormType1
 - `Interpolate` in XObjectImage
-- `ItalicAngle` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `Last` in Outline, OutlineItem
 - `Leading` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `Length2` in FontFileType1

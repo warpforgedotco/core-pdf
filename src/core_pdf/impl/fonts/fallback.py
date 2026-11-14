@@ -9,6 +9,14 @@ lazy from importlib.resources import files
 
 from core_pdf.impl.base.types import GeneratedRecord
 from core_pdf.impl.fonts.helpers import recover_strip_subset_tag
+from core_pdf.impl.spec.s_09_fonts.descriptor_flags import (
+    FIXED_PITCH,
+    NO_DESCRIPTOR_STYLE,
+    SERIF,
+    FontDescriptorStyle,
+    descriptor_bold,
+    descriptor_italic,
+)
 lazy from core_pdf.impl.fonts.program_truetype import TrueTypeFontProgram
 
 # By name, not files(__package__): the fonts live in core_pdf.impl.data, not beside this module.
@@ -22,6 +30,12 @@ class PdfRasterFontRequest(GeneratedRecord):
     is_vertical: bool
     cid_registry: str | None = None
     cid_ordering: str | None = None
+    # What the font descriptor shows (ISO 32000-2 9.8.2): its flags, FontWeight and
+    # ItalicAngle. False where it shows nothing; the font name may still say so.
+    bold: bool = False
+    italic: bool = False
+    fixed_pitch: bool = False
+    serif: bool = False
 
 
 class PdfRasterFontFace(GeneratedRecord):
@@ -82,8 +96,16 @@ def provider_face(
     return face
 
 
-def builtin_face_names(font_name: str | None) -> tuple[str, ...]:
+def builtin_face_names(
+    font_name: str | None, style: FontDescriptorStyle = NO_DESCRIPTOR_STYLE
+) -> tuple[str, ...]:
+    """The bundled faces to draw a font that is not embedded with: by the name, and, where
+    the name gives no family or style, by the descriptor (ISO 32000-2 9.8.2): FixedPitch for a
+    monospaced face, Serif for a serif one, ForceBold, a FontWeight of 600 or more, the Italic
+    flag or an ItalicAngle for the style. The descriptor's FontFamily counts as name."""
     name = recover_strip_subset_tag(font_name or "").lower()
+    if style.font_family:
+        name = f"{name} {style.font_family.lower()}"
     if "zapfdingbats" in name:
         return ("NotoSansSymbols2-Regular.ttf",)
     if "symbol" in name:
@@ -92,23 +114,29 @@ def builtin_face_names(font_name: str | None) -> tuple[str, ...]:
             "NotoSansSymbols2-Regular.ttf",
             "LiberationSerif-Regular.ttf",
         )
-    bold = "bold" in name
-    italic = "italic" in name or "oblique" in name
+    bold = "bold" in name or descriptor_bold(style)
+    italic = "italic" in name or "oblique" in name or descriptor_italic(style)
     if bold and italic:
-        style = "BoldItalic"
+        face_style = "BoldItalic"
     elif bold:
-        style = "Bold"
+        face_style = "Bold"
     elif italic:
-        style = "Italic"
+        face_style = "Italic"
     else:
-        style = "Regular"
+        face_style = "Regular"
     if "courier" in name or "mono" in name:
         family = "LiberationMono"
     elif "times" in name or "serif" in name:
         family = "LiberationSerif"
+    elif "helvetica" in name or "arial" in name or "sans" in name:
+        family = "LiberationSans"
+    elif style.has_flag(FIXED_PITCH):
+        family = "LiberationMono"
+    elif style.has_flag(SERIF):
+        family = "LiberationSerif"
     else:
         family = "LiberationSans"
-    return (f"{family}-{style}.ttf",)
+    return (f"{family}-{face_style}.ttf",)
 
 
 @cache
@@ -126,11 +154,21 @@ def fallback_glyph_outline(
     cid_registry: str | None = None,
     cid_ordering: str | None = None,
     provider: RasterFontProviderLike | RasterFontRepository | None = None,
+    style: FontDescriptorStyle = NO_DESCRIPTOR_STYLE,
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
     if len(text) != 1:
         return ()
     request = PdfRasterFontRequest(
-        font_name, text, is_cid_font, is_vertical, cid_registry, cid_ordering
+        font_name,
+        text,
+        is_cid_font,
+        is_vertical,
+        cid_registry,
+        cid_ordering,
+        descriptor_bold(style),
+        descriptor_italic(style),
+        style.has_flag(FIXED_PITCH),
+        style.has_flag(SERIF),
     )
     repository = (
         provider if isinstance(provider, RasterFontRepository) else RasterFontRepository(provider)
@@ -139,7 +177,7 @@ def fallback_glyph_outline(
     provider_program = repository.load_provider_program(request)
     if provider_program is not None:
         programs.append(provider_program)
-    for face_name in builtin_face_names(font_name):
+    for face_name in builtin_face_names(font_name, style):
         program = repository.builtin_program(face_name)
         if program is not None:
             programs.append(program)

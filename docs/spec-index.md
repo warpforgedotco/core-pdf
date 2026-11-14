@@ -171,6 +171,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 9.6.5 (Character encoding) `core_pdf.impl.spec.s_09_fonts.helpers`: a simple font's base encoding and Differences
 - 9.7.4.3 (Glyph metrics in CIDFonts) `core_pdf.impl.spec.s_09_fonts.widths`: glyph widths: a CIDFont's W and W2 arrays, and a simple font's Widths
 - 9.7.5.2 (Predefined CMaps) `core_pdf.impl.adobe_fonts.cmap.resources`: the predefined CMaps, loaded by name from bundled resources
+- 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags`: a font descriptor's flags and style, and what they decide about a font
 - 9.10.3 (ToUnicode CMaps) `core_pdf.impl.spec.s_09_fonts.cmap_tounicode`: ToUnicode CMaps
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space`: blending colour spaces
 - 11.3.5 (Blend mode) `core_pdf.impl.spec.s_11_transparency.blend`: blend modes
@@ -207,6 +208,13 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
+- 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)
+- 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.truetype_uses_symbolic_cmap`: a symbolic TrueType font maps codes by its (3,0) or (1,0) cmap, others by glyph name
+- 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.descriptor_bold`: the ForceBold flag and a FontWeight of 600 or more mark a bold font
+- 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.descriptor_italic`: the Italic flag and a nonzero ItalicAngle mark an italic or oblique font
+- 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.descriptor_symbolic`: a processor checks the Symbolic flag to tell a symbolic font from a nonsymbolic one
+- 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.read_descriptor_style`: Flags is an unsigned 32-bit integer whose bits Table 121 defines
 - 10.4.2.2 (Conversion between DeviceGray and DeviceRGB) `core_pdf.impl.spec.s_11_transparency.blending_space.gray_from_rgb`: the gray level of an RGB colour
 - 10.4.2.3 (Conversion between DeviceGray and DeviceCMYK) `core_pdf.impl.spec.s_11_transparency.blending_space.cmyk_from_gray`: the CMYK colour of a gray level
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space`: blend a subtractive space's complements
@@ -324,7 +332,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **Adobe AFM**: Adobe Font Metrics File Format Specification (Technical Note 5004 (1998))
 
-- `core_pdf.impl.adobe_fonts.afm.core14`: the widths and properties of the standard 14 fonts, from their AFM files
+- `core_pdf.impl.adobe_fonts.afm.core14`: the widths and properties of the standard 14 fonts, and the built-in encodings of
 
 **PostScript LRM**: PostScript Language Reference (third edition (1999))
 

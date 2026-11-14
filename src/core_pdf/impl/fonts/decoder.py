@@ -9,6 +9,7 @@ from typing import Any
 from core_pdf.impl.adobe_fonts.cmap.ranges import code_in_ranges
 from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.glyphs import UnicodeSource
+from core_pdf.impl.base.runs import FONT_STYLE_BOLD, FONT_STYLE_ITALIC
 from core_pdf.impl.base.types import RecordType, Rectangle
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.fonts.cmap import CMapDecoder, ToUnicodeCMap
@@ -26,6 +27,12 @@ from core_pdf.impl.fonts.unicode import (
 )
 from core_pdf.impl.fonts.widths import effective_descriptor, recover_descendant
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.spec.s_09_fonts.descriptor_flags import (
+    FontDescriptorStyle,
+    descriptor_bold,
+    descriptor_italic,
+    read_descriptor_style,
+)
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph
 from core_pdf.impl.spec.standards import SemanticContext
 lazy from core_pdf_cythonized._text_array import text_advance
@@ -39,6 +46,18 @@ def descriptor_font_name(font: dict[str, Any], subtype: str | None) -> str | Non
     if not isinstance(descriptor, dict):
         return None
     return recover_pdf_name(descriptor.get("FontName"))
+
+
+def font_descriptor_style(font: dict[str, Any], subtype: str | None) -> FontDescriptorStyle:
+    descriptor = effective_descriptor(font, subtype)
+    return read_descriptor_style(descriptor if isinstance(descriptor, dict) else None)
+
+
+def descriptor_font_style(style: FontDescriptorStyle) -> int:
+    """The FONT_STYLE bits the descriptor gives evidence for; the font name adds its own."""
+    return (FONT_STYLE_BOLD if descriptor_bold(style) else 0) | (
+        FONT_STYLE_ITALIC if descriptor_italic(style) else 0
+    )
 
 
 def resolve_base_font_name(font: dict[str, Any], subtype: str | None) -> str | None:
@@ -99,6 +118,8 @@ class FontDecoder:
         "is_cid_font",
         "is_type3",
         "font_name",
+        "descriptor_style",
+        "font_style",
         "is_vertical",
         "ascent",
         "descent",
@@ -128,6 +149,8 @@ class FontDecoder:
     is_cid_font: bool
     is_type3: bool
     font_name: str | None
+    descriptor_style: FontDescriptorStyle
+    font_style: int
     is_vertical: bool
     ascent: float
     descent: float
@@ -173,6 +196,7 @@ class FontDecoder:
         is_cid_font = subtype == "Type0" and recover_descendant(font) is not None
         is_type3 = subtype == "Type3"
         base_font_name = resolve_base_font_name(font, subtype)
+        descriptor_style = font_descriptor_style(font, subtype)
         encoding = FontEncoding(
             font,
             program,
@@ -180,6 +204,7 @@ class FontDecoder:
             is_type3=is_type3,
             base_font_name=base_font_name,
             semantic_context=self.semantic_context,
+            style=descriptor_style,
         )
         metrics = FontMetricsModel(
             font,
@@ -197,10 +222,13 @@ class FontDecoder:
             metrics,
             font_name=base_font_name,
             raster_font_provider=self.raster_font_provider,
+            descriptor_style=descriptor_style,
         )
         self.is_cid_font = is_cid_font
         self.is_type3 = is_type3
         self.font_name = base_font_name
+        self.descriptor_style = descriptor_style
+        self.font_style = descriptor_font_style(descriptor_style)
         self.is_vertical = metrics.is_vertical
         self.ascent = metrics.ascent
         self.descent = metrics.descent

@@ -50,6 +50,9 @@ if TYPE_CHECKING:
 
 def update_pending_run(self: TextState, new_run: TextRun) -> None:
     if not self.is_clipped_away(new_run.x0, new_run.y0, new_run.x1, new_run.y1):
+        if not new_run.font_style:
+            # The run's font descriptor style, from the decoder of the font showing it.
+            new_run.font_style = getattr(self.graphics.current_decoder, "font_style", 0)
         self.run_accumulator.append(new_run)
 
 

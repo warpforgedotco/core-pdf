@@ -212,16 +212,16 @@ def build_lines(observations: ObservationBatch, hooks: LayoutHooks | None = None
     source_minimum = numpy.minimum.reduceat(selected_sources, starts)
     source_maximum = numpy.maximum.reduceat(selected_sources, starts)
     group_sequences = numpy.minimum.reduceat(observations.sequence[selected], starts)
-    run_styles: dict[str | None, tuple[bool, bool]] = {}
+    run_styles: dict[tuple[str | None, int], tuple[bool, bool]] = {}
     color_marks: dict[object, bool] = {}
 
     def reference_style(reference: TextReference) -> tuple[bool, bool]:
         if type(reference) is not TextRun:
             return (style_enabled(reference, "is_bold"), style_enabled(reference, "is_italic"))
-        font_name = reference.font_name
-        style = run_styles.get(font_name)
+        key = (reference.font_name, reference.font_style)
+        style = run_styles.get(key)
         if style is None:
-            style = run_styles[font_name] = (reference.is_bold(), reference.is_italic())
+            style = run_styles[key] = (reference.is_bold(), reference.is_italic())
         return style
 
     def emphasis_mark(color: object) -> bool:
