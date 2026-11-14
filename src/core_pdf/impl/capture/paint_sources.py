@@ -78,15 +78,34 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
     return result
 
 
+# The entries of a shading dictionary the renderer reads, resolved when it is captured.
+SHADING_RESOLVED_KEYS = frozenset(
+    {
+        "ShadingType",
+        "ColorSpace",
+        "Function",
+        "Coords",
+        "Domain",
+        "Extend",
+        "BBox",
+        "Matrix",
+        "Background",
+        "Decode",
+        "BitsPerCoordinate",
+        "BitsPerComponent",
+        "BitsPerFlag",
+        "VerticesPerRow",
+    }
+)
+
+
 def capture_shading_dictionary(self: TextState, dictionary: dict) -> dict:
     shadings = self.caches.capture_shadings
     cached = shadings.get(dictionary)
     if cached is not None:
         return cached
     captured = {
-        key: self.resolver.deep_resolve(value)
-        if str(key) in {"ColorSpace", "Function", "Coords", "Domain", "Extend", "BBox"}
-        else value
+        key: self.resolver.deep_resolve(value) if str(key) in SHADING_RESOLVED_KEYS else value
         for key, value in dictionary.items()
     }
     return shadings.put(dictionary, captured)
