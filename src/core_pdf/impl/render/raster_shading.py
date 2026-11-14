@@ -37,6 +37,9 @@ lazy from core_pdf_cythonized import shading_blend, shading_values
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
+# Cells one pattern paints at most, so a tiny cell over a large area stays bounded.
+MAX_TILING_CELLS = 10000
+
 
 def shading_box(
     self: RasterTarget, item: ShadingItem, shading: PreparedShading
@@ -199,14 +202,16 @@ def paint_tiling_pattern(
         if clipped is None:
             return True
         x0, y0, x1, y1 = clipped
-    start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
-    start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
-    cells = 0
-    y = start_y
     opacity = target_data.fill_opacity
     alpha = clamp01(opacity) if is_pdf_number(opacity) else 1.0
     if is_pdf_number(target_data.soft_mask_alpha):
         alpha *= clamp01(target_data.soft_mask_alpha)
+    matrix = pattern.matrix
+    offsets = None
+    if matrix is not None:
+        offsets = tiling_offsets(pattern, matrix, cell_clip, (x0, y0, x1, y1))
+        if offsets is None:
+            return True
     self.push_group(
         bytearray(len(self.pixels)),
         alpha,
@@ -215,9 +220,22 @@ def paint_tiling_pattern(
         alpha_is_shape=target_data.alpha_is_shape,
     )
     try:
-        while y < y1 + y_step and cells < 10000:
+        if offsets is not None:
+            for translation in offsets:
+                self.paint_items(
+                    display.items,
+                    translation=translation,
+                    parent_blend_mode=None,
+                    clip_path=cell_clip,
+                )
+            return True
+        start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
+        start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
+        cells = 0
+        y = start_y
+        while y < y1 + y_step and cells < MAX_TILING_CELLS:
             x = start_x
-            while x < x1 + x_step and cells < 10000:
+            while x < x1 + x_step and cells < MAX_TILING_CELLS:
                 tx = x - cell_x0
                 ty = y - cell_y0
                 if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
@@ -233,6 +251,61 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there",
+)
+def tiling_offsets(
+    pattern: TilingPattern,
+    matrix: tuple[float, float, float, float, float, float],
+    cell_clip: CapturedPath,
+    box: tuple[float, float, float, float],
+) -> list[tuple[float, float]] | None:
+    """The page offsets of the cells of a pattern under matrix that reach box, or None when
+    the matrix is singular. Cell (i, j) is the key cell moved by (i XStep, j YStep) in pattern
+    space, which on the page is the same move through the matrix's linear part."""
+    inverse = invert_affine(matrix)
+    clip_box = cell_clip.bbox()
+    if inverse is None or clip_box is None:
+        return None
+    a, b, c, d, _, _ = matrix
+    x_step = abs(pattern.x_step)
+    y_step = abs(pattern.y_step)
+    bx0, by0, bx1, by1 = pattern.bbox
+    cell_x0, cell_x1 = min(bx0, bx1), max(bx0, bx1)
+    cell_y0, cell_y1 = min(by0, by1), max(by0, by1)
+    # The box in pattern space bounds the steps whose cell can reach it.
+    px0, py0, px1, py1 = transform_bbox(box, inverse)
+    if not all(math.isfinite(value) for value in (px0, py0, px1, py1)):
+        return None
+    first_i = math.ceil((px0 - cell_x1) / x_step)
+    last_i = math.floor((px1 - cell_x0) / x_step)
+    first_j = math.ceil((py0 - cell_y1) / y_step)
+    last_j = math.floor((py1 - cell_y0) / y_step)
+    x0, y0, x1, y1 = box
+    left, bottom, right, top = clip_box
+    offsets: list[tuple[float, float]] = []
+    visited = 0
+    for j in range(first_j, last_j + 1):
+        u = j * y_step
+        for i in range(first_i, last_i + 1):
+            visited += 1
+            if visited > 4 * MAX_TILING_CELLS:
+                return offsets
+            v = i * x_step
+            tx = a * v + c * u
+            ty = b * v + d * u
+            # A parallelogram cell whose page box misses the box paints nothing there.
+            if left + tx > x1 or right + tx < x0 or bottom + ty > y1 or top + ty < y0:
+                continue
+            offsets.append((tx, ty))
+            if len(offsets) >= MAX_TILING_CELLS:
+                return offsets
+    return offsets
 
 
 def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str | None) -> bool:

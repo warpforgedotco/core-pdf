@@ -21,12 +21,19 @@ from core_pdf.impl.base.types import (
     field,
     frozen_setattr,
 )
-from core_pdf.impl.capture.records import CapturedPath, CapturedSoftMask, PatternPaint
+from core_pdf.impl.capture.records import (
+    CapturedPath,
+    CapturedSoftMask,
+    PatternPaint,
+    ShadingPattern,
+    TilingPattern,
+)
 from core_pdf.impl.render.blend import color_rgba, declared_blend, scale_rgba_alpha
 from core_pdf.impl.render.paths import stroke_half_width, translate_rect
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_11_transparency.blending_space import (
     BlendingSpace,
     blending_profile,
@@ -257,6 +264,8 @@ class PathPaintItem(
             ),
             blend_mode=self.blend_mode or parent_blend_mode,
             graphics_soft_mask=translated_soft_mask(self.graphics_soft_mask, tx, ty),
+            fill_pattern=translated_pattern(self.fill_pattern, tx, ty),
+            stroke_pattern=translated_pattern(self.stroke_pattern, tx, ty),
         )
 
     def to_data(self) -> dict[str, Any]:
@@ -338,6 +347,22 @@ def translated_soft_mask(
     if mask is None or (tx == 0 and ty == 0):
         return mask
     return replace(mask, offset=(mask.offset[0] + tx, mask.offset[1] + ty))
+
+
+def translated_pattern(pattern: PatternPaint | None, tx: float, ty: float) -> PatternPaint | None:
+    """A pattern moved with the path it paints: a path in a tiling cell takes its pattern
+    space along to each cell (8.7.2)."""
+    if pattern is None or (tx == 0 and ty == 0):
+        return pattern
+    a, b, c, d, e, f = pattern.matrix if pattern.matrix is not None else IDENTITY_MATRIX
+    moved = Matrix(a, b, c, d, e + tx, f + ty)
+    if isinstance(pattern, ShadingPattern):
+        return ShadingPattern(
+            pattern.dictionary, color_rendering=pattern.color_rendering, matrix=moved
+        )
+    return TilingPattern(
+        pattern.bbox, pattern.x_step, pattern.y_step, pattern.program, matrix=moved
+    )
 
 
 def translated_data(

@@ -537,10 +537,13 @@ class ShadingPattern(GeneratedRecord):
 
 
 class TilingPattern(GeneratedRecord):
+    # bbox, x_step and y_step are in pattern space; the program is in default user space.
     bbox: Rectangle
     x_step: float
     y_step: float
     program: CapturedProgram
+    # The map from pattern space to default user space, or None for the identity.
+    matrix: Matrix | None = None
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

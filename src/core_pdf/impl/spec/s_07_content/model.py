@@ -82,7 +82,7 @@ class PdfPath(ReplaceFields, metaclass=RecordType, frozen=False):
 
 class ShadingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, metaclass=RecordType):
     """A shading pattern; matrix maps its pattern space to default user space: the pattern's
-    Matrix concatenated with the CTM its parent content stream started with (8.7.3.1)."""
+    Matrix concatenated with the CTM its parent content stream started with (8.7.2)."""
 
     dictionary: PdfDict
     extgstate: PdfDict | None = field(default=None, kw_only=True)
@@ -92,6 +92,10 @@ class ShadingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, meta
 
 
 class TilingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, metaclass=RecordType):
+    """A tiling pattern; bbox, x_step and y_step are in pattern space, and matrix maps it to
+    default user space: the pattern's Matrix concatenated with the CTM its parent content
+    stream started with (8.7.2)."""
+
     bbox: Rectangle
     x_step: float
     y_step: float

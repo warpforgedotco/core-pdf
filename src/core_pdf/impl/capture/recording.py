@@ -45,7 +45,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_stric
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
-from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_profile,
     blending_space_of,
@@ -627,6 +627,8 @@ class TextState(RecoveringTextState):
                     drawing.stroke_color = base_color
             for glyph in nested.glyphs:
                 glyph.style = replace(glyph.style, fill=base_color, stroke_color=base_color)
+        # The cell ran under its pattern matrix, so the program is in default user space.
+        matrix = pattern.matrix
         return TilingPattern(
             pattern.bbox,
             pattern.x_step,
@@ -638,6 +640,7 @@ class TextState(RecoveringTextState):
                 text_boundaries=tuple(nested.text_boundaries),
                 options=nested.options,
             ),
+            matrix=None if matrix == IDENTITY_MATRIX else matrix,
         )
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
