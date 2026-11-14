@@ -50,6 +50,12 @@ SPECIFICATIONS: dict[str, Specification] = {
         "https://pdfa.org/resource/iso-32000-2/",
         "pdf",
     ),
+    "Adobe ExtensionLevel 3": Specification(
+        "Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3",
+        "June 2008",
+        "https://pdfa.org/resource/pdf-specification-archive/",
+        "extension",
+    ),
     "ISO 32003": Specification(
         "Adding support of AES-GCM in PDF 2.0",
         "ISO 32003:2023",
