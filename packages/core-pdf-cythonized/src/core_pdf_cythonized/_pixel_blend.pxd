@@ -1,14 +1,30 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+from libc.math cimport fabs, sqrt
+
 from core_pdf_cythonized._byte_clamp cimport round_to_byte
 
 
+# The blend codes: a mode's index in core_pdf.impl.spec.s_11_transparency.blend.BLEND_MODES,
+# and core_pdf.impl.render.blend.BlendOp's value. Codes from MODE_HUE are non-separable.
 cdef enum:
     MODE_NORMAL = 0
     MODE_MULTIPLY = 1
     MODE_SCREEN = 2
     MODE_COLOR_DODGE = 3
     MODE_COLOR_BURN = 4
+    MODE_OVERLAY = 5
+    MODE_DARKEN = 6
+    MODE_LIGHTEN = 7
+    MODE_HARD_LIGHT = 8
+    MODE_SOFT_LIGHT = 9
+    MODE_DIFFERENCE = 10
+    MODE_EXCLUSION = 11
+    MODE_HUE = 12
+    MODE_SATURATION = 13
+    MODE_COLOR = 14
+    MODE_LUMINOSITY = 15
+    MODE_COUNT = 16
 
 
 cdef inline int coverage_alpha(int alpha, int covered) noexcept nogil:
@@ -63,13 +79,161 @@ cdef inline double color_burn(double backdrop, double source, bint revised) noex
     return 1.0 - (1.0 - backdrop) / source
 
 
+# The blend functions of core_pdf.impl.spec.s_11_transparency.blend, operation for operation,
+# so that with contraction off they give its float64 bits.
+
+
+cdef inline double hard_light(double cb, double cs) noexcept nogil:
+    if cs <= 0.5:
+        return cb * (2.0 * cs)
+    return 1.0 - (1.0 - cb) * (1.0 - (2.0 * cs - 1.0))
+
+
+cdef inline double soft_light(double cb, double cs) noexcept nogil:
+    cdef double d
+    if cs <= 0.5:
+        return cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
+    if cb <= 0.25:
+        d = ((16.0 * cb - 12.0) * cb + 4.0) * cb
+    else:
+        d = sqrt(cb)
+    return cb + (2.0 * cs - 1.0) * (d - cb)
+
+
+cdef inline double separable_blend(
+    double cb, double cs, int mode, bint revised
+) noexcept nogil:
+    if mode == MODE_MULTIPLY:
+        return cb * cs
+    if mode == MODE_SCREEN:
+        return 1.0 - (1.0 - cb) * (1.0 - cs)
+    if mode == MODE_COLOR_DODGE:
+        return color_dodge(cb, cs, revised)
+    if mode == MODE_COLOR_BURN:
+        return color_burn(cb, cs, revised)
+    if mode == MODE_OVERLAY:
+        return hard_light(cs, cb)
+    if mode == MODE_DARKEN:
+        return cs if cs < cb else cb
+    if mode == MODE_LIGHTEN:
+        return cs if cs > cb else cb
+    if mode == MODE_HARD_LIGHT:
+        return hard_light(cb, cs)
+    if mode == MODE_SOFT_LIGHT:
+        return soft_light(cb, cs)
+    if mode == MODE_DIFFERENCE:
+        return fabs(cb - cs)
+    if mode == MODE_EXCLUSION:
+        return cb + cs - 2.0 * cb * cs
+    return cs
+
+
+cdef inline double lum(double r, double g, double b) noexcept nogil:
+    return 0.3 * r + 0.59 * g + 0.11 * b
+
+
+cdef inline double min3(double r, double g, double b) noexcept nogil:
+    cdef double low = g if g < r else r
+    return b if b < low else low
+
+
+cdef inline double max3(double r, double g, double b) noexcept nogil:
+    cdef double high = g if g > r else r
+    return b if b > high else high
+
+
+cdef inline void clip_color(double *c) noexcept nogil:
+    cdef double l = lum(c[0], c[1], c[2])
+    cdef double n = min3(c[0], c[1], c[2])
+    cdef double x = max3(c[0], c[1], c[2])
+    cdef double span
+    cdef int k
+    if n < 0.0:
+        span = l - n
+        if span != 0.0:
+            for k in range(3):
+                c[k] = l + ((c[k] - l) * l) / span
+    if x > 1.0:
+        span = x - l
+        if span != 0.0:
+            for k in range(3):
+                c[k] = l + ((c[k] - l) * (1.0 - l)) / span
+
+
+cdef inline void set_lum(double *c, double l) noexcept nogil:
+    cdef double d = l - lum(c[0], c[1], c[2])
+    c[0] = c[0] + d
+    c[1] = c[1] + d
+    c[2] = c[2] + d
+    clip_color(c)
+
+
+cdef inline double sat(const double *c) noexcept nogil:
+    return max3(c[0], c[1], c[2]) - min3(c[0], c[1], c[2])
+
+
+cdef inline void set_sat(double *c, double s) noexcept nogil:
+    cdef double high = max3(c[0], c[1], c[2])
+    cdef double low = min3(c[0], c[1], c[2])
+    cdef double span
+    cdef int k
+    if not high > low:
+        c[0] = 0.0
+        c[1] = 0.0
+        c[2] = 0.0
+        return
+    span = high - low
+    for k in range(3):
+        if c[k] == high:
+            c[k] = s
+        elif c[k] == low:
+            c[k] = 0.0
+        else:
+            c[k] = ((c[k] - low) * s) / span
+
+
+cdef inline void blend_rgb(
+    const double *cb, const double *cs, double *out, int mode, bint revised
+) noexcept nogil:
+    """B(Cb, Cs) into out, for any code below MODE_COUNT; out may not alias cb or cs."""
+    cdef int k
+    if mode < MODE_HUE:
+        for k in range(3):
+            out[k] = separable_blend(cb[k], cs[k], mode, revised)
+        return
+    if mode == MODE_HUE or mode == MODE_SATURATION:
+        if mode == MODE_HUE:
+            out[0] = cs[0]
+            out[1] = cs[1]
+            out[2] = cs[2]
+            set_sat(out, sat(cb))
+        else:
+            out[0] = cb[0]
+            out[1] = cb[1]
+            out[2] = cb[2]
+            set_sat(out, sat(cs))
+        set_lum(out, lum(cb[0], cb[1], cb[2]))
+    elif mode == MODE_COLOR:
+        out[0] = cs[0]
+        out[1] = cs[1]
+        out[2] = cs[2]
+        set_lum(out, lum(cb[0], cb[1], cb[2]))
+    else:
+        out[0] = cb[0]
+        out[1] = cb[1]
+        out[2] = cb[2]
+        set_lum(out, lum(cs[0], cs[1], cs[2]))
+
+
 cdef inline void blend_mode_pixel(
     unsigned char* pixel, int red, int green, int blue, int sa, int mode, bint revised
 ) noexcept nogil:
+    """Composite one source colour over a pixel in any mode but normal (0)."""
     cdef double src_a = sa / 255.0
     cdef double dst_a = pixel[3] / 255.0
     cdef double source[3]
-    cdef double backdrop
+    cdef double backdrop[3]
+    cdef double blended[3]
     cdef int k
     cdef int destination[3]
     source[0] = red / 255.0
@@ -77,17 +241,10 @@ cdef inline void blend_mode_pixel(
     source[2] = blue / 255.0
     for k in range(3):
         destination[k] = pixel[k]
-        backdrop = destination[k] / 255.0
-        if mode == MODE_MULTIPLY:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * (source[k] * backdrop)
-        elif mode == MODE_SCREEN:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * (
-                1.0 - (1.0 - source[k]) * (1.0 - backdrop)
-            )
-        elif mode == MODE_COLOR_DODGE:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * color_dodge(backdrop, source[k], revised)
-        else:
-            source[k] = source[k] * (1.0 - dst_a) + dst_a * color_burn(backdrop, source[k], revised)
+        backdrop[k] = destination[k] / 255.0
+    blend_rgb(backdrop, source, blended, mode, revised)
+    for k in range(3):
+        source[k] = source[k] * (1.0 - dst_a) + dst_a * blended[k]
     cdef double out_a = src_a + dst_a * (1.0 - src_a)
     for k in range(3):
         pixel[k] = <unsigned char> round_to_byte(

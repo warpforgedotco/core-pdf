@@ -12,4 +12,5 @@ def blend_visible_rgba(
     blue: float | numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     alpha: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     mode: int,
+    revised: bool = ...,
 ) -> None: ...
