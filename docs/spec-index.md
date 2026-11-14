@@ -34,6 +34,11 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
+| PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
+| PDF 1.4 | non-separable blending in gray and CMYK | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend` |
+| PDF 1.4 | the colour spaces that blend | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blending_space_family` |
+| PDF 1.4 | the page group's blending colour space | ISO 32000-2 11.4.7 (Page group) | `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space` |
 | PDF 1.4 | the standard non-separable blend modes | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend` |
 | PDF 1.4 | the standard separable blend modes | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.separable_blend` |
 | PDF 2.0 | black point compensation (UseBlackPtComp) | ISO 32000-2 8.6.5.9 (Use of black point compensation) | `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation` |
@@ -159,6 +164,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 9.7.4.3 (Glyph metrics in CIDFonts) `core_pdf.impl.spec.s_09_fonts.widths`: glyph widths: a CIDFont's W and W2 arrays, and a simple font's Widths
 - 9.7.5.2 (Predefined CMaps) `core_pdf.impl.adobe_fonts.cmap.resources`: the predefined CMaps, loaded by name from bundled resources
 - 9.10.3 (ToUnicode CMaps) `core_pdf.impl.spec.s_09_fonts.cmap_tounicode`: ToUnicode CMaps
+- 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space`: blending colour spaces
 - 11.3.5 (Blend mode) `core_pdf.impl.spec.s_11_transparency.blend`: blend modes
 - 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.images`: undoing the Matte preblending of a soft-mask image
 - 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.soft_masks`: soft-mask dictionaries: their group, backdrop and transfer function
@@ -186,11 +192,18 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 10.4.2.2 (Conversion between DeviceGray and DeviceRGB) `core_pdf.impl.spec.s_11_transparency.blending_space.gray_from_rgb`: the gray level of an RGB colour
+- 10.4.2.3 (Conversion between DeviceGray and DeviceCMYK) `core_pdf.impl.spec.s_11_transparency.blending_space.cmyk_from_gray`: the CMYK colour of a gray level
+- 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space`: blend a subtractive space's complements
+- 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blending_space_family`: the colour spaces that blend
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn in PDF 1.7
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.separable_blend`: the standard separable blend modes
 - 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend`: the standard non-separable blend modes
+- 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend`: non-separable blending in gray and CMYK
+- 11.4.7 (Page group) `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space`: the page group's blending colour space
 - 11.6.3 (Specifying blending colour space and blend mode) `core_pdf.impl.spec.s_11_transparency.blend.first_recognized_blend_mode`: an array of blend modes selects the first one recognized
+- 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
 - D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
