@@ -15,7 +15,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
-from core_pdf.impl.graphics.shading import PreparedShading
+from core_pdf.impl.graphics.shading import PreparedShading, SpaceEvaluator
 from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.model import PathPaintItem, ShadingItem, SpaceMode
@@ -120,10 +120,17 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     evaluate = shading.evaluator
     rendering = shading.color_rendering
     in_space = self.space_mode is not SpaceMode.RGB
-    for unique_index in by_first.tolist():
+    order = by_first.tolist()
+    # A colour space other than a device one converts every colour in one pass.
+    batch = (
+        evaluate.many(ordered[first[by_first]].tolist())
+        if isinstance(evaluate, SpaceEvaluator)
+        else None
+    )
+    for step, unique_index in enumerate(order):
         position = int(first[unique_index])
         try:
-            components = evaluate(float(ordered[position]))
+            components = batch[step] if batch is not None else evaluate(float(ordered[position]))
             rgba = shading_rgba(color_model, components, fill_opacity, rendering, shading_alpha)
             if in_space:
                 rgba = self.shading_space_color(color_model, components, rgba)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import ClassVar
+
+lazy import numpy
 
 from core_pdf.impl.base.caches import IdentityCache
 from core_pdf.impl.base.types import GeneratedRecord
@@ -20,6 +22,7 @@ from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDE
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
 from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator
 from core_pdf.impl.spec.s_08_graphics.shading import parse_shading
+lazy from core_pdf.impl.graphics.image_samples import convert_components
 
 
 class PreparedShading(GeneratedRecord):
@@ -153,18 +156,53 @@ def prepare_shading(
     )
 
 
+class SpaceEvaluator:
+    """A shading function whose colours are converted from a non-device colour space to sRGB:
+    one at a time when called, or a batch of inputs at once with many."""
+
+    __slots__ = ("function", "space", "rendering", "convert")
+
+    def __init__(
+        self, function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
+    ) -> None:
+        self.function = function
+        self.space = space
+        self.rendering = rendering
+        self.convert = lru_cache(maxsize=8192)(self.convert_one)
+
+    def __call__(self, value: float) -> tuple[float, ...]:
+        return self.convert(value)
+
+    def convert_one(self, value: float) -> tuple[float, ...]:
+        components = self.function(value)
+        return (
+            color_operands_to_srgb(self.space, components, rendering=self.rendering) or components
+        )
+
+    def many(self, values: Sequence[float]) -> list[tuple[float, ...]] | None:
+        """What calling it on each value gives, converting every colour in one pass; None
+        when a value's colour fails, which calling one at a time then reports."""
+        try:
+            rows = [self.function(value) for value in values]
+            converted = convert_components(
+                numpy.asarray(rows, dtype=numpy.float64), self.space, rendering=self.rendering
+            )
+        except TypeError, ValueError, ArithmeticError:
+            return None
+        if converted.ndim != 2 or len(converted) != len(rows):
+            return None
+        if converted.shape[1] == 1:
+            converted = numpy.repeat(converted, 3, axis=1)
+        scaled = (converted[:, :3].astype(numpy.float64) / 255).tolist()
+        return [(red, green, blue) for red, green, blue in scaled]
+
+
 def shading_color_evaluator(
     function: PdfFunctionEvaluator, space: ColorSpace, rendering: ColorRendering
 ) -> tuple[Callable[[float], tuple[float, ...]], str]:
     if space.kind in DEVICE_KINDS:
         return function, space.kind
-
-    @lru_cache(maxsize=8192)
-    def convert(value: float) -> tuple[float, ...]:
-        components = function(value)
-        return color_operands_to_srgb(space, components, rendering=rendering) or components
-
-    return convert, "DeviceRGB"
+    return SpaceEvaluator(function, space, rendering), "DeviceRGB"
 
 
-__all__ = ("PreparedShading", "ShadingEvaluatorCache", "prepare_shading")
+__all__ = ("PreparedShading", "ShadingEvaluatorCache", "SpaceEvaluator", "prepare_shading")
