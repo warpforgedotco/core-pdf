@@ -347,6 +347,7 @@ jobs:
           $run/check_version_rules.py
           $run/check_blend_modes.py
           $run/check_shading.py
+          $run/check_patterns.py
           $run/check_soft_masks.py
           $run/check_pdfminer_chars.py
           uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
