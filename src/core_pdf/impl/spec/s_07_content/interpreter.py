@@ -58,6 +58,7 @@ from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontProvider
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
+lazy from core_pdf.impl.spec.s_11_transparency.blend import first_recognized_blend_mode
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
 lazy from core_pdf_cythonized._text_array import show_decoded, show_string, show_text_array
 
@@ -1186,9 +1187,12 @@ class ContentInterpreter:
             self.graphics.stroke_opacity = max(0.0, min(1.0, self.as_float(stroke_opacity)))
         blend_mode = extgstate.get("BM")
         if blend_mode is not None:
-            if isinstance(blend_mode, (list, tuple)):
-                blend_mode = blend_mode[0] if blend_mode else None
-            if blend_mode is not None:
+            resolved_mode = self.resolver.resolve(blend_mode)
+            if isinstance(resolved_mode, (list, tuple)):
+                self.graphics.blend_mode = first_recognized_blend_mode(
+                    [self.named_value(name) for name in resolved_mode]
+                )
+            else:
                 self.graphics.blend_mode = self.named_value(blend_mode)
         alpha_is_shape = self.resolver.resolve(extgstate.get("AIS"))
         if alpha_is_shape is not None:

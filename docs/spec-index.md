@@ -34,6 +34,8 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.4 | the standard non-separable blend modes | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend` |
+| PDF 1.4 | the standard separable blend modes | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.separable_blend` |
 | PDF 2.0 | black point compensation (UseBlackPtComp) | ISO 32000-2 8.6.5.9 (Use of black point compensation) | `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation` |
 | PDF 2.0 | revision 6 password hash (Algorithm 2.B) | ISO 32000-2 7.6.4.3.4 (Algorithm 2.B: Computing a hash (revision 6 and later)) | `core_pdf.impl.spec.s_07_security.standard.r6_password_hash` |
 | PDF 2.0 | structure namespaces and RoleMapNS | ISO 32000-2 14.7.4 (Namespaces) | `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace` |
@@ -186,6 +188,9 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn in PDF 1.7
+- 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.separable_blend`: the standard separable blend modes
+- 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend`: the standard non-separable blend modes
+- 11.6.3 (Specifying blending colour space and blend mode) `core_pdf.impl.spec.s_11_transparency.blend.first_recognized_blend_mode`: an array of blend modes selects the first one recognized
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
 - D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
