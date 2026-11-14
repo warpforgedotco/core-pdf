@@ -47,6 +47,7 @@ from core_pdf.impl.render.model import (
     ScopeBeginItem,
     SoftMaskPlane,
 )
+from core_pdf.impl.render.raster_spaces import luminosity_mask_channel
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
@@ -552,11 +553,14 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
     resources.active_soft_masks.add(key)
     result: SoftMaskPlane | None = None
     try:
-        nested, view = target.blank_sibling()
         display = DisplayList(target.width, target.height, preserve_object_boundaries=True)
         append_captured_program(display, mask.program, include_text=True)
-        nested.paint_items(display.items, translation=mask.offset)
-        alpha, present = alpha_channel(view, mask.transfer is not None)
+        if mask.blending_space is None:
+            nested, view = target.blank_sibling()
+            nested.paint_items(display.items, translation=mask.offset)
+            alpha, present = alpha_channel(view, mask.transfer is not None)
+        else:
+            alpha, present = luminosity_mask_channel(target, mask, display.items)
         alpha.setflags(write=False)
         if mask.transfer is None or present is None:
             result = SoftMaskPlane(alpha, None)

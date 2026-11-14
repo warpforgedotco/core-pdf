@@ -25,6 +25,7 @@ lazy from core_pdf_cythonized import fill_edge_rows, path_bounds
 if TYPE_CHECKING:
     from core_pdf.impl.capture.program import CapturedProgram
     from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
+    from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
 
 LayoutFormId: TypeAlias = tuple[tuple[StreamKey | None, Rectangle | None], ...] | None
 
@@ -33,6 +34,12 @@ class CapturedSoftMask(GeneratedRecord, eq=False):
     program: CapturedProgram
     transfer: PdfFunctionEvaluator | None = None
     offset: tuple[float, float] = (0.0, 0.0)
+    # A Luminosity mask's blending space (an Alpha mask's is None), an ICCBased CMYK space's
+    # profile, and its BC colour as capture gives paint: the space's own components for a
+    # device space, else the CMYK (in a CMYK space) or sRGB the colour converts to.
+    blending_space: BlendingSpace | None = None
+    blending_profile: bytes | None = None
+    backdrop: tuple[float, ...] = ()
 
 
 class CapturedTextBoundary(GeneratedRecord):
