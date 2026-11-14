@@ -11,6 +11,9 @@ class GlyphNaming(Protocol):
     @property
     def is_cid_font(self) -> bool: ...
 
+    @property
+    def truetype_symbolic(self) -> bool: ...
+
     def glyph_name(self, code: int) -> str: ...
 
 

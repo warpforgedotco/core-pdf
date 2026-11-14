@@ -418,6 +418,8 @@ class TextShow:
     widths: object
     default_width: object
     font_name: object
+    # What the font descriptor shows of bold and italic, as TextRun.font_style bits.
+    font_style: object
     # The text state.
     font_size_value: object
     horizontal_scale_value: object
@@ -564,6 +566,7 @@ class TextShow:
         self.out_glyphs = state.glyphs
         self.glyph_bbox = self.decoder.glyph_bbox if options.ink_bounds else None
         self.font_name = self.decoder.font_name or self.current_font
+        self.font_style = getattr(self.decoder, "font_style", 0)
         self.capture_source = state.capture_source
         self.stream_order = state.stream_order
         self.xobject_depth = state.xobject_depth
@@ -916,6 +919,7 @@ class TextShow:
             provenance,
             None,
         )
+        new_run.font_style = self.font_style
         if span is not None:
             new_run.confidence = 1.0
             span.add_run(

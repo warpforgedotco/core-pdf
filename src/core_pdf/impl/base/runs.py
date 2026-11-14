@@ -26,6 +26,11 @@ EMPTY_LAYOUT_LINE_TEXT = LayoutLineText("", ())
 
 Provenance: TypeAlias = tuple[tuple[str, object], ...]
 
+# A run's font_style bits: what its font descriptor shows (ISO 32000-2 9.8.2), beside the
+# font name, which TextRun.is_bold and is_italic also read.
+FONT_STYLE_BOLD = 1
+FONT_STYLE_ITALIC = 2
+
 
 class DerivedRunText:
     """Values derived from a run's text once, since layout reads them per comparison.
@@ -64,6 +69,7 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
     provenance: Provenance
     confidence: float | None
     glyph_clusters: tuple[GlyphClusterLike, ...]
+    font_style: int
 
     def __replace__(self, /, **changes: Any) -> Self:
         values = {name: changes.pop(name, getattr(self, name)) for name in self.__fields__}
@@ -112,6 +118,7 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
         provenance: Provenance = (),
         confidence: float | None = None,
         glyph_clusters: tuple[GlyphClusterLike, ...] = (),
+        font_style: int = 0,
     ) -> None:
         self.inside_active_clip = inside_active_clip
         self.x0 = x0
@@ -124,6 +131,7 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
         self.space_width = space_width
         self.set_text(text)
         self.font_name = font_name
+        self.font_style = font_style
         self.order = order
         self.stream_order = stream_order
         self.xobject_depth = xobject_depth
@@ -160,18 +168,23 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
         self.ink_bbox = union_bbox(self.ink_bbox, bbox)
 
     def is_bold(self) -> bool:
+        if self.font_style & FONT_STYLE_BOLD:
+            return True
         if not self.font_name:
             return False
         fn = self.font_name.lower()
         return "bold" in fn or "black" in fn or "heavy" in fn
 
     def is_italic(self) -> bool:
+        if self.font_style & FONT_STYLE_ITALIC:
+            return True
         if not self.font_name:
             return False
         fn = self.font_name.lower()
         return "italic" in fn or "oblique" in fn or "slanted" in fn
 
-    def with_font_name(self, font_name: str | None) -> TextRun:
+    def with_font_name(self, font_name: str | None, font_style: int = 0) -> TextRun:
+        """The run with the name and descriptor style of the font most of its glyphs use."""
         return type(self)(
             self.text,
             self.x0,
@@ -199,6 +212,7 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
             self.provenance,
             self.confidence,
             self.glyph_clusters,
+            font_style,
         )
 
     def replace(self, **kwargs: Any) -> TextRun:
@@ -252,6 +266,7 @@ class TextRun(DerivedRunText, ReprFields, metaclass=RecordType, frozen=False, eq
             take("provenance", self.provenance),
             take("confidence", self.confidence),
             take("glyph_clusters", self.glyph_clusters),
+            take("font_style", self.font_style),
         )
         if kwargs:
             raise TypeError(f"unexpected TextRun field(s): {', '.join(sorted(kwargs))}")

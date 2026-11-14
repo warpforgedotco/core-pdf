@@ -20,8 +20,16 @@ from core_pdf.impl.fonts.program import recover_descriptor, recover_font_file
 from core_pdf.impl.fonts.program_base import GlyphProgram
 from core_pdf.impl.fonts.widths import recover_descendant
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_09_fonts.descriptor_flags import (
+    NO_DESCRIPTOR_STYLE,
+    FontDescriptorStyle,
+    descriptor_symbolic,
+    standard_symbolic_font,
+    truetype_uses_symbolic_cmap,
+)
 from core_pdf.impl.spec.s_09_fonts.helpers import BASE_ENCODING_GLYPH_NAMES
 from core_pdf.impl.spec.standards import SemanticContext
+lazy from core_pdf.impl.adobe_fonts.afm.core14 import BUILTIN_ENCODINGS
 lazy from core_pdf.impl.fonts.program_type1 import parse_type1_font_program_encoding
 
 TEX_MATH_GLYPH_OVERRIDES: dict[str, dict[str, str]] = {
@@ -121,8 +129,30 @@ def builtin_font_encoding(
     return {}, False
 
 
+FONT_FILE_KEYS = ("FontFile", "FontFile2", "FontFile3")
+
+
+def font_is_embedded(font: dict[str, Any]) -> bool:
+    descriptor = recover_descriptor(font.get("FontDescriptor"))
+    return any(recover_font_file(descriptor, key) is not None for key in FONT_FILE_KEYS)
+
+
+def encoding_entry(font: dict[str, Any]) -> object:
+    """The font's Encoding as truetype_uses_symbolic_cmap takes it: None when absent, the
+    name when a name, else the dictionary or stream."""
+    value = font.get("Encoding")
+    if value is None:
+        return None
+    name = recover_pdf_name(value)
+    return name if name is not None else value
+
+
 def parse_encoding(
-    font: dict[str, Any], program: GlyphProgram
+    font: dict[str, Any],
+    program: GlyphProgram,
+    *,
+    base_font_name: str | None = None,
+    style: FontDescriptorStyle = NO_DESCRIPTOR_STYLE,
 ) -> tuple[CMapDecoder | None, str | None, dict[int, str], dict[int, str], bool]:
     cmap = None
     base_encoding = None
@@ -139,7 +169,7 @@ def parse_encoding(
         case dict():
             base_encoding = recover_pdf_name(encoding_obj.get("BaseEncoding"))
             if base_encoding is None:
-                base_encoding = "WinAnsiEncoding" if subtype == "TrueType" else "StandardEncoding"
+                base_encoding = implicit_base_encoding(subtype, style)
             else:
                 base_encoding_explicit = True
             differences_obj = encoding_obj.get("Differences")
@@ -159,9 +189,29 @@ def parse_encoding(
     builtin_authoritative = False
     if subtype in ("Type1", "MMType1") and not base_encoding_explicit:
         builtin, builtin_authoritative = builtin_font_encoding(font, program)
+    if (
+        not builtin
+        and not base_encoding_explicit
+        and subtype in ("Type1", "MMType1", "TrueType")
+        and not font_is_embedded(font)
+    ):
+        symbolic_font = standard_symbolic_font(base_font_name)
+        if symbolic_font is not None:
+            builtin, builtin_authoritative = dict(BUILTIN_ENCODINGS[symbolic_font]), True
     if base_encoding is None and subtype in ("Type1", "MMType1"):
         base_encoding = "StandardEncoding"
     return cmap, base_encoding, differences, builtin, builtin_authoritative
+
+
+def implicit_base_encoding(subtype: str | None, style: FontDescriptorStyle) -> str:
+    """The base encoding of an encoding dictionary without BaseEncoding, before a built-in
+    encoding replaces it. For a TrueType font, 9.6.5.4 fills a nonsymbolic font's table from
+    StandardEncoding; a symbolic one ignores the dictionary in choosing glyphs, and one without
+    flags is unspecified, so both keep WinAnsiEncoding, the encoding such fonts are written
+    in, for their text."""
+    if subtype == "TrueType" and descriptor_symbolic(style) is not False:
+        return "WinAnsiEncoding"
+    return "StandardEncoding"
 
 
 class FontEncoding:
@@ -177,6 +227,7 @@ class FontEncoding:
         "glyph_decode_table_authoritative",
         "cid_registry",
         "cid_ordering",
+        "truetype_symbolic",
     )
 
     is_cid_font: bool
@@ -190,6 +241,9 @@ class FontEncoding:
     glyph_decode_table_authoritative: bool
     cid_registry: str | None
     cid_ordering: str | None
+    # Whether a simple TrueType font's codes select glyphs directly through its (3,0) or (1,0)
+    # cmap subtable, not through glyph names (ISO 32000-2 9.6.5.4).
+    truetype_symbolic: bool
 
     def __init__(
         self,
@@ -200,9 +254,10 @@ class FontEncoding:
         is_type3: bool,
         base_font_name: str | None,
         semantic_context: SemanticContext | None,
+        style: FontDescriptorStyle = NO_DESCRIPTOR_STYLE,
     ) -> None:
         (cmap, base_encoding, differences, builtin_encoding, builtin_encoding_authoritative) = (
-            parse_encoding(font, program)
+            parse_encoding(font, program, base_font_name=base_font_name, style=style)
         )
         simple_encoding_glyph_names = build_simple_encoding_glyph_names(
             base_encoding if base_encoding in BASE_ENCODING_GLYPH_NAMES else "StandardEncoding",
@@ -219,6 +274,11 @@ class FontEncoding:
             key = base_encoding or ("Type3" if is_type3 else "")
             encoding_decode_table = build_decode_table(key, differences, context=semantic_context)
         self.is_cid_font = is_cid_font
+        self.truetype_symbolic = (
+            not is_cid_font
+            and recover_pdf_name(font.get("Subtype")) == "TrueType"
+            and truetype_uses_symbolic_cmap(encoding_entry(font), descriptor_symbolic(style))
+        )
         self.cmap = cmap
         self.cid_registry, self.cid_ordering = cid_system_info(font)
         self.base_encoding = base_encoding

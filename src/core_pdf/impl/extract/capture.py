@@ -510,9 +510,13 @@ def capture_runs(
 ) -> tuple[TextRun, ...]:
     program_runs = program.runs
     glyphs_by_seqno: dict[int, list[str]] = defaultdict(list)
+    # Each font name's descriptor style, from the decoder of its first glyph.
+    font_styles: dict[str, int] = {}
     for glyph in program.glyphs:
         if glyph.font_name:
             glyphs_by_seqno[glyph.seqno].append(glyph.font_name)
+            if glyph.font_name not in font_styles:
+                font_styles[glyph.font_name] = getattr(glyph.font_decoder, "font_style", 0)
     glyph_seqnos = tuple(sorted(glyphs_by_seqno))
     enriched_runs: list[TextRun] = []
     for index, run in enumerate(program_runs):
@@ -543,7 +547,7 @@ def capture_runs(
         if majority is None or majority == run.font_name:
             enriched_runs.append(run)
         else:
-            enriched_runs.append(run.with_font_name(majority))
+            enriched_runs.append(run.with_font_name(majority, font_styles.get(majority, 0)))
     structured_runs = apply_structure_actual_text(page, tuple(enriched_runs), structure)
     return extractable_runs(structured_runs)
 

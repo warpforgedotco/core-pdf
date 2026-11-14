@@ -30,6 +30,7 @@ from core_pdf.impl.fonts.sfnt import (
     glyf_glyph,
     placeholder_glyph_id,
 )
+from core_pdf.impl.spec.s_09_fonts.descriptor_flags import SYMBOL_CMAP_PREFIXES, mac_os_roman_code
 from core_pdf.impl.spec.s_09_fonts.helpers import is_unicode_scalar, symbol_character_code
 lazy from core_pdf_cythonized import truetype_contours
 
@@ -189,6 +190,74 @@ class UnicodeGlyphMaps:
         return inverse
 
 
+class SimpleFontCmaps:
+    """The three cmap subtables ISO 32000-2 9.6.5.4 selects a simple TrueType font's glyphs
+    by, as code to glyph ID, each read on first use and empty when the font lacks it."""
+
+    __slots__ = ("font", "tables")
+
+    def __init__(self, font: SfntFont) -> None:
+        self.font = font
+        self.tables: dict[tuple[int, int], dict[int, int]] = {}
+
+    def subtable(self, platform_id: int, encoding_id: int) -> dict[int, int]:
+        key = (platform_id, encoding_id)
+        table = self.tables.get(key)
+        if table is None:
+            table = self.tables[key] = cmap_subtable_gids(self.font, platform_id, encoding_id)
+        return table
+
+    def glyph_id(self, code: int, naming: GlyphNaming, glyph_names: SfntOutlineAccess) -> int:
+        """The glyph a simple font's code selects by 9.6.5.4, or 0 where that finds none."""
+        if naming.truetype_symbolic:
+            # A (3,0) subtable maps the code in one of four ranges, each byte prefixed with
+            # the range's high byte; without one, a (1,0) subtable maps the byte itself.
+            symbol = self.subtable(3, 0)
+            if symbol:
+                for prefix in SYMBOL_CMAP_PREFIXES:
+                    gid = symbol.get(prefix | code)
+                    if gid:
+                        return gid
+                return 0
+            return self.subtable(1, 0).get(code, 0)
+        # The code maps to a glyph name, then by the Adobe Glyph List to a Unicode value in
+        # the (3,1) subtable or, without one, by Mac OS Roman to a code in the (1,0) subtable.
+        name = naming.glyph_name(code)
+        if name == ".notdef":
+            return 0
+        gid = 0
+        unicode = self.subtable(3, 1)
+        if unicode:
+            text = glyph_name_to_unicode(name)
+            if len(text) == 1:
+                gid = unicode.get(ord(text), 0)
+        else:
+            mac_code = mac_os_roman_code(name)
+            if mac_code is not None:
+                gid = self.subtable(1, 0).get(mac_code, 0)
+        if not gid and not self.font.placeholder:
+            # A name the subtables cannot map selects the glyph the post table names so.
+            gid = glyph_names.glyph_id_for_name(name) or 0
+        return gid
+
+
+def cmap_subtable_gids(font: SfntFont, platform_id: int, encoding_id: int) -> dict[int, int]:
+    try:
+        subtable = cmap_subtable(font.table("cmap"), platform_id, encoding_id)
+        if subtable is None:
+            return {}
+        gid_for = cmap_glyph_ids(font)
+        names = subtable.mapping()
+    except Exception:
+        return {}
+    mapping: dict[int, int] = {}
+    for code, glyph_name in names.items():
+        gid = gid_for(glyph_name)
+        if gid is not None and gid > 0:
+            mapping[code] = gid
+    return mapping
+
+
 class TrueTypeFontProgram(GlyphProgram):
     __slots__ = (
         "font",
@@ -198,6 +267,7 @@ class TrueTypeFontProgram(GlyphProgram):
         "cid_to_gid",
         "cmap",
         "unicode_maps",
+        "simple_cmaps",
         "glyph_locations",
         "glyph_table_data",
         "composite_bbox_cache",
@@ -218,6 +288,7 @@ class TrueTypeFontProgram(GlyphProgram):
         self.outlines = SfntOutlineAccess(self.font, glyph_data)
         self.cid_to_gid = cid_to_gid
         self.unicode_maps = UnicodeGlyphMaps(self.font)
+        self.simple_cmaps = SimpleFontCmaps(self.font)
         self.cmap = self.selected_cmap(use_cmap=use_cmap)
 
     @property
@@ -246,6 +317,12 @@ class TrueTypeFontProgram(GlyphProgram):
 
     def glyph_id_for_code(self, code: int, naming: GlyphNaming) -> int | None:
         if not naming.is_cid_font and 0 <= code < 256 and self.cmap:
+            gid = self.simple_cmaps.glyph_id(code, naming, self.outlines)
+            if gid:
+                return gid
+            # Where 9.6.5.4 finds no glyph, the clause leaves the mapping to the processor:
+            # the code's glyph name in the font's Unicode cmap, else the code itself, which
+            # serves fonts whose subtables or flags are wrong.
             glyph_text = glyph_name_to_unicode(naming.glyph_name(code))
             if len(glyph_text) == 1:
                 return self.glyph_id_for_unicode(ord(glyph_text))
