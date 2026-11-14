@@ -40,6 +40,7 @@ from core_pdf.impl.jbig2.codec import (
     JBIG2Region,
     compose_packed_bitmap_region,
 )
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_filters import codecs, decode_spec, jbig2, predictors
 from core_pdf.impl.spec.s_07_filters.decode_spec import StreamDecodeSpec
 from core_pdf.impl.spec.s_07_filters.errors import (
@@ -125,6 +126,7 @@ def normalize_imagecodecs_array(
     return numpy.ascontiguousarray(array)
 
 
+@cites("ISO 10918-1", rule="DCTDecode: JPEG images, decoded with imagecodecs")
 def decode_jpeg_image(
     data: bytes | memoryview, *, out: numpy.ndarray | None = None
 ) -> numpy.ndarray:
@@ -135,6 +137,7 @@ def decode_jpeg_image(
     return normalize_imagecodecs_array(decoded, name="JPEG")
 
 
+@cites("ISO 15444-1", rule="JPXDecode: JPEG 2000 images, decoded with imagecodecs")
 def decode_jpx_image(
     data: bytes | memoryview, *, out: numpy.ndarray | None = None, preserve_precision: bool = False
 ) -> numpy.ndarray:
@@ -151,6 +154,8 @@ def jpx_thread_count() -> int:
     return thread_count("CORE_PDF_JPX_THREADS")
 
 
+@cites("ITU-T T.4", rule="CCITTFaxDecode with K >= 0: Group 3 (1D and 2D) coding")
+@cites("ITU-T T.6", rule="CCITTFaxDecode with K < 0: Group 4 coding")
 def decode_ccitt_fax_array(
     data: bytes | memoryview,
     *,
@@ -449,6 +454,7 @@ def decode_crypt(data: bytes, parms: object) -> bytes:
     return data
 
 
+@cites("ITU-T T.88", rule="JBIG2Decode: embedded-stream segments composed into one page")
 def decode_jbig2(data: bytes, parms: object) -> bytes:
     params = filter_params(parms)
     return jbig2.decode_jbig2(data, params, decoder_type=RecoveryJBIG2PageDecoder)

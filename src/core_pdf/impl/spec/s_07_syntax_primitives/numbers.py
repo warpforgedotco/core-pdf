@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.3.3: integer and real number tokens."""
+
 from __future__ import annotations
 
 import math

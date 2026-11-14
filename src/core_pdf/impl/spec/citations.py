@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""The specifications core implements, and the marker that cites one from code.
+"""ISO 32000-2 2: the specifications core implements, and the marker citing one from code.
 
 Every rule whose meaning depends on the PDF version, and every feature one edition, extension
 or external standard adds, carries a `cites` marker naming the specification and clause. A
@@ -49,6 +49,12 @@ SPECIFICATIONS: dict[str, Specification] = {
         "ISO 32000-2:2020, with the errata of PDF_2_0_BASELINE",
         "https://pdfa.org/resource/iso-32000-2/",
         "pdf",
+    ),
+    "Adobe ExtensionLevel 3": Specification(
+        "Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3",
+        "June 2008",
+        "https://pdfa.org/resource/pdf-specification-archive/",
+        "extension",
     ),
     "ISO 32003": Specification(
         "Adding support of AES-GCM in PDF 2.0",

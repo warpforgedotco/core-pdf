@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 9.7.5.2: the predefined CMaps, loaded by name from bundled resources."""
+
 from __future__ import annotations
 
 from functools import cache, lru_cache

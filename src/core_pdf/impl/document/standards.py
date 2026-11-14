@@ -267,7 +267,7 @@ def discover_extensions(
     return tuple(extensions)
 
 
-@cites("ISO 32000-2", "7.12.3", since="2.0", rule="a developer extension declares its URL")
+@cites("ISO 32000-2", "7.12.6", since="2.0", rule="a developer extension declares its URL")
 def extension_diagnostics(standards: DocumentStandards) -> DocumentStandards:
     if not standards.extensions:
         return standards

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.5: xref tables (7.5.4), trailers (7.5.5) and xref streams (7.5.8)."""
+
 from __future__ import annotations
 
 import re

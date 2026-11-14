@@ -10,6 +10,7 @@ lazy import numpy
 
 from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.types import GeneratedRecord
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_08_graphics.color_rendering import (
     DEFAULT_COLOR_RENDERING,
     ColorRendering,
@@ -139,6 +140,7 @@ def cms_transform(
     return cms_transform_block(profile, color_space, intent, flags, samples)
 
 
+@cites("ICC.1", rule="convert samples through an ICC profile to sRGB")
 def cms_transform_block(
     profile: bytes, color_space: str, intent: int, flags: int, samples: numpy.ndarray[Any, Any]
 ) -> ByteSamples:
@@ -163,6 +165,7 @@ def parse_icc_transform(profile: bytes) -> IccTransform:
     return parse_icc_transform_cached(bytes(profile))
 
 
+@cites("ICC.1", rule="read an ICC profile's data colour space, channels and PCS")
 @lru_cache(maxsize=32)
 def parse_icc_transform_cached(profile: bytes) -> IccTransform:
     try:

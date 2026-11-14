@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.4.1: the standard filters and their abbreviations and parameters."""
+
 from __future__ import annotations
 
 from typing import Literal, TypeAlias

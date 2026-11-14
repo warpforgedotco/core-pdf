@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 
+"""Adobe TN 5176: the standard strings and the predefined charsets."""
+
 __all__ = [
     "CFF_STANDARD_STRINGS",
     "CFF_ISO_ADOBE_STRINGS",

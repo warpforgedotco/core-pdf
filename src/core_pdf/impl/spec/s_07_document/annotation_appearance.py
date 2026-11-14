@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 12.5.5: an annotation's normal appearance and the matrix fitting it to Rect."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream

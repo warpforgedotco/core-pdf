@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
+
+"""ISO 32000-2 7.2: skipping white space, comments, strings and names without parsing them."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

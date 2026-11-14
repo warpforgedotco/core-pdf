@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.6.5.8: rendering intents, and black point compensation (8.6.5.9)."""
+
 from collections.abc import Mapping
 from typing import Literal
 

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe TN 5177: points on the cubic curves charstring path operators draw."""
+
 from __future__ import annotations
 
 

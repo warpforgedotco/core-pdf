@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 D.2: the standard, Mac Roman and WinAnsi encodings as text."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

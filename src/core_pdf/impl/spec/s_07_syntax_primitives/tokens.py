@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.2: white-space and delimiter characters, and how they changed between versions."""
+
 from __future__ import annotations
 
 import re

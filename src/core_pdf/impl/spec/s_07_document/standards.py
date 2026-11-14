@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7: the header (7.5.2) and catalog (7.7.2) versions, and extensions (7.12)."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict

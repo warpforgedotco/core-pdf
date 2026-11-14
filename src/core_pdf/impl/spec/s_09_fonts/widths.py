@@ -1,3 +1,5 @@
+"""ISO 32000-2 9.7.4.3: glyph widths: a CIDFont's W and W2 arrays, and a simple font's Widths."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping

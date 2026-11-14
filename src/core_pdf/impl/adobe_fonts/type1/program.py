@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe Type 1: eexec decryption, and the Encoding of a Type 1 font program."""
+
 from __future__ import annotations
 
 import re

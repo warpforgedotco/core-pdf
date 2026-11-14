@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 Annex A: the content stream operators and their operands."""
+
 from __future__ import annotations
 
 CONTENT_OPERATORS: dict[str, tuple[str, str | None]] = {

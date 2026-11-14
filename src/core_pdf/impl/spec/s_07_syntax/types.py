@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.3: the Python types of PDF objects, and the protocol that resolves them."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

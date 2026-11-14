@@ -1,3 +1,5 @@
+"""ISO 32000-2 14.3: the document information dictionary and the catalog's metadata stream."""
+
 from __future__ import annotations
 
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream

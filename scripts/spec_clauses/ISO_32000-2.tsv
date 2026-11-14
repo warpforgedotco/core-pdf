@@ -1,0 +1,963 @@
+0.1	PDF
+0.2	ISO 32000 and PDF
+0.3	Changes introduced in ISO 32000-2:2017
+0.4	Changes introduced in ISO 32000-2:2020
+1	Scope
+2	Normative references
+3	Terms and definitions
+4	Notation
+4.1	General
+4.2	Established notations
+5	Version designations
+6	Conformance
+6.1	General
+6.2	Conforming PDF documents
+6.3	PDF processors
+6.3.1	General
+6.3.2	Conformance of PDF processors
+6.3.2.1	General
+6.3.2.2	PDF processors providing rendering
+6.3.2.3	Interactive PDF processors
+7	Syntax
+7.1	General
+7.2	Lexical conventions
+7.2.1	General
+7.2.2	Representation
+7.2.3	Character set
+7.2.4	Comments
+7.3	Objects
+7.3.1	General
+7.3.2	Boolean objects
+7.3.3	Numeric objects
+7.3.4	String objects
+7.3.4.1	General
+7.3.4.2	Literal strings
+7.3.4.3	Hexadecimal strings
+7.3.5	Name objects
+7.3.6	Array objects
+7.3.7	Dictionary objects
+7.3.8	Stream objects
+7.3.8.1	General
+7.3.8.2	Stream extent
+7.3.9	Null object
+7.3.10	Indirect objects
+7.4	Filters
+7.4.1	General
+7.4.2	ASCIIHexDecode filter
+7.4.3	ASCII85Decode filter
+7.4.4	LZWDecode and FlateDecode filters
+7.4.4.1	General
+7.4.4.2	Details of LZW encoding
+7.4.4.3	LZWDecode and FlateDecode parameters
+7.4.4.4	LZW and Flate predictor functions
+7.4.5	RunLengthDecode filter
+7.4.6	CCITTFaxDecode filter
+7.4.7	JBIG2Decode filter
+7.4.8	DCTDecode filter
+7.4.9	JPXDecode filter
+7.4.10	Crypt filter
+7.5	File structure
+7.5.1	General
+7.5.2	File header
+7.5.3	File body
+7.5.4	Cross-reference table
+7.5.5	File trailer
+7.5.6	Incremental updates
+7.5.7	Object streams
+7.5.8	Cross-reference streams
+7.5.8.1	General
+7.5.8.2	Cross-reference stream dictionary
+7.5.8.3	Cross-reference stream data
+7.5.8.4	Compatibility with applications that do not support compressed reference streams
+7.6	Encryption
+7.6.1	General
+7.6.2	Application of encryption
+7.6.3	General encryption algorithm
+7.6.3.1	General
+7.6.3.2	Algorithm 1: Encryption of data using the RC4 or AES algorithms
+7.6.3.3	Algorithm 1.A: Encryption of data using the AES algorithms
+7.6.4	Standard security handler
+7.6.4.1	General
+7.6.4.2	Standard encryption dictionary
+7.6.4.3	File encryption key algorithm
+7.6.4.3.1	General
+7.6.4.3.2	Algorithm 2: Computing a file encryption key in order to encrypt a document (revision 4 and earlier)
+7.6.4.3.3	Algorithm 2.A: Retrieving the file encryption key from an encrypted document in order to decrypt it (revision 6 and later)
+7.6.4.3.4	Algorithm 2.B: Computing a hash (revision 6 and later)
+7.6.4.4	Password algorithms
+7.6.4.4.1	General
+7.6.4.4.2	Algorithm 3: Computing the encryption dictionary’s O-entry value (revision 4 and earlier)
+7.6.4.4.3	Algorithm 4: Computing the encryption dictionary’s U-entry value (Security handlers of revision 2)
+7.6.4.4.4	Algorithm 5: Computing the encryption dictionary’s U (user password) value (Security handlers of revision 3 or 4)
+7.6.4.4.5	Algorithm 6: Authenticating the user password (Security handlers of revision 4 and earlier)
+7.6.4.4.6	Algorithm 7: Authenticating the owner password (Security handlers of revision 4 and earlier)
+7.6.4.4.7	Algorithm 8: Computing the encryption dictionary’s U (user password) and UE (user encryption) values (Security handlers of revision 6)
+7.6.4.4.8	Algorithm 9: Computing the encryption dictionary’s O (owner password) and OE (owner encryption) values (Security handlers of revision 6)
+7.6.4.4.9	Algorithm 10: Computing the encryption dictionary’s Perms (permissions) value (Security handlers of revision 6)
+7.6.4.4.10	Algorithm 11: Authenticating the user password (Security handlers of revision 6)
+7.6.4.4.11	Algorithm 12: Authenticating the owner password (Security handlers of revision 6)
+7.6.4.4.12	Algorithm 13: Validating the permissions (Security handlers of revision 6)
+7.6.5	Public-key security handlers
+7.6.5.1	General
+7.6.5.2	Public-key encryption dictionary
+7.6.5.3	Public-key encryption algorithms
+7.6.6	Crypt filters
+7.6.7	Unencrypted wrapper document
+7.7	Document structure
+7.7.1	General
+7.7.2	Document catalog dictionary
+7.7.3	Page tree
+7.7.3.1	General
+7.7.3.2	Page tree nodes
+7.7.3.3	Page objects
+7.7.3.4	Inheritance of page attributes
+7.7.4	Name dictionary
+7.8	Content streams and resources
+7.8.1	General
+7.8.2	Content streams
+7.8.3	Resource dictionaries
+7.9	Common data structures
+7.9.1	General
+7.9.2	String object types
+7.9.2.1	General
+7.9.2.2	Text string type
+7.9.2.2.1	General
+7.9.2.2.2	Text string language escape sequences
+7.9.2.3	PDFDocEncoded string type
+7.9.2.4	Byte string type
+7.9.3	Text streams
+7.9.4	Dates
+7.9.5	Rectangles
+7.9.6	Name trees
+7.9.7	Number trees
+7.10	Functions
+7.10.1	General
+7.10.2	Type 0 (sampled) functions
+7.10.3	Type 2 (exponential interpolation) functions
+7.10.4	Type 3 (stitching) functions
+7.10.5	Type 4 (PostScript calculator) functions
+7.10.5.1	General
+7.10.5.2	Operators and operands
+7.10.5.3	Type 4 function dictionary
+7.11	File specifications
+7.11.1	General
+7.11.2	File specification strings
+7.11.2.1	General
+7.11.2.2	Absolute and relative file specifications
+7.11.3	File specification dictionaries
+7.11.4	Embedded file streams
+7.11.4.1	General
+7.11.4.2	Related files arrays
+7.11.5	URL specifications
+7.11.6	Collection items
+7.12	Extensions dictionary
+7.12.1	General
+7.12.2	Extensions dictionary
+7.12.3	Developer extensions dictionary
+7.12.4	BaseVersion
+7.12.5	ExtensionLevel
+7.12.6	URL
+8	Graphics
+8.1	General
+8.2	Graphics objects
+8.3	Coordinate systems
+8.3.1	General
+8.3.2	Coordinate spaces
+8.3.2.1	General
+8.3.2.2	Device space
+8.3.2.3	User space
+8.3.2.4	Other coordinate spaces
+8.3.2.5	Relationships among coordinate spaces
+8.3.3	Common transformations
+8.3.4	Transformation matrices
+8.4	Graphics state
+8.4.1	General
+8.4.2	Graphics state stack
+8.4.3	Details of graphics state parameters
+8.4.3.1	General
+8.4.3.2	Line width
+8.4.3.3	Line cap style
+8.4.3.4	Line join style
+8.4.3.5	Miter limit
+8.4.3.6	Line dash pattern
+8.4.4	Graphics state operators
+8.4.5	Graphics state parameter dictionaries
+8.5	Path construction and painting
+8.5.1	General
+8.5.2	Path construction operators
+8.5.2.1	General
+8.5.2.2	Cubic Bézier curves
+8.5.3	Path-painting operators
+8.5.3.1	General
+8.5.3.2	Stroking
+8.5.3.3	Filling
+8.5.3.3.1	General
+8.5.3.3.2	Non-zero winding number rule
+8.5.3.3.3	Even-odd rule
+8.5.4	Clipping path operators
+8.6	Colour spaces
+8.6.1	General
+8.6.2	Colour values
+8.6.3	Colour space families
+8.6.4	Device colour spaces
+8.6.4.1	General
+8.6.4.2	DeviceGray colour space
+8.6.4.3	DeviceRGB colour space
+8.6.4.4	DeviceCMYK colour space
+8.6.5	CIE-Based colour spaces
+8.6.5.1	General
+8.6.5.2	CalGray colour spaces
+8.6.5.3	CalRGB colour spaces
+8.6.5.4	Lab colour spaces
+8.6.5.5	ICCBased colour spaces
+8.6.5.6	Default colour spaces
+8.6.5.7	Implicit conversion of CIE-Based colour spaces
+8.6.5.8	Rendering intents
+8.6.5.9	Use of black point compensation
+8.6.6	Special colour spaces
+8.6.6.1	General
+8.6.6.2	Pattern colour spaces
+8.6.6.3	Indexed colour spaces
+8.6.6.4	Separation colour spaces
+8.6.6.5	DeviceN colour spaces
+8.6.6.6	Multitone examples
+8.6.7	Overprint control
+8.6.8	Colour operators
+8.7	Patterns
+8.7.1	General
+8.7.2	General properties of patterns
+8.7.3	Tiling patterns
+8.7.3.1	General
+8.7.3.2	Coloured tiling patterns
+8.7.3.3	Uncoloured tiling patterns
+8.7.4	Shading patterns
+8.7.4.1	General
+8.7.4.2	Shading operator
+8.7.4.3	Shading dictionaries
+8.7.4.4	Colour space: special considerations
+8.7.4.5	Shading types
+8.7.4.5.1	General
+8.7.4.5.2	Type 1 (function-based) shadings
+8.7.4.5.3	Type 2 (axial) shadings
+8.7.4.5.4	Type 3 (radial) shadings
+8.7.4.5.5	Type 4 (free-form Gouraud-shaded triangle mesh) shadings
+8.7.4.5.6	Type 5 (lattice-form Gouraud-shaded triangle mesh) shadings
+8.7.4.5.7	Type 6 (Coons patch mesh) shadings
+8.7.4.5.8	Type 7 (tensor-product patch mesh) shadings
+8.8	External objects
+8.8.1	General
+8.9	Images
+8.9.1	General
+8.9.2	Image parameters
+8.9.3	Sample representation
+8.9.4	Image coordinate system
+8.9.5	Image dictionaries
+8.9.5.1	General
+8.9.5.2	Decode arrays
+8.9.5.3	Image interpolation
+8.9.5.4	Alternate images
+8.9.6	Masked images
+8.9.6.1	General
+8.9.6.2	Stencil masking
+8.9.6.3	Explicit masking
+8.9.6.4	Colour key masking
+8.9.7	Inline images
+8.10	Form XObjects
+8.10.1	General
+8.10.2	Form dictionaries
+8.10.3	Group XObjects
+8.10.4	Reference XObjects
+8.10.4.1	General
+8.10.4.2	Printing reference XObjects
+8.10.4.3	Special considerations
+8.11	Optional content
+8.11.1	General
+8.11.2	Optional content groups
+8.11.2.1	General
+8.11.2.2	Optional content membership dictionaries
+8.11.2.3	Intent
+8.11.3	Making graphical content optional
+8.11.3.1	General
+8.11.3.2	Optional content in content streams
+8.11.3.3	Optional content in XObjects and annotations
+8.11.4	Configuring optional content
+8.11.4.1	General
+8.11.4.2	Optional content properties dictionary
+8.11.4.3	Optional content configuration dictionaries
+8.11.4.4	Usage and usage application dictionaries
+8.11.4.5	Determining the state of optional content groups
+9	Text
+9.1	General
+9.2	Organisation and use of fonts
+9.2.1	General
+9.2.2	Basics of showing text
+9.2.3	Achieving special graphical effects
+9.2.4	Glyph positioning and metrics
+9.3	Text state parameters and operators
+9.3.1	General
+9.3.2	Character spacing
+9.3.3	Word spacing
+9.3.4	Horizontal scaling
+9.3.5	Leading
+9.3.6	Text rendering mode
+9.3.7	Text rise
+9.3.8	Text knockout
+9.4	Text objects
+9.4.1	General
+9.4.2	Text-positioning operators
+9.4.3	Text-showing operators
+9.4.4	Text space details
+9.5	Introduction to font data structures
+9.6	Simple fonts
+9.6.1	General
+9.6.2	Type 1 fonts
+9.6.2.1	General
+9.6.2.2	Standard Type 1 fonts (standard 14 fonts) (PDF 1.0-1.7)
+9.6.2.3	Multiple master fonts
+9.6.3	TrueType fonts
+9.6.4	Type 3 fonts
+9.6.5	Character encoding
+9.6.5.1	General
+9.6.5.2	Encodings for Type 1 fonts
+9.6.5.3	Encodings for Type 3 fonts
+9.6.5.4	Encodings for TrueType fonts
+9.7	Composite fonts
+9.7.1	General
+9.7.2	CID-Keyed fonts overview
+9.7.3	CIDSystemInfo dictionaries
+9.7.4	CIDFonts
+9.7.4.1	General
+9.7.4.2	Glyph selection in CIDFonts
+9.7.4.3	Glyph metrics in CIDFonts
+9.7.5	CMaps
+9.7.5.1	General
+9.7.5.2	Predefined CMaps
+9.7.5.3	Embedded CMap files
+9.7.5.4	CMap example and operator summary
+9.7.6	Type 0 font dictionaries
+9.7.6.1	General
+9.7.6.2	CMap mapping
+9.7.6.3	Handling undefined characters
+9.8	Font descriptors
+9.8.1	General
+9.8.2	Font descriptor flags
+9.8.3	Font descriptors for CIDFonts
+9.8.3.1	General
+9.8.3.2	Style
+9.8.3.3	FD
+9.9	Embedded font programs
+9.9.1	General
+9.9.2	Font subsets
+9.10	Extraction of text content
+9.10.1	General
+9.10.2	Mapping character codes to Unicode values
+9.10.3	ToUnicode CMaps
+10	Rendering
+10.1	General
+10.2	Raster output device native colour
+10.3	CIE-Based colour to device colour
+10.3.1	General
+10.3.2	Establishing CIE-based colour space definitions
+10.4	Conversions among device colour spaces
+10.4.1	General
+10.4.2	Classic colour conversion methods
+10.4.2.1	General
+10.4.2.2	Conversion between DeviceGray and DeviceRGB
+10.4.2.3	Conversion between DeviceGray and DeviceCMYK
+10.4.2.4	Conversion from DeviceRGB to DeviceCMYK
+10.4.2.5	Conversion from DeviceCMYK to DeviceRGB
+10.5	Transfer functions
+10.6	Halftones
+10.6.1	General
+10.6.2	Halftone screens
+10.6.3	Spot functions
+10.6.4	Threshold arrays
+10.6.5	Halftone dictionaries
+10.6.5.1	General
+10.6.5.2	Type 1 halftones
+10.6.5.3	Type 6 halftones
+10.6.5.4	Type 10 halftones
+10.6.5.5	Type 16 halftones
+10.6.5.6	Type 5 halftones
+10.7	Scan conversion details
+10.7.1	General
+10.7.2	Flatness tolerance
+10.7.3	Smoothness tolerance
+10.7.4	Scan conversion rules
+10.7.5	Automatic stroke adjustment
+10.8	Rendering for separations
+10.8.1	General
+10.8.2	Separations
+10.8.3	Separation simulation
+11	Transparency
+11.1	General
+11.2	Overview of transparency
+11.3	Basic compositing computations
+11.3.1	General
+11.3.2	Basic notation for compositing computations
+11.3.3	Basic compositing formula
+11.3.4	Blending colour space
+11.3.5	Blend mode
+11.3.5.1	General
+11.3.5.2	Separable blend modes
+11.3.5.3	Non-separable blend modes
+11.3.6	Interpretation of alpha
+11.3.7	Shape and opacity computations
+11.3.7.1	General
+11.3.7.2	Source shape and opacity
+11.3.7.3	Result shape and opacity
+11.3.8	Summary of basic compositing computations
+11.4	Transparency groups
+11.4.1	General
+11.4.2	Notation for group compositing computations
+11.4.3	Group structure and nomenclature
+11.4.4	Group compositing computations
+11.4.5	Isolated groups
+11.4.6	Knockout groups
+11.4.7	Page group
+11.4.8	Summary of group compositing computations
+11.5	Soft masks
+11.5.1	General
+11.5.2	Deriving a soft mask from group alpha
+11.5.3	Deriving a soft mask from group luminosity
+11.6	Specifying transparency in PDF
+11.6.1	General
+11.6.2	Specifying source and backdrop colours
+11.6.3	Specifying blending colour space and blend mode
+11.6.4	Specifying shape and opacity
+11.6.4.1	General
+11.6.4.2	Object shape and opacity
+11.6.4.3	Mask shape and opacity
+11.6.4.4	Constant shape and opacity
+11.6.5	Specifying soft masks
+11.6.5.1	Soft-mask dictionaries
+11.6.5.2	Soft-mask images
+11.6.6	Transparency group XObjects
+11.6.7	Patterns and transparency
+11.7	Colour space and rendering issues
+11.7.1	General
+11.7.2	Colour spaces for transparency groups
+11.7.3	Spot colours and transparency
+11.7.4	Overprinting and transparency
+11.7.4.1	General
+11.7.4.2	Blend modes and overprinting
+11.7.4.3	Compatibility with opaque overprinting
+11.7.4.4	Special path-painting considerations
+11.7.4.5	Summary of overprinting behavior
+11.7.5	Rendering parameters and transparency
+11.7.5.1	General
+11.7.5.2	Halftone and transfer function
+11.7.5.3	Rendering intent, black point compensation and colour conversions
+12	Interactive features
+12.1	General
+12.2	Viewer preferences
+12.3	Document-level navigation
+12.3.1	General
+12.3.2	Destinations
+12.3.2.1	General
+12.3.2.2	Explicit destinations
+12.3.2.3	Structure destinations
+12.3.2.4	Named destinations
+12.3.3	Document outline
+12.3.4	Thumbnail images
+12.3.5	Collections
+12.3.5.1	General
+12.3.5.2	Collection hierarchical folders
+12.3.6	Navigators
+12.4	Page-level navigation
+12.4.1	General
+12.4.2	Page labels
+12.4.3	Articles
+12.4.4	Presentations
+12.4.4.1	General
+12.4.4.2	Sub-page navigation
+12.5	Annotations
+12.5.1	General
+12.5.2	Annotation dictionaries
+12.5.3	Annotation flags
+12.5.4	Border styles
+12.5.5	Appearance streams
+12.5.6	Annotation types
+12.5.6.1	General
+12.5.6.2	Markup annotations
+12.5.6.3	Annotation states
+12.5.6.4	Text annotations
+12.5.6.5	Link annotations
+12.5.6.6	Free text annotations
+12.5.6.7	Line annotations
+12.5.6.8	Square and circle annotations
+12.5.6.9	Polygon and polyline annotations
+12.5.6.10	Text markup annotations
+12.5.6.11	Caret annotations
+12.5.6.12	Rubber stamp annotations
+12.5.6.13	Ink annotations
+12.5.6.14	Popup annotations
+12.5.6.15	File attachment annotations
+12.5.6.16	Sound annotations
+12.5.6.17	Movie annotations
+12.5.6.18	Screen annotations
+12.5.6.19	Widget annotations
+12.5.6.20	Printer’s mark annotations
+12.5.6.21	Trap network annotations
+12.5.6.22	Watermark annotations
+12.5.6.23	Redaction annotations
+12.5.6.24	Projection annotations
+12.5.6.25	3D and RichMedia annotations
+12.6	Actions
+12.6.1	General
+12.6.2	Action dictionaries
+12.6.3	Trigger events
+12.6.4	Action types
+12.6.4.1	General
+12.6.4.2	Go-To actions
+12.6.4.3	Remote Go-To actions
+12.6.4.4	Embedded Go-To actions
+12.6.4.5	GoToDp action
+12.6.4.6	Launch actions
+12.6.4.7	Thread actions
+12.6.4.8	URI actions
+12.6.4.9	Sound actions
+12.6.4.10	Movie actions
+12.6.4.11	Hide actions
+12.6.4.12	Named actions
+12.6.4.13	Set-OCG-state actions
+12.6.4.14	Rendition actions
+12.6.4.15	Transition actions
+12.6.4.16	Go-To-3D-View actions
+12.6.4.17	ECMAScript actions
+12.6.4.18	Rich-Media-Execute actions
+12.7	Forms
+12.7.1	General
+12.7.2	Interactive Forms
+12.7.3	Interactive form dictionary
+12.7.4	Field dictionaries
+12.7.4.1	General
+12.7.4.2	Field names
+12.7.4.3	Variable text
+12.7.5	Field types
+12.7.5.1	General
+12.7.5.2	Button fields
+12.7.5.2.1	General
+12.7.5.2.2	Push-buttons
+12.7.5.2.3	Check boxes
+12.7.5.2.4	Radio buttons
+12.7.5.3	Text fields
+12.7.5.4	Choice fields
+12.7.5.5	Signature fields
+12.7.6	Form actions
+12.7.6.1	General
+12.7.6.2	Submit-form action
+12.7.6.3	Reset-form action
+12.7.6.4	Import-data action
+12.7.7	Named pages
+12.7.8	Forms data format
+12.7.8.1	General
+12.7.8.2	FDF file structure
+12.7.8.2.1	General
+12.7.8.2.2	FDF header
+12.7.8.2.3	FDF body
+12.7.8.2.4	FDF trailer
+12.7.8.3	FDF catalog
+12.7.8.3.1	General
+12.7.8.3.2	FDF fields
+12.7.8.3.3	FDF pages
+12.7.8.3.4	FDF annotation dictionaries
+12.7.9	Non-interactive forms
+12.8	Digital signatures
+12.8.1	General
+12.8.2	Transform methods
+12.8.2.1	General
+12.8.2.2	DocMDP
+12.8.2.2.1	General
+12.8.2.2.2	Validating signatures that use the DocMDP transform method
+12.8.2.3	UR
+12.8.2.4	FieldMDP
+12.8.3	Signature interoperability
+12.8.3.1	General
+12.8.3.2	PKCS #1 signatures
+12.8.3.3	CMS (PKCS #7) signatures
+12.8.3.3.1	General
+12.8.3.3.2	Revocation of CMS-based signatures
+12.8.3.4	CAdES signatures as used in PDF
+12.8.3.4.1	General
+12.8.3.4.2	Signature dictionary for PAdES signatures
+12.8.3.4.3	Attributes for PAdES signatures
+12.8.3.4.4	Profiles of ETSI.CAdES.detached
+12.8.3.4.5	Requirements for validation of PAdES signatures
+12.8.3.4.6	Signature revocation checking model for PAdES signatures
+12.8.3.4.7	Revocation checking PAdES signatures at the current time
+12.8.3.4.8	Revocation checking PAdES signatures at a time in the past
+12.8.4	Long term validation of signatures
+12.8.4.1	General
+12.8.4.2	Introduction to the document security store (DSS)
+12.8.4.3	Document Security Store (DSS)
+12.8.4.4	Validation-related information (VRI)
+12.8.4.5	Usage of the DSS VRI
+12.8.5	Document timestamp (DTS) dictionary
+12.8.5.1	General
+12.8.5.2	Initial document timestamp dictionary
+12.8.5.3	Subsequent document timestamp dictionaries
+12.8.6	Permissions
+12.8.7	Legal content attestations
+12.9	Measurement properties
+12.9.1	General
+12.9.2	Algorithm: Use of a number format array to create a formatted text string
+12.10	Geospatial features
+12.10.1	General
+12.10.2	Geospatial measure dictionary
+12.10.3	Geographic coordinate system dictionary
+12.10.4	Projected coordinate system dictionary
+12.10.5	Point data dictionary
+12.11	Document requirements
+12.11.1	General
+12.11.2	Requirement types
+12.11.3	Requirement penalty values
+12.11.4	Requirement versions
+12.11.5	Requirement handlers
+12.11.6	Requirements processing
+13	Multimedia features
+13.1	General
+13.2	Multimedia
+13.2.1	General
+13.2.2	Viability
+13.2.3	Renditions
+13.2.3.1	General
+13.2.3.2	Media renditions
+13.2.3.3	Selector renditions
+13.2.4	Media clip objects
+13.2.4.1	General
+13.2.4.2	Media clip data
+13.2.4.3	Media clip section
+13.2.5	Media play parameters
+13.2.6	Media screen parameters
+13.2.6.1	General
+13.2.6.2	Media offset dictionary
+13.2.6.3	Timespan dictionary
+13.2.7	Other multimedia objects
+13.2.7.1	General
+13.2.7.2	Media players dictionary
+13.2.7.2.1	General
+13.2.7.2.2	Algorithm: Media Player
+13.2.7.3	Media player info dictionary
+13.2.7.4	Software identifier dictionary
+13.2.7.4.1	General
+13.2.7.4.2	Algorithm: software identifier
+13.2.7.4.3	Software URIs
+13.2.7.4.4	Version arrays
+13.2.7.5	Monitor specifier
+13.3	Sounds
+13.4	Movies
+13.5	Alternate presentations
+13.6	3D Artwork
+13.6.1	General
+13.6.2	3D annotations
+13.6.3	3D streams
+13.6.3.1	General
+13.6.3.2	3D animation style dictionaries
+13.6.3.3	3D reference dictionaries
+13.6.4	3D views
+13.6.4.1	General
+13.6.4.2	Projection dictionaries
+13.6.4.3	3D background dictionaries
+13.6.4.4	3D render mode dictionaries
+13.6.4.5	3D lighting scheme dictionaries
+13.6.4.6	3D cross section dictionaries
+13.6.4.7	3D node dictionaries
+13.6.5	Coordinate systems for 3D
+13.6.6	3D markup
+13.6.7	Persistence of 3D measurements and markups
+13.6.7.1	General
+13.6.7.2	The 3D units dictionary
+13.6.7.3	3D measurement/markup dictionary
+13.6.7.3.1	General
+13.6.7.3.2	3D linear dimension measurement
+13.6.7.3.3	3D perpendicular dimension measurement
+13.6.7.3.4	3D angular dimension measurement
+13.6.7.3.5	3D radial dimension
+13.6.7.3.6	3D comment note
+13.6.7.4	3D measurements and projection annotations
+13.7	Rich media
+13.7.1	General
+13.7.2	RichMedia annotations
+13.7.2.1	General
+13.7.2.2	RichMediaSettings dictionary
+13.7.2.2.1	General
+13.7.2.2.2	RichMediaActivation dictionary
+13.7.2.2.3	RichMediaDeactivation dictionary
+13.7.2.2.4	RichMediaAnimation dictionary
+13.7.2.2.5	RichMediaPresentation dictionary
+13.7.2.2.6	RichMediaWindow dictionary
+13.7.2.3	RichMediaContent dictionary
+13.7.2.3.1	General
+13.7.2.3.2	The assets name tree
+13.7.2.3.3	RichMediaConfiguration dictionary
+13.7.2.3.4	RichMediaInstance dictionary
+13.7.2.3.5	View dictionary
+13.7.2.3.6	View params dictionary
+13.7.2.3.6.1	General
+13.7.2.3.6.2	Saving state data
+13.7.2.3.6.3	Loading state data
+14	Document interchange
+14.1	General
+14.2	Procedure sets
+14.3	Metadata
+14.3.1	General
+14.3.2	Metadata streams
+14.3.3	Document information dictionary
+14.3.4	Reconciling two sources of document metadata
+14.4	File identifiers
+14.5	Page-piece dictionaries
+14.6	Marked content
+14.6.1	General
+14.6.2	Property lists
+14.7	Logical structure
+14.7.1	General
+14.7.2	Structure hierarchy
+14.7.3	Structure types
+14.7.4	Namespaces
+14.7.4.1	General
+14.7.4.2	Namespace dictionary
+14.7.5	Structure content
+14.7.5.1	General
+14.7.5.1.1	Content items
+14.7.5.2	Marked-content sequences as content items
+14.7.5.3	PDF objects as content items
+14.7.5.4	Finding structure elements from content items
+14.7.6	Structure attributes
+14.7.6.1	General
+14.7.6.2	Attribute classes
+14.7.6.3	Attribute revision numbers
+14.7.6.4	User properties
+14.7.7	Example of logical structure
+14.8	Tagged PDF
+14.8.1	General
+14.8.2	Tagged PDF and page content
+14.8.2.1	General
+14.8.2.2	Real content and Artifacts
+14.8.2.2.1	General
+14.8.2.2.2	Specification of Artifacts
+14.8.2.3	Soft hyphens
+14.8.2.4	Hidden or invisible page content
+14.8.2.5	Page content order and logical content order
+14.8.2.5.1	General
+14.8.2.5.2	Sequencing of annotations
+14.8.2.5.3	Reverse-order show strings
+14.8.2.6	Unicode mapping in tagged PDF
+14.8.2.6.1	General
+14.8.2.6.2	Identifying word breaks
+14.8.3	Basic layout model
+14.8.3.1	General
+14.8.3.2	Reference area
+14.8.3.3	Progression direction
+14.8.4	Standard structure types
+14.8.4.1	General
+14.8.4.2	Nesting of standard structure elements
+14.8.4.3	Document level structure types
+14.8.4.4	Grouping level structure types
+14.8.4.5	Block level structure types
+14.8.4.6	Sub-block level structure type
+14.8.4.7	Inline level structure types
+14.8.4.7.1	General
+14.8.4.7.2	General inline level structure types
+14.8.4.7.3	Ruby and warichu elements
+14.8.4.8	Other structure types
+14.8.4.8.1	General
+14.8.4.8.2	Standard structure types for lists
+14.8.4.8.3	Table structure types
+14.8.4.8.4	Caption structure type
+14.8.4.8.5	Figure structure type
+14.8.4.8.6	Formula structure type
+14.8.4.8.7	Artifact structure type
+14.8.5	Standard structure attributes
+14.8.5.1	General
+14.8.5.2	Standard attribute owners
+14.8.5.3	Attribute values and inheritance
+14.8.5.4	Layout attributes
+14.8.5.4.1	General
+14.8.5.4.2	General layout attributes
+14.8.5.4.3	Layout Attributes for BLSEs
+14.8.5.4.4	Layout Attributes for ILSEs
+14.8.5.4.5	Content and allocation rectangles
+14.8.5.4.6	Figure, Form and Formula attributes
+14.8.5.4.7	Column attributes
+14.8.5.5	List attributes
+14.8.5.6	PrintField attributes
+14.8.5.7	Table attributes
+14.8.5.8	Artifact attributes
+14.8.6	Standard structure namespaces
+14.8.6.1	Namespaces for standard structure types and attributes
+14.8.6.2	Role maps and namespaces
+14.8.6.3	Other namespaces
+14.9	Repurposing and accessibility support
+14.9.1	General
+14.9.2	Natural language specification
+14.9.2.1	General
+14.9.2.2	Language identifiers
+14.9.2.3	Language specification hierarchy
+14.9.2.4	Multi-language text arrays
+14.9.3	Alternate descriptions
+14.9.4	Replacement text
+14.9.5	Expansion of abbreviations and acronyms
+14.9.6	Pronunciation hints
+14.10	Web capture
+14.10.1	General
+14.10.2	Web capture information dictionary
+14.10.3	Content database
+14.10.3.1	General
+14.10.3.2	URL strings
+14.10.3.3	Digital identifiers
+14.10.3.4	Unique name generation
+14.10.4	Content sets
+14.10.4.1	General
+14.10.4.2	Page sets
+14.10.4.3	Image sets
+14.10.5	Source information
+14.10.5.1	General
+14.10.5.2	URL alias dictionaries
+14.10.5.3	Command dictionaries
+14.10.5.4	Command settings
+14.10.6	Object attributes related to web capture
+14.11	Prepress support
+14.11.1	General
+14.11.2	Page boundaries
+14.11.2.1	General
+14.11.2.2	Display of page boundaries
+14.11.3	Printer’s marks
+14.11.4	Separation dictionaries
+14.11.5	Output intents
+14.11.6	Trapping support
+14.11.6.1	General
+14.11.6.2	Trap network annotations
+14.11.6.3	Trap network appearances
+14.11.7	Open prepress interface (OPI)
+14.12	Document parts
+14.12.1	General
+14.12.2	DPart tree structure
+14.12.3	Connecting the DPart tree structure to pages
+14.12.4	Data structures
+14.12.4.1	General
+14.12.4.2	Document part metadata
+14.13	Associated files
+14.13.1	General
+14.13.2	Embedded associated files
+14.13.3	Associated files linked to the PDF document’s catalog
+14.13.4	Associated files linked to a page dictionary
+14.13.5	Associated files linked to graphics objects
+14.13.6	Associated files linked to structure elements
+14.13.7	Associated files linked to XObjects
+14.13.8	Associated files linked to DParts
+14.13.9	Associated files linked to an annotation dictionary
+14.13.10	Associated file examples
+Annex A	(informative) Operator Summary
+A.1	General
+A.2	PDF content stream operators
+Annex B	(informative) Operators in Type 4 Functions
+B.1	General
+B.2	Arithmetic operators
+B.3	Relational, boolean, and bitwise operators
+B.4	Conditional operators
+B.5	Stack operators
+Annex C	(informative) Advice on maximising portability
+C.1	General
+C.2	Architectural limits
+C.3	Memory limits
+C.4	File Limits
+Annex D	(normative) Character sets and encodings
+D.1	General
+D.2	Latin character set and encodings
+D.3	PDFDocEncoding character set
+D.4	Expert set and MacExpert encoding
+D.5	Symbol set and encoding
+D.6	ZapfDingbats set and encoding
+Annex E	(normative) Extending PDF
+E.1	General
+E.2	Classes of PDF names
+Annex F	(normative) Linearized PDF
+F.1	General
+F.2	Background and assumptions
+F.3	Linearized PDF document structure
+F.3.1	General
+F.3.2	Header (Part 1)
+F.3.3	Linearization parameter dictionary (Part 2)
+F.3.4	First-page cross-reference table and trailer (Part 3)
+F.3.5	Document catalog dictionary and document-level objects (Part 4)
+F.3.6	Hint streams (Parts 5 and 10)
+F.3.7	First-page section (Part 6)
+F.3.8	Remaining pages (Part 7)
+F.3.9	Shared objects (Part 8)
+F.3.10	Other objects (Part 9)
+F.3.11	Main cross-reference and trailer (Part 11)
+F.4	Hint tables
+F.4.1	General
+F.4.2	Page offset hint table
+F.4.3	Shared object hint table
+F.4.4	Thumbnail hint table
+F.4.5	Generic hint tables
+F.4.6	Extended generic hint tables
+F.4.7	Embedded file stream hint tables
+Annex G	(informative) Linearized PDF access strategies
+G.1	General
+G.2	Opening at the first page
+G.3	Opening at an arbitrary page
+G.4	Going to another page of an open document
+G.5	Drawing a page incrementally
+G.6	Following an article thread
+G.7	Accessing an updated file
+Annex H	(informative) Example PDF files
+H.1	General
+H.2	Minimal PDF file
+H.3	Simple text string example
+H.4	Simple graphics example
+H.5	Page tree example
+H.6	Outline hierarchy example
+H.7	Updating example
+H.7.1	General
+H.7.2	Stage 1: Add four text annotations
+H.7.3	Stage 2: Modify text of one annotation
+H.7.4	Stage 3: Delete two annotations
+H.7.5	Stage 4: Add three annotations and update metadata
+H.8	Structure elements examples
+H.8.1	General
+H.8.2	Table of Contents
+H.8.3	Hierarchical lists
+H.8.4	Example of Sub standard structure type
+Annex I	(normative) PDF versions and compatibility
+I.1	General
+I.2	PDF version numbers
+I.3	Feature compatibility
+Annex J	(informative) XObject comparison
+J.1	Background
+J.2	General
+J.3	Object comparisons
+J.3.1	Boolean objects
+J.3.2	Numeric objects
+J.3.3	String objects
+J.3.4	Name objects
+J.3.5	Array objects
+J.3.6	Dictionary objects
+J.3.7	Stream objects
+J.4	Known issues
+J.4.1	Equal vs. equivalent
+J.4.2	Recursion in dictionaries
+Annex K	(normative) XFA forms
+K.1	General
+K.2	Access to the XFA template and other resources
+Annex L	(normative) Parent-child relationships between the standard structure elements in the standard structure namespace for PDF 2.0
+Annex M	(informative) Differences between the standard structure namespaces
+Annex N	(informative) Best practice for halftones
+N.1	General
+N.2	Classic approach
+N.3	Object-based approach
+Annex O	(normative) Fragment identifiers
+O.1	General
+O.2	Fragment identifiers
+O.2.1	PDF object identifiers
+O.2.2	PDF open parameters
+Annex P	(informative) An algorithm to determine the actual blending colour space of a transparency group
+Annex Q	(normative) Method for determining transparency on a page
+Q.1	General
+Q.2	Page content
+Q.3	Form XObjects
+Q.4	Image XObjects
+Q.5	Text objects
+14.8.4.7.4	Ruby and warichu elements

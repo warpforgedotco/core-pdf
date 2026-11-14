@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.3: bounding boxes in transformed coordinate systems."""
+
 from __future__ import annotations
 
 import math

@@ -11,30 +11,30 @@ Rules that depend on the document's effective PDF version (`SemanticContext`).
 
 | Applies | Rule | Clause | Code |
 | --- | --- | --- | --- |
-| before PDF 1.2 | a # in a name is a literal character | ISO 32000-2 7.3.5 | `core_pdf.impl.document.navigation.legacy_name_context` |
-| from PDF 1.2 | UTF-16BE text strings, after the byte order mark FE FF | ISO 32000-2 7.9.2.2 | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
-| from PDF 1.2 | a # in a name starts a hexadecimal escape | ISO 32000-2 7.3.5 | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
-| from PDF 1.3 | NUL is a white-space character | ISO 32000-2 7.2.3 | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
-| from PDF 1.3 | PDFDocEncoding defines byte A0 (Euro sign) | ISO 32000-2 D.3 | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
-| from PDF 1.3 | WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet | ISO 32000-2 D.2 | `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names` |
-| from PDF 1.3 | an Indexed colour space may have a Separation or DeviceN base | ISO 32000-2 8.6.6.3 | `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned` |
-| from PDF 1.5 | a role map can remap standard structure types | ISO 32000-2 14.7.3 | `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role` |
-| from PDF 1.5 | cross-reference streams | ISO 32000-2 7.5.8 | `core_pdf.impl.document.editing.save` |
-| from PDF 1.7 | AES-256 encryption (PDF 1.7 with an extension, or 2.0) | ISO 32000-2 7.6.4 | `core_pdf.impl.document.editing.save` |
-| from PDF 2.0 | UTF-8 text strings, after the byte order mark EF BB BF | ISO 32000-2 7.9.2.2 | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
-| from PDF 2.0 | a JPX image's Decode array applies when it has a ColorSpace | ISO 32000-2 7.4.9 | `core_pdf.impl.spec.s_08_graphics.image_spec.image_decode_array_applies` |
-| from PDF 2.0 | a developer extension declares its URL | ISO 32000-2 7.12.3 | `core_pdf.impl.document.standards.extension_diagnostics` |
-| from PDF 2.0 | object identifiers are written in canonical form | ISO 32000-2 7.3.10 | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
-| from PDF 2.0 | revised ColorDodge and ColorBurn | ISO 32000-2 11.3.5.2 | `core_pdf.impl.spec.s_11_transparency.blend.revised_blending` |
-| from PDF 2.0 | { and } delimit only PostScript calculator functions | ISO 32000-2 7.2.3 | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
+| before PDF 1.2 | a # in a name is a literal character | ISO 32000-2 7.3.5 (Name objects) | `core_pdf.impl.document.navigation.legacy_name_context` |
+| from PDF 1.2 | UTF-16BE text strings, after the byte order mark FE FF | ISO 32000-2 7.9.2.2 (Text string type) | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
+| from PDF 1.2 | a # in a name starts a hexadecimal escape | ISO 32000-2 7.3.5 (Name objects) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
+| from PDF 1.3 | NUL is a white-space character | ISO 32000-2 7.2.3 (Character set) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
+| from PDF 1.3 | PDFDocEncoding defines byte A0 (Euro sign) | ISO 32000-2 D.3 (PDFDocEncoding character set) | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
+| from PDF 1.3 | WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet | ISO 32000-2 D.2 (Latin character set and encodings) | `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names` |
+| from PDF 1.3 | an Indexed colour space may have a Separation or DeviceN base | ISO 32000-2 8.6.6.3 (Indexed colour spaces) | `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned` |
+| from PDF 1.5 | a role map can remap standard structure types | ISO 32000-2 14.7.3 (Structure types) | `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role` |
+| from PDF 1.5 | cross-reference streams | ISO 32000-2 7.5.8 (Cross-reference streams) | `core_pdf.impl.document.editing.save` |
+| from PDF 1.7 | AES-256 encryption (PDF 1.7 with an extension, or 2.0) | ISO 32000-2 7.6.4 (Standard security handler) | `core_pdf.impl.document.editing.save` |
+| from PDF 2.0 | UTF-8 text strings, after the byte order mark EF BB BF | ISO 32000-2 7.9.2.2 (Text string type) | `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string` |
+| from PDF 2.0 | a JPX image's Decode array applies when it has a ColorSpace | ISO 32000-2 7.4.9 (JPXDecode filter) | `core_pdf.impl.spec.s_08_graphics.image_spec.image_decode_array_applies` |
+| from PDF 2.0 | a developer extension declares its URL | ISO 32000-2 7.12.6 (URL) | `core_pdf.impl.document.standards.extension_diagnostics` |
+| from PDF 2.0 | object identifiers are written in canonical form | ISO 32000-2 7.3.10 (Indirect objects) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
+| from PDF 2.0 | revised ColorDodge and ColorBurn | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.revised_blending` |
+| from PDF 2.0 | { and } delimit only PostScript calculator functions | ISO 32000-2 7.2.3 (Character set) | `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules` |
 
 Features a version introduced, which core reads whatever version a document declares:
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
-| PDF 2.0 | black point compensation (UseBlackPtComp) | ISO 32000-2 8.6.5.9 | `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation` |
-| PDF 2.0 | revision 6 password hash (Algorithm 2.B) | ISO 32000-2 7.6.4.3.4 | `core_pdf.impl.spec.s_07_security.standard.r6_password_hash` |
-| PDF 2.0 | structure namespaces and RoleMapNS | ISO 32000-2 14.7.4 | `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace` |
+| PDF 2.0 | black point compensation (UseBlackPtComp) | ISO 32000-2 8.6.5.9 (Use of black point compensation) | `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation` |
+| PDF 2.0 | revision 6 password hash (Algorithm 2.B) | ISO 32000-2 7.6.4.3.4 (Algorithm 2.B: Computing a hash (revision 6 and later)) | `core_pdf.impl.spec.s_07_security.standard.r6_password_hash` |
+| PDF 2.0 | structure namespaces and RoleMapNS | ISO 32000-2 14.7.4 (Namespaces) | `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace` |
 
 ## Extensions
 
@@ -99,32 +99,101 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **ISO 32000-2**: Document management - Portable document format - Part 2: PDF 2.0 (ISO 32000-2:2020, with the errata of PDF_2_0_BASELINE)
 
-- 7.3 `core_pdf.impl.document.object_writer`: PDF objects as bytes, written by the compiled ObjectWriter
-- 7.3 `core_pdf.impl.spec.s_07_syntax.serialize`: write PDF objects as bytes, the inverse of the lexer
-- 7.6 `core_pdf.impl.spec.s_07_security.output`: the values and object encryption that writing an encrypted file needs
-- 11.3.5.2 `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn
-- 11.3.5.2 `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn in PDF 1.7
-- 14.7.3 `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
-- 14.7.4 `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
-- 7.12.3 `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
-- 7.2.3 `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: NUL is a white-space character
-- 7.2.3 `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: { and } delimit only PostScript calculator functions
-- 7.3.10 `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: object identifiers are written in canonical form
-- 7.3.5 `core_pdf.impl.document.navigation.legacy_name_context`: a # in a name is a literal character
-- 7.3.5 `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: a # in a name starts a hexadecimal escape
-- 7.4.9 `core_pdf.impl.spec.s_08_graphics.image_spec.image_decode_array_applies`: a JPX image's Decode array applies when it has a ColorSpace
-- 7.5.8 `core_pdf.impl.document.editing.save`: cross-reference streams
-- 7.6.4 `core_pdf.impl.document.editing.save`: AES-256 encryption (PDF 1.7 with an extension, or 2.0)
-- 7.6.4.3.3 `core_pdf.impl.spec.s_07_security.standard.compute_password_hash`: revision 5 password hash (AES-256 before revision 6)
-- 7.6.4.3.4 `core_pdf.impl.spec.s_07_security.standard.r6_password_hash`: revision 6 password hash (Algorithm 2.B)
-- 7.9.2.2 `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-16BE text strings, after the byte order mark FE FF
-- 7.9.2.2 `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-8 text strings, after the byte order mark EF BB BF
-- 8.6.5.9 `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
-- 8.6.6.3 `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
-- D.2 `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
-- D.3 `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: PDFDocEncoding defines byte A0 (Euro sign)
+- 2 (Normative references) `core_pdf.impl.spec.citations`: the specifications core implements, and the marker citing one from code
+- 7 (Syntax) `core_pdf.impl.spec.exceptions`: the errors raised for a file that breaks the syntax or cannot be read
+- 7 (Syntax) `core_pdf.impl.spec.s_07_document.standards`: the header (7.5.2) and catalog (7.7.2) versions, and extensions (7.12)
+- 7.2 (Lexical conventions) `core_pdf.impl.spec.s_07_syntax_primitives.scanning`: skipping white space, comments, strings and names without parsing them
+- 7.2 (Lexical conventions) `core_pdf.impl.spec.s_07_syntax_primitives.tokens`: white-space and delimiter characters, and how they changed between versions
+- 7.3 (Objects) `core_pdf.impl.document.object_writer`: PDF objects as bytes, written by the compiled ObjectWriter
+- 7.3 (Objects) `core_pdf.impl.spec.s_07_syntax.lexer`: parsing objects, and indirect objects (7.3.10), from bytes
+- 7.3 (Objects) `core_pdf.impl.spec.s_07_syntax.serialize`: write PDF objects as bytes, the inverse of the lexer
+- 7.3 (Objects) `core_pdf.impl.spec.s_07_syntax.types`: the Python types of PDF objects, and the protocol that resolves them
+- 7.3 (Objects) `core_pdf.impl.spec.s_07_syntax_primitives.coercion`: reading PDF numbers, names, strings and rectangles as Python values
+- 7.3 (Objects) `core_pdf.impl.spec.types`: the name, string and indirect reference objects
+- 7.3.3 (Numeric objects) `core_pdf.impl.spec.s_07_syntax_primitives.numbers`: integer and real number tokens
+- 7.3.8 (Stream objects) `core_pdf.impl.spec.s_07_syntax.stream`: stream objects
+- 7.3.10 (Indirect objects) `core_pdf.impl.spec.s_07_syntax.resolution`: following indirect references through a value and its contents
+- 7.3.10 (Indirect objects) `core_pdf.impl.spec.s_07_syntax.resolver`: resolving indirect references through the xref and object streams
+- 7.4 (Filters) `core_pdf.impl.spec.s_07_filters.codecs`: the ASCIIHex, ASCII85, LZW, Flate and RunLength decode filters
+- 7.4 (Filters) `core_pdf.impl.spec.s_07_filters.decode_spec`: a stream's Filter and DecodeParms entries, normalized into decoding steps
+- 7.4 (Filters) `core_pdf.impl.spec.s_07_filters.errors`: the errors a filter or predictor raises
+- 7.4 (Filters) `core_pdf.impl.spec.s_07_filters.pipeline`: applying a stream's filters in order
+- 7.4.1 (General) `core_pdf.impl.spec.s_07_filters.registry`: the standard filters and their abbreviations and parameters
+- 7.4.7 (JBIG2Decode filter) `core_pdf.impl.spec.s_07_filters.jbig2`: the JBIG2Decode filter and its JBIG2Globals stream
+- 7.5 (File structure) `core_pdf.impl.spec.s_07_syntax.xref`: xref tables (7.5.4), trailers (7.5.5) and xref streams (7.5.8)
+- 7.5.7 (Object streams) `core_pdf.impl.spec.s_07_syntax.objects`: object streams
+- 7.6 (Encryption) `core_pdf.impl.spec.s_07_security.document`: a document's Encrypt dictionary, made into the handler that decrypts it
+- 7.6 (Encryption) `core_pdf.impl.spec.s_07_security.output`: the values and object encryption that writing an encrypted file needs
+- 7.6.4 (Standard security handler) `core_pdf.impl.spec.s_07_security.standard`: the standard security handler: passwords, file keys and crypt filters
+- 7.7.3 (Page tree) `core_pdf.impl.spec.s_07_document.page`: page tree nodes, and a page's inherited boxes, rotation and user unit
+- 7.7.3.4 (Inheritance of page attributes) `core_pdf.impl.spec.s_07_syntax.inherited_values`: values a dictionary inherits from its Parent chain
+- 7.8 (Content streams and resources) `core_pdf.impl.spec.s_07_content.interpreter`: interpreting a content stream's graphics, text and XObject operators
+- 7.8.2 (Content streams) `core_pdf.impl.spec.s_07_content.operations`: content stream operations: their tokens, operand checks and serialization
+- 7.8.2 (Content streams) `core_pdf.impl.spec.s_07_content.streams`: running content streams and the form XObjects they invoke
+- 7.8.3 (Resource dictionaries) `core_pdf.impl.spec.s_07_syntax.resources`: resource dictionaries
+- 7.9 (Common data structures) `core_pdf.impl.spec.s_07_syntax.trees`: name trees and number trees
+- 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string`: text strings in PDFDocEncoding, UTF-16BE or UTF-8
+- 7.10 (Functions) `core_pdf.impl.spec.s_08_graphics.pdf_function`: functions: sampled, exponential, stitching and PostScript calculator
+- 7.10.5 (Type 4 (PostScript calculator) functions) `core_pdf.impl.postscript.calculator`: PostScript calculator (Type 4) functions
+- 7.12 (Extensions dictionary) `core_pdf.impl.spec.standards`: PDF versions, the extensions core implements, and known profiles
+- 8.3 (Coordinate systems) `core_pdf.impl.spec.s_08_graphics.geometry`: bounding boxes in transformed coordinate systems
+- 8.3.4 (Transformation matrices) `core_pdf.impl.spec.s_08_graphics.matrix`: transformation matrices
+- 8.4 (Graphics state) `core_pdf.impl.spec.s_07_content.model`: the graphics state, paths and patterns, and the sink content paints to
+- 8.6 (Colour spaces) `core_pdf.impl.spec.s_08_graphics.color`: colour components: their ranges, initial values and Indexed lookups
+- 8.6 (Colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec`: colour spaces: device, CIE-based and special
+- 8.6.5 (CIE-Based colour spaces) `core_pdf.impl.spec.s_08_graphics.color_math`: CIE-based colour arithmetic: Lab and XYZ, and black point compensation
+- 8.6.5.8 (Rendering intents) `core_pdf.impl.spec.s_08_graphics.color_rendering`: rendering intents, and black point compensation (8.6.5.9)
+- 8.7.4 (Shading patterns) `core_pdf.impl.spec.s_08_graphics.shading`: shading dictionaries
+- 8.9 (Images) `core_pdf.impl.spec.s_08_graphics.color_kernels`: unpacking and decoding image samples, and colour key masking (8.9.6.4)
+- 8.9.3 (Sample representation) `core_pdf.impl.spec.samples`: unpacking rows of 1-, 2- and 4-bit samples
+- 8.9.5 (Image dictionaries) `core_pdf.impl.spec.s_08_graphics.image_spec`: image dictionaries: their entries, Decode arrays and soft masks
+- 8.9.7 (Inline images) `core_pdf.impl.spec.s_07_content.inline_images`: inline images: the BI dictionary, its abbreviations, and the data up to EI
+- 9 (Text) `core_pdf.impl.spec.s_09_fonts.service`: the font interface the content interpreter decodes and advances text with
+- 9.4.4 (Text space details) `core_pdf.impl.spec.s_09_fonts.metrics`: glyph displacement, and the widths of the standard 14 fonts
+- 9.5 (Introduction to font data structures) `core_pdf.impl.spec.s_09_fonts.dictionaries`: font dictionaries: Type 0 descendants, descriptors and font files
+- 9.6.5 (Character encoding) `core_pdf.impl.spec.s_09_fonts.helpers`: a simple font's base encoding and Differences
+- 9.7.4.3 (Glyph metrics in CIDFonts) `core_pdf.impl.spec.s_09_fonts.widths`: glyph widths: a CIDFont's W and W2 arrays, and a simple font's Widths
+- 9.7.5.2 (Predefined CMaps) `core_pdf.impl.adobe_fonts.cmap.resources`: the predefined CMaps, loaded by name from bundled resources
+- 9.10.3 (ToUnicode CMaps) `core_pdf.impl.spec.s_09_fonts.cmap_tounicode`: ToUnicode CMaps
+- 11.3.5 (Blend mode) `core_pdf.impl.spec.s_11_transparency.blend`: blend modes
+- 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.images`: undoing the Matte preblending of a soft-mask image
+- 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.soft_masks`: soft-mask dictionaries: their group, backdrop and transfer function
+- 12.4.2 (Page labels) `core_pdf.impl.spec.s_07_document.document_labels`: page labels and their numbering styles
+- 12.5.5 (Appearance streams) `core_pdf.impl.spec.s_07_document.annotation_appearance`: an annotation's normal appearance and the matrix fitting it to Rect
+- 12.7 (Forms) `core_pdf.impl.spec.s_07_document.fields`: interactive form fields: Kids and fully qualified field names
+- 14.3 (Metadata) `core_pdf.impl.spec.s_07_document.metadata`: the document information dictionary and the catalog's metadata stream
+- 14.7 (Logical structure) `core_pdf.impl.spec.s_14_structure.dictionaries`: structure role maps, attributes and marked-content identifiers
+- 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles`: standard structure types, namespaces and role mapping
+- Annex A ((informative) Operator Summary) `core_pdf.impl.spec.s_07_syntax_primitives.content_operators`: the content stream operators and their operands
+- D.2 (Latin character set and encodings) `core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names`: the glyph names of the standard, Mac Roman and WinAnsi encodings
+- D.2 (Latin character set and encodings) `core_pdf.impl.adobe_fonts.encodings`: the glyph names of the standard, Mac Roman and WinAnsi encodings
+- D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.data.base_encodings`: the standard, Mac Roman and WinAnsi encodings as text
+- 7.2.3 (Character set) `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: NUL is a white-space character
+- 7.2.3 (Character set) `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: { and } delimit only PostScript calculator functions
+- 7.3.5 (Name objects) `core_pdf.impl.document.navigation.legacy_name_context`: a # in a name is a literal character
+- 7.3.5 (Name objects) `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: a # in a name starts a hexadecimal escape
+- 7.3.10 (Indirect objects) `core_pdf.impl.spec.s_07_syntax_primitives.tokens.lexical_rules`: object identifiers are written in canonical form
+- 7.4.9 (JPXDecode filter) `core_pdf.impl.spec.s_08_graphics.image_spec.image_decode_array_applies`: a JPX image's Decode array applies when it has a ColorSpace
+- 7.5.8 (Cross-reference streams) `core_pdf.impl.document.editing.save`: cross-reference streams
+- 7.6.4 (Standard security handler) `core_pdf.impl.document.editing.save`: AES-256 encryption (PDF 1.7 with an extension, or 2.0)
+- 7.6.4.3.4 (Algorithm 2.B: Computing a hash (revision 6 and later)) `core_pdf.impl.spec.s_07_security.standard.r6_password_hash`: revision 6 password hash (Algorithm 2.B)
+- 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-16BE text strings, after the byte order mark FE FF
+- 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: UTF-8 text strings, after the byte order mark EF BB BF
+- 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
+- 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
+- 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn
+- 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn in PDF 1.7
+- 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
+- 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
+- D.2 (Latin character set and encodings) `core_pdf.impl.spec.s_09_fonts.helpers.get_base_encoding_glyph_names`: WinAnsiEncoding 80, 8E and 9E are Euro, Zcaron and zcaron, not bullet
+- D.3 (PDFDocEncoding character set) `core_pdf.impl.spec.s_07_syntax_primitives.text_string.decode_pdf_text_string`: PDFDocEncoding defines byte A0 (Euro sign)
 
 ### ISO extensions
+
+**Adobe ExtensionLevel 3**: Adobe Supplement to ISO 32000, BaseVersion 1.7, ExtensionLevel 3 (June 2008)
+
+- `core_pdf.impl.spec.s_07_security.standard.compute_password_hash`: revision 5 password hash (AES-256 before revision 6)
 
 **ISO 32003**: Adding support of AES-GCM in PDF 2.0 (ISO 32003:2023)
 
@@ -132,29 +201,33 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **ISO 32004**: Integrity protection in encrypted documents in PDF 2.0 (ISO 32004:2024)
 
+- `core_pdf.impl.crypto.pdf_mac`: the PDF MAC token, a CMS AuthenticatedData (RFC 5652), and its key unwrapping
+- `core_pdf.impl.spec.s_07_security.pdf_mac`: finding and checking the PDF MAC token of an encrypted document
 - `core_pdf.impl.spec.s_07_security.pdf_mac.validate_pdf_mac_if_present`: PDF MAC integrity protection
 
 ### Embedded standards
 
 **ITU-T T.88**: JBIG2 bi-level image compression (ITU-T T.88 (2018))
 
-- not cited in code yet
+- `core_pdf.impl.jbig2.bitmap`: composing region bitmaps onto the page with the combination operators
+- `core_pdf.impl.jbig2.codec`: JBIG2 segment headers, page information and page assembly
+- `core_pdf.impl.graphics.stream_decoding.decode_jbig2`: JBIG2Decode: embedded-stream segments composed into one page
 
 **ITU-T T.4**: CCITT Group 3 facsimile coding (ITU-T T.4 (2003))
 
-- not cited in code yet
+- `core_pdf.impl.graphics.stream_decoding.decode_ccitt_fax_array`: CCITTFaxDecode with K >= 0: Group 3 (1D and 2D) coding
 
 **ITU-T T.6**: CCITT Group 4 facsimile coding (ITU-T T.6 (1988))
 
-- not cited in code yet
+- `core_pdf.impl.graphics.stream_decoding.decode_ccitt_fax_array`: CCITTFaxDecode with K < 0: Group 4 coding
 
 **ISO 10918-1**: JPEG (DCT) image compression (ISO/IEC 10918-1:1994)
 
-- not cited in code yet
+- `core_pdf.impl.graphics.stream_decoding.decode_jpeg_image`: DCTDecode: JPEG images, decoded with imagecodecs
 
 **ISO 15444-1**: JPEG 2000 image coding (ISO/IEC 15444-1:2019)
 
-- not cited in code yet
+- `core_pdf.impl.graphics.stream_decoding.decode_jpx_image`: JPXDecode: JPEG 2000 images, decoded with imagecodecs
 
 **RFC 1950**: ZLIB compressed data format (RFC 1950)
 
@@ -166,7 +239,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **RFC 2083**: PNG predictors (RFC 2083)
 
-- not cited in code yet
+- 6 `core_pdf.impl.spec.s_07_filters.predictors`: the PNG predictors, and TIFF predictor 2, that LZWDecode and FlateDecode undo
 
 **TIFF 6.0**: TIFF predictor 2 and LZW (TIFF Revision 6.0 (1992))
 
@@ -178,23 +251,26 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **FIPS 197**: Advanced Encryption Standard (AES) (FIPS 197 (2023 update))
 
-- not cited in code yet
+- `core_pdf.impl.crypto.ciphers`: AES in CBC, ECB and GCM modes, and RC4, the ciphers PDF encryption uses
 
 **Adobe Type 1**: Adobe Type 1 Font Format (version 1.1 (1990))
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts.type1.program`: eexec decryption, and the Encoding of a Type 1 font program
 
 **Adobe TN 5176**: The Compact Font Format Specification (Technical Note 5176 (2003))
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts._vendor.font_data.cff_tables`: the standard strings and the predefined charsets
+- `core_pdf.impl.adobe_fonts.cff.font`: CFF fonts: header, INDEXes, DICTs, charsets and encodings
 
 **Adobe TN 5177**: The Type 2 Charstring Format (Technical Note 5177 (2000))
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts.cff.charstrings`: points on the cubic curves charstring path operators draw
 
 **Adobe TN 5014**: Adobe CMap and CIDFont Files Specification (Technical Note 5014 (1996))
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts.cmap.decoder`: decoding character codes to CIDs with a CMap's codespace and CID ranges
+- `core_pdf.impl.adobe_fonts.cmap.ranges`: codespace, CID and notdef ranges
+- `core_pdf.impl.adobe_fonts.cmap.tokenizer`: tokenizing a CMap file into its mapping blocks
 
 **Adobe TN 5099**: Developing CMap Resources for CID-Keyed Fonts (Technical Note 5099 (2012))
 
@@ -202,16 +278,20 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 
 **Adobe Glyph List**: Adobe Glyph List Specification (AGL 2.0 and AGLFN 1.7)
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts._vendor.font_data.glyph_names`: AGLFN names, and the Macintosh glyph order TrueType post tables use
+- `core_pdf.impl.adobe_fonts.agl.glyph_list`: glyph names and the Unicode text they map to
+- `core_pdf.impl.adobe_fonts.agl.mapping`: mapping a glyph name, including uniXXXX and uXXXX names, to Unicode
+- `core_pdf.impl.adobe_fonts.agl.zapf_dingbats`: the ITC Zapf Dingbats glyph list
 
 **Adobe AFM**: Adobe Font Metrics File Format Specification (Technical Note 5004 (1998))
 
-- not cited in code yet
+- `core_pdf.impl.adobe_fonts.afm.core14`: the widths and properties of the standard 14 fonts, from their AFM files
 
 **PostScript LRM**: PostScript Language Reference (third edition (1999))
 
-- not cited in code yet
+- 3.2 `core_pdf.impl.adobe_fonts.cmap.lexical`: the white space, delimiters and literal strings of CMap files
 
 **ICC.1**: Image technology colour management - ICC profile format (ICC.1:2022)
 
-- not cited in code yet
+- `core_pdf.impl.graphics.icc_profiles.cms_transform_block`: convert samples through an ICC profile to sRGB
+- `core_pdf.impl.graphics.icc_profiles.parse_icc_transform_cached`: read an ICC profile's data colour space, channels and PCS

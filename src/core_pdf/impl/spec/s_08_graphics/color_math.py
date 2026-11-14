@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.6.5: CIE-based colour arithmetic: Lab and XYZ, and black point compensation."""
+
 from __future__ import annotations
 
 from typing import Any

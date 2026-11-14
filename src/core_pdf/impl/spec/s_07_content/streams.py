@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.8.2: running content streams and the form XObjects they invoke."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self

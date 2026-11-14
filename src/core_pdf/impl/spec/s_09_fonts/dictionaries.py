@@ -1,3 +1,5 @@
+"""ISO 32000-2 9.5: font dictionaries: Type 0 descendants, descriptors and font files."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

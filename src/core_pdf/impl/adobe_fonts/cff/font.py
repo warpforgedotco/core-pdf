@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""Adobe TN 5176: CFF fonts: header, INDEXes, DICTs, charsets and encodings."""
+
 from __future__ import annotations
 
 import operator

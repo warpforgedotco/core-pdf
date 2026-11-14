@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 11.6.5: soft-mask dictionaries: their group, backdrop and transfer function."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

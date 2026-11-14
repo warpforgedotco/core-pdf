@@ -1,3 +1,5 @@
+"""ISO 32000-2 14.7: structure role maps, attributes and marked-content identifiers."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence

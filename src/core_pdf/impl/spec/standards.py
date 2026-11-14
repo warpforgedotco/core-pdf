@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.12: PDF versions, the extensions core implements, and known profiles."""
+
 from __future__ import annotations
 
 import re

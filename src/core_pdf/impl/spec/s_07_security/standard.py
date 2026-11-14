@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.6.4: the standard security handler: passwords, file keys and crypt filters."""
+
 from __future__ import annotations
 
 import stringprep
@@ -597,8 +599,7 @@ def normalize_password(password: str | bytes, revision: int) -> bytes:
 
 
 @cites(
-    "ISO 32000-2",
-    "7.6.4.3.3",
+    "Adobe ExtensionLevel 3",
     extension="ADBE/1.7/3",
     rule="revision 5 password hash (AES-256 before revision 6)",
 )

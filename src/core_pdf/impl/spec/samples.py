@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 8.9.3: unpacking rows of 1-, 2- and 4-bit samples."""
+
 from __future__ import annotations
 
 from typing import Any

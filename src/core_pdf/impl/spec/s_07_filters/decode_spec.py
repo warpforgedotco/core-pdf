@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
+"""ISO 32000-2 7.4: a stream's Filter and DecodeParms entries, normalized into decoding steps."""
+
 from __future__ import annotations
 
 from typing import Protocol, Self, TypeAlias
