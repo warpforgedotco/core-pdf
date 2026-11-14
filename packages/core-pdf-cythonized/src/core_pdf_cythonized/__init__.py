@@ -50,6 +50,7 @@ lazy from core_pdf_cythonized._knockout import (
     composite_knockout_element,
     composite_knockout_group,
 )
+lazy from core_pdf_cythonized._luminosity import luminosity_channel
 lazy from core_pdf_cythonized._nonisolated import composite_nonisolated_blend
 lazy from core_pdf_cythonized._outline import (
     outline_coordinate_arrays,
@@ -114,6 +115,7 @@ __all__ = (
     "ObjectScanner",
     "accumulate_source_plane",
     "alpha_channel",
+    "luminosity_channel",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "blend_visible_rgba",

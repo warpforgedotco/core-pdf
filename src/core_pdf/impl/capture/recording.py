@@ -9,7 +9,7 @@ from math import isfinite
 from typing import TYPE_CHECKING, Any, cast
 
 from core_pdf.impl.base.caches import IdentityCache
-from core_pdf.impl.base.geometry import intersect_bbox, transform_bbox
+from core_pdf.impl.base.geometry import clamp01, intersect_bbox, transform_bbox
 from core_pdf.impl.base.glyphs import GlyphObservation
 from core_pdf.impl.base.runs import TextRun
 from core_pdf.impl.base.text import word_gap_threshold
@@ -31,7 +31,8 @@ from core_pdf.impl.capture.recovery import CaptureRecovery, ContentFallback, con
 from core_pdf.impl.capture.tolerant_state import CaptureCaches, RecoveringTextState
 from core_pdf.impl.fonts.decoder import FontDecoder
 from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
-from core_pdf.impl.graphics.color import color_operands_to_srgb
+from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
+from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.recovery.lexer import PdfLexer
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content import model
@@ -45,7 +46,10 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
+lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
+    blending_profile,
+    blending_space_of,
+)
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
@@ -53,6 +57,7 @@ if TYPE_CHECKING:
     from core_pdf.impl.capture.records import LayoutFormId
     from core_pdf.impl.document.pdf_document import PdfDocument
     from core_pdf.impl.recovery.resolver import ObjectResolver
+    from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
 
 
 from core_pdf.impl.capture import image_painting, paint_sources, path_painting, text_painting
@@ -648,7 +653,11 @@ class TextState(RecoveringTextState):
         if not isinstance(cached, MissingObject):
             return cached
         group_key = id(mask.group)
-        if mask.subtype != "Alpha" or group_key in caches.capture_active_mask_groups:
+        # A Luminosity mask's group composites in its CS (11.6.5.1, Table 142).
+        space = blending_space_of(mask.color_space) if mask.subtype == "Luminosity" else None
+        if (space is None and mask.subtype != "Alpha") or (
+            group_key in caches.capture_active_mask_groups
+        ):
             return None
         if len(caches.capture_active_mask_groups) >= 10:
             return None
@@ -663,6 +672,8 @@ class TextState(RecoveringTextState):
         try:
             nested = self.nested_capture_state()
             nested.graphics = graphics
+            if space is not None:
+                nested.set_capture_cmyk(space == "DeviceCMYK")
             scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
             nested.resources = self.resources if isinstance(scope, MissingObject) else scope
             frame = nested.append_form_xobject(mask.group, 0)
@@ -670,17 +681,41 @@ class TextState(RecoveringTextState):
                 return None
             nested.stream_executor.consume_frame(frame)
             nested.run_accumulator.flush()
-            if not nested.text_boundaries:
-                return None
-            return caches.capture_soft_masks.put_key(
-                mask, key, CapturedSoftMask(nested.captured_program(), mask.transfer)
-            )
+            if space is None:
+                if not nested.text_boundaries:
+                    return None
+                captured = CapturedSoftMask(nested.captured_program(), mask.transfer)
+            else:
+                captured = CapturedSoftMask(
+                    nested.captured_program(),
+                    mask.transfer,
+                    blending_space=space,
+                    blending_profile=blending_profile(mask.color_space),
+                    backdrop=self.soft_mask_backdrop(mask, space),
+                )
+            return caches.capture_soft_masks.put_key(mask, key, captured)
         except PdfParseError, TypeError, ValueError, ArithmeticError:
             return None
         finally:
             caches.capture_active_mask_groups.remove(group_key)
             if nested is not None:
                 nested.release()
+
+    def soft_mask_backdrop(self, mask: SoftMask, space: BlendingSpace) -> tuple[float, ...]:
+        """A Luminosity mask's BC colour as capture_color gives paint in its group: a device
+        space's components, else the CMYK (in a CMYK group) or sRGB it converts to."""
+        spec = mask.color_space
+        color = tuple(clamp01(value) for value in mask.backdrop_color or ())
+        if spec is None:
+            return color
+        converted: tuple[float, ...] | None = None
+        if space == "DeviceCMYK" and spec.kind not in GRAY_RGB_KINDS:
+            converted = color_operands_to_cmyk(spec, color)
+        if converted is None:
+            converted = color_operands_to_srgb(
+                spec, list(color), rendering=self.graphics.color_rendering
+            )
+        return color if converted is None else tuple(converted)
 
     # Showing text.
     update_pending_run = text_painting.update_pending_run
