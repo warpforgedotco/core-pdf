@@ -168,6 +168,7 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
                 DRAWING_GROUP_COLOR_SPACE,
                 DRAWING_SHADING_MATRIX,
+                graphics.miter_limit,
             )
         )
     )

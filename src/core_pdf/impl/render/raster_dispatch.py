@@ -253,6 +253,7 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
                 blend_mode,
                 item.line_cap,
                 item.line_join,
+                item.miter_limit,
             )
             return
         self.stroke_path(
@@ -263,6 +264,7 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
             blend_mode,
             item.line_cap,
             item.line_join,
+            item.miter_limit,
         )
 
 

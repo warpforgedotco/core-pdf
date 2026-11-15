@@ -29,7 +29,7 @@ still passes it through). Deprecated keys are left out. See also the
 | PDF 1.6 | 207 | 109 | 98 |
 | PDF 1.5 | 587 | 277 | 310 |
 | PDF 1.4 | 208 | 137 | 71 |
-| PDF 1.3 | 554 | 389 | 165 |
+| PDF 1.3 | 554 | 393 | 161 |
 | PDF 1.2 | 366 | 252 | 114 |
 | PDF 1.1 | 90 | 75 | 15 |
 | PDF 1.0 | 193 | 157 | 36 |
@@ -845,15 +845,11 @@ Keys core never reads:
 - `JS` in ActionECMAScript
 - `JavaScript` in Name
 - `L` in AnnotLine
-- `LC` in GraphicsStateParameter
-- `LJ` in GraphicsStateParameter
-- `LW` in GraphicsStateParameter
 - `LastModified` in Data, PageObject, XObjectFormType1
 - `Length2` in FontFile3CIDType0
 - `Length3` in FontFile3CIDType0
 - `Location` in Signature
 - `M` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 6 more
-- `ML` in GraphicsStateParameter
 - `OPM` in GraphicsStateParameter
 - `Open` in AnnotPopup
 - `PA` in AnnotLink

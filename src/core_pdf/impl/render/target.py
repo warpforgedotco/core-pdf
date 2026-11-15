@@ -181,8 +181,6 @@ class RasterTarget:
 
     # Stroking paths: segments, joins and caps.
     fill_line = strokes.fill_line
-    fill_join = strokes.fill_join
-    fill_cap = strokes.fill_cap
     fill_terminal = strokes.fill_terminal
     stroke_path = strokes.stroke_path
 

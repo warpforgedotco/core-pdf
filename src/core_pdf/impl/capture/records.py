@@ -456,6 +456,7 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     # A shading's map from shading space to default user space (the CTM at sh), or None
     # for the identity.
     shading_matrix: Matrix | None = None
+    miter_limit: float = 10.0
 
     def __post_init__(self) -> None:
         if not self.items:

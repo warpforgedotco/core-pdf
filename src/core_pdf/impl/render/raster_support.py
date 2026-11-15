@@ -370,14 +370,10 @@ def subpath_columns(
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     list[tuple[int, int, bool]],
-    bytes,
-    bytes,
 ]:
     xs: list[float] = []
     ys: list[float] = []
     spans: list[tuple[int, int, bool]] = []
-    ends_differ = bytearray()
-    coincident = bytearray()
     for subpath in subpaths:
         points = subpath.points
         start = len(xs)
@@ -385,19 +381,7 @@ def subpath_columns(
             xs.append(x)
             ys.append(y)
         spans.append((start, len(xs), bool(subpath.closed)))
-        ends_differ.append(1 if len(points) >= 2 and points[0] != points[-1] else 0)
-        same = False
-        if len(points) == 2:
-            (x0, y0), (x1, y1) = points
-            same = (x0, y0) == (x1, y1)
-        coincident.append(1 if same else 0)
-    return (
-        numpy.asarray(xs, dtype=numpy.float64),
-        numpy.asarray(ys, dtype=numpy.float64),
-        spans,
-        bytes(ends_differ),
-        bytes(coincident),
-    )
+    return (numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), spans)
 
 
 def paint_stroke_once(
@@ -409,6 +393,7 @@ def paint_stroke_once(
     blend_mode: str | None,
     line_cap: int,
     line_join: int,
+    miter_limit: float,
 ) -> None:
     size = len(target.pixels)
     coverage_buffer = target.stroke_scratch
@@ -420,7 +405,14 @@ def paint_stroke_once(
     try:
         with target.detached_buffer(coverage_buffer, window):
             target.stroke_path(
-                path, line_width, (0, 0, 0, 255), dash_pattern, None, line_cap, line_join
+                path,
+                line_width,
+                (0, 0, 0, 255),
+                dash_pattern,
+                None,
+                line_cap,
+                line_join,
+                miter_limit,
             )
         if window.empty:
             return

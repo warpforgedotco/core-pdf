@@ -261,8 +261,9 @@ def shading_stroke_case(
         fx, fy = apply(to_form, x, y)
         distance = min(segment_distance(fx, fy, a, b) for a, b in zip(points, points[1:]))
         corner = min(math.hypot(fx - px, fy - py) for px, py in points)
-        # Joins and caps are another check's business: only the straight runs count.
-        edge = min(abs(distance - width / 2), max(0.0, corner - width)) * scale
+        # Joins and caps are check_strokes' business: only the straight runs count. The
+        # miter at the 53-degree corner reaches width / 2 / sin(26.6 degrees), 1.12 widths.
+        edge = min(abs(distance - width / 2), max(0.0, corner - 1.5 * width)) * scale
         if distance > width / 2:
             return None, edge
         return shading_color(*apply(to_shading, x, y)), edge
@@ -300,7 +301,7 @@ def tiling_stroke_case(name: str, tiling: Tiling, *, placement: Affine = IDENTIT
         fx, fy = apply(to_form, x, y)
         distance = min(segment_distance(fx, fy, a, b) for a, b in zip(points, points[1:]))
         corner = min(math.hypot(fx - px, fy - py) for px, py in points)
-        edge = min(abs(distance - width / 2), max(0.0, corner - width)) * scale
+        edge = min(abs(distance - width / 2), max(0.0, corner - 1.5 * width)) * scale
         if distance > width / 2:
             return None, edge
         px, py = apply(to_pattern, x, y)
