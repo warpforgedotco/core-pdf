@@ -8,7 +8,7 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import replace
 from typing import TYPE_CHECKING, Any
 
@@ -17,7 +17,14 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
-from core_pdf.impl.graphics.shading import PreparedShading, SpaceEvaluator
+from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
+from core_pdf.impl.graphics.shading import (
+    DEVICE_COMPONENTS,
+    FunctionGeometry,
+    MeshGeometry,
+    PreparedShading,
+    SpaceEvaluator,
+)
 from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
 from core_pdf.impl.render.model import (
@@ -40,8 +47,15 @@ from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
-from core_pdf.impl.spec.s_08_graphics.matrix import invert_affine
-lazy from core_pdf_cythonized import composite_normal_group, shading_blend, shading_values
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, invert_affine
+lazy from core_pdf_cythonized import (
+    composite_normal_group,
+    function_values,
+    mesh_values,
+    patch_triangles,
+    shading_blend,
+    shading_values,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
@@ -81,6 +95,10 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     shading = self.prepared_shading(item.dictionary, item.color_rendering)
     if shading is None:
         return
+    background = shading_background(item, shading)
+    if shading.geometry is not None:
+        paint_geometry_shading(self, item, shading, blend_mode, background)
+        return
     # A shading under a transform is computed in its own space: each pixel centre goes back
     # through the inverse, and the BBox clips there (8.7.4.2, 8.7.4.3).
     to_shading = None
@@ -91,13 +109,18 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
             return
         if shading.bbox is not None:
             shading_bbox = normalize_rect(shading.bbox)
-    clipped_box = self.clip.clipped_pixel_box(self.shading_box(item, shading))
+    if background is None:
+        box = self.shading_box(item, shading)
+    else:
+        # The background fills the whole area painted, and BBox clips only the shading.
+        box = painted_area_box(self, item)
+        if to_shading is None and shading.bbox is not None:
+            to_shading = IDENTITY_MATRIX
+            shading_bbox = normalize_rect(shading.bbox)
+    clipped_box = self.clip.clipped_pixel_box(box)
     if clipped_box is None:
         return
     ix0, iy0, ix1, iy1 = clipped_box[1]
-    soft_mask_alpha = item.soft_mask_alpha
-    fill_opacity = item.fill_opacity
-    shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
     mode = kernel_blend_code(self.resolved_blend(blend_mode))
     domain = shading.domain
     allowed = numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8).reshape(
@@ -123,28 +146,101 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
         shading_bbox,
     )
     ordered = values[painted.view(numpy.bool_)]
-    if not len(ordered):
-        return
-    _, first, inverse = numpy.unique(ordered, return_index=True, return_inverse=True)
-    by_first = numpy.argsort(first, kind="stable")
-    colors = numpy.zeros((len(first), 4), dtype=numpy.int32)
-    reached = len(ordered)
-    color_error: Exception | None = None
+    blend_shading_colors(
+        self,
+        item,
+        shading,
+        mode,
+        (ix0, iy0),
+        painted,
+        ordered,
+        lambda positions: ordered[positions].tolist(),
+        allowed if background is not None else None,
+        background,
+    )
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.3",
+    introduced="1.3",
+    rule="Background fills the area a shading pattern paints, not one sh paints",
+)
+def shading_background(item: ShadingItem, shading: PreparedShading) -> tuple[float, ...] | None:
+    """The shading's Background components when it paints as a pattern; sh ignores them."""
+    if shading.background is None or item.payload.get("background") is not True:
+        return None
+    return shading.background
+
+
+def painted_area_box(self: RasterTarget, item: ShadingItem) -> tuple[float, float, float, float]:
+    box = rect_tuple(item.bbox)
+    return normalize_rect(box if box is not None else self.grid.page_box())
+
+
+def blend_shading_colors(
+    self: RasterTarget,
+    item: ShadingItem,
+    shading: PreparedShading,
+    mode: int,
+    origin: tuple[int, int],
+    painted: Any,
+    keys: Any,
+    arguments: Callable[[Any], list[Any]],
+    area: Any,
+    background: tuple[float, ...] | None,
+    *,
+    many_colors: bool = False,
+) -> None:
+    """Paint each pixel the shading paints in its colour, and with a background, the rest of
+    area in the background colour. keys holds one entry per painted pixel, in row order, the
+    same for pixels of one colour; arguments gives the evaluator's input (a number, or a tuple
+    of them) at the given positions of keys. Colours are found in the order they first
+    appear; when one fails, the pixels before it are painted and its error raised. With
+    many_colors, the colours of a device colour model are converted in one pass."""
+    ix0, iy0 = origin
+    soft_mask_alpha = item.soft_mask_alpha
+    fill_opacity = item.fill_opacity
+    shading_alpha = float(soft_mask_alpha) if is_pdf_number(soft_mask_alpha) else None
     color_model = shading.color_model
-    evaluate = shading.evaluator
     rendering = shading.color_rendering
     in_space = self.space_mode is not SpaceMode.RGB
+    fill = None
+    if background is not None:
+        try:
+            fill = shading_rgba(color_model, background, fill_opacity, rendering, shading_alpha)
+            if in_space:
+                fill = self.shading_space_color(color_model, background, fill)
+        except Exception:  # noqa: BLE001 - a colour that cannot be found paints nothing
+            fill = None
+    if not len(keys) and fill is None:
+        return
+    _, first, inverse = numpy.unique(keys, return_index=True, return_inverse=True)
+    by_first = numpy.argsort(first, kind="stable")
+    colors = numpy.zeros((len(first) + (fill is not None), 4), dtype=numpy.int32)
+    reached = len(keys)
+    color_error: Exception | None = None
+    evaluate = shading.evaluator
     order = by_first.tolist()
+    inputs = arguments(first[by_first]) if len(first) else []
     # A colour space other than a device one converts every colour in one pass.
-    batch = (
-        evaluate.many(ordered[first[by_first]].tolist())
-        if isinstance(evaluate, SpaceEvaluator)
+    batch = evaluate.many(inputs) if isinstance(evaluate, SpaceEvaluator) and inputs else None
+    palette = (
+        device_palette(evaluate, color_model, inputs, batch, fill_opacity, rendering, shading_alpha)
+        if many_colors and not in_space and inputs
         else None
     )
+    if palette is not None:
+        colors[by_first] = palette
+        order = []
     for step, unique_index in enumerate(order):
         position = int(first[unique_index])
         try:
-            components = batch[step] if batch is not None else evaluate(float(ordered[position]))
+            if batch is not None:
+                components = batch[step]
+            else:
+                value = inputs[step]
+                components = evaluate(*value) if type(value) is tuple else evaluate(float(value))
             rgba = shading_rgba(color_model, components, fill_opacity, rendering, shading_alpha)
             if in_space:
                 rgba = self.shading_space_color(color_model, components, rgba)
@@ -153,6 +249,20 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
             color_error = error
             reached = position
             break
+    color_index = inverse.reshape(-1)[:reached]
+    if fill is not None:
+        # The background's pixels join the shading's, in row order, with the last colour.
+        colors[-1] = fill
+        shading_mask = painted.view(numpy.bool_)
+        everything = shading_mask | area.view(numpy.bool_)
+        index = numpy.full(painted.shape, len(colors) - 1, dtype=numpy.int64)
+        index[shading_mask] = inverse.reshape(-1)
+        if color_error is not None:
+            # Stop where the colour that failed first appears among all the pixels.
+            stop = int(numpy.flatnonzero(shading_mask.reshape(-1))[reached])
+            everything.reshape(-1)[stop:] = False
+        painted = everything.view(numpy.uint8)
+        color_index = index[everything]
     revised, blend_error = self.blend_rules(mode)
     shape_plane = self.group_source_shape
     window, stopped = shading_blend(
@@ -160,7 +270,7 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
         ix0,
         iy0,
         painted,
-        numpy.ascontiguousarray(inverse.reshape(-1)[:reached], dtype=numpy.int64),
+        numpy.ascontiguousarray(color_index, dtype=numpy.int64),
         colors,
         mode,
         revised,
@@ -176,6 +286,299 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
         raise blend_error
     if color_error is not None:
         raise color_error
+
+
+def device_palette(
+    evaluate: Callable[..., tuple[float, ...]],
+    color_model: str,
+    inputs: list[Any],
+    batch: list[tuple[float, ...]] | None,
+    fill_opacity: object,
+    rendering: ColorRendering,
+    shading_alpha: float | None,
+) -> Any:
+    """The RGBA of each input's colour, (n, 4), found as shading_rgba finds one but for all at
+    once: a mesh can have tens of thousands of colours. None when a colour fails, or the
+    colour model is not a device one, so that they are found one at a time instead."""
+    count = DEVICE_COMPONENTS.get(color_model)
+    if count is None:
+        return None
+    try:
+        rows = (
+            batch
+            if batch is not None
+            else [evaluate(*value) if type(value) is tuple else evaluate(value) for value in inputs]
+        )
+        components = numpy.asarray(rows, dtype=numpy.float64)
+        alpha = shading_rgba(color_model, rows[0], fill_opacity, rendering, shading_alpha)[3]
+    except Exception:  # noqa: BLE001 - one at a time reports the colour that fails
+        return None
+    if components.ndim != 2 or components.shape[1] < 1:
+        return None
+    components = numpy.nan_to_num(components, nan=0.0, posinf=0.0, neginf=0.0)
+    palette = numpy.empty((len(components), 4), dtype=numpy.int32)
+    palette[:, 3] = alpha
+    if color_model == "DeviceGray" or components.shape[1] == 1:
+        gray = numpy.clip(numpy.rint(components[:, 0] * 255.0), 0, 255)
+        palette[:, :3] = gray[:, None]
+    elif color_model == "DeviceCMYK" and components.shape[1] >= count:
+        cmyk = numpy.clip(numpy.rint(numpy.clip(components[:, :4], 0, 1) * 255.0), 0, 255)
+        palette[:, :3] = cmyk_components_to_srgb(cmyk / 255, rendering=rendering)
+    elif components.shape[1] >= 3:
+        palette[:, :3] = numpy.clip(numpy.rint(components[:, :3] * 255.0), 0, 255)
+    else:
+        return None
+    return palette
+
+
+# A mesh's colour values are sampled at 1 / 255 of each component's Decode range, and a
+# Function's parametric t at 1 / 1024 of its range; a type 1 shading's Function on a grid
+# of at most 256 by 256 points of its Domain, and no finer than a device pixel (8.7.4.4
+# lets a shading compute some points' colours and approximate the rest).
+COMPONENT_LEVELS = 255
+PARAMETER_LEVELS = 1024
+DOMAIN_SAMPLES = 256
+# A patch is divided until its triangles stray at most this many device pixels from the
+# surface, and their colours at most 1 / 512 of each component's range from the bilinear
+# colours, with at most PATCH_DIVISIONS parts along each side.
+PATCH_TOLERANCE = 0.5
+PATCH_COLOR_TOLERANCE = 1.0 / 512.0
+PATCH_DIVISIONS = 64
+
+
+def transformed_bounds(
+    xs: Any, ys: Any, matrix: tuple[float, ...] | None
+) -> tuple[float, float, float, float] | None:
+    """The bounds in default user space of the points (xs, ys) of target space."""
+    if not len(xs):
+        return None
+    if matrix is not None:
+        a, b, c, d, e, f = matrix
+        xs, ys = a * xs + c * ys + e, b * xs + d * ys + f
+    box = (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
+    return box if all(math.isfinite(value) for value in box) else None
+
+
+def geometry_bounds(
+    shading: PreparedShading, matrix: tuple[float, ...] | None
+) -> tuple[float, float, float, float] | None:
+    """Where a type 1 or mesh shading can paint, in default user space."""
+    geometry = shading.geometry
+    if isinstance(geometry, FunctionGeometry):
+        x0, x1, y0, y1 = geometry.domain
+        a, b, c, d, e, f = geometry.matrix
+        corners = numpy.asarray([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=numpy.float64)
+        xs = a * corners[:, 0] + c * corners[:, 1] + e
+        ys = b * corners[:, 0] + d * corners[:, 1] + f
+        return transformed_bounds(xs, ys, matrix)
+    if isinstance(geometry, MeshGeometry):
+        points = geometry.triangles if geometry.triangles is not None else geometry.patches
+        if points is None:
+            return None
+        return transformed_bounds(points[..., 0].reshape(-1), points[..., 1].reshape(-1), matrix)
+    return None
+
+
+def quantized(values: Any, low: float, high: float, levels: int) -> tuple[Any, Any]:
+    """Each value's level of levels + 1 even steps from low to high, and that level's value."""
+    span = high - low
+    if span == 0.0 or not math.isfinite(span):
+        codes = numpy.zeros(len(values), dtype=numpy.int64)
+        return codes, numpy.full(len(values), low, dtype=numpy.float64)
+    codes = numpy.clip(numpy.rint((values - low) / span * levels), 0, levels).astype(numpy.int64)
+    return codes, low + codes * (span / levels)
+
+
+def domain_samples(extent: float) -> int:
+    if not math.isfinite(extent):
+        return DOMAIN_SAMPLES
+    return max(1, min(DOMAIN_SAMPLES, math.ceil(extent)))
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.5.2",
+    introduced="1.3",
+    rule="a function-based shading paints its Function over Domain, mapped by Matrix",
+)
+def function_shading_values(
+    self: RasterTarget,
+    item: ShadingItem,
+    geometry: FunctionGeometry,
+    box: tuple[int, int, int, int],
+    allowed: Any,
+    inverse: tuple[float, ...] | None,
+    bbox: tuple[float, float, float, float] | None,
+) -> tuple[Any, Any, Callable[[Any], list[Any]]] | None:
+    to_domain = invert_affine(geometry.matrix)
+    if to_domain is None:
+        return None
+    ix0, iy0, ix1, iy1 = box
+    x0, x1, y0, y1 = geometry.domain
+    values, painted = function_values(
+        self.crop_x0,
+        self.crop_y1,
+        self.scale,
+        ix0,
+        iy0,
+        ix1,
+        iy1,
+        allowed,
+        inverse,
+        bbox,
+        to_domain,
+        geometry.domain,
+    )
+    points = values[painted.view(numpy.bool_)]
+    # The grid's step along each side of Domain is at least a device pixel.
+    a, b, c, d = geometry.matrix[:4]
+    outer = item.matrix if item.matrix is not None else (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    steps = []
+    for dx, dy in ((a * (x1 - x0), b * (x1 - x0)), (c * (y1 - y0), d * (y1 - y0))):
+        px = outer[0] * dx + outer[2] * dy
+        py = outer[1] * dx + outer[3] * dy
+        steps.append(domain_samples(math.hypot(px, py) * self.scale))
+    columns, rows = steps
+    across = numpy.clip(
+        numpy.floor((points[:, 0] - x0) / ((x1 - x0) or 1.0) * columns), 0, columns - 1
+    ).astype(numpy.int64)
+    down = numpy.clip(
+        numpy.floor((points[:, 1] - y0) / ((y1 - y0) or 1.0) * rows), 0, rows - 1
+    ).astype(numpy.int64)
+    sample_x = x0 + (across + 0.5) * ((x1 - x0) / columns)
+    sample_y = y0 + (down + 0.5) * ((y1 - y0) / rows)
+
+    def arguments(positions: Any) -> list[Any]:
+        return list(zip(sample_x[positions].tolist(), sample_y[positions].tolist(), strict=True))
+
+    return painted, across * rows + down, arguments
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.5.5",
+    introduced="1.3",
+    rule="mesh shadings interpolate each triangle's vertex colours, or t, by Gouraud shading",
+)
+def mesh_shading_values(
+    self: RasterTarget,
+    item: ShadingItem,
+    geometry: MeshGeometry,
+    box: tuple[int, int, int, int],
+    allowed: Any,
+    inverse: tuple[float, ...] | None,
+    bbox: tuple[float, float, float, float] | None,
+) -> tuple[Any, Any, Callable[[Any], list[Any]]] | None:
+    triangles = geometry.triangles
+    ranges = geometry.ranges
+    if triangles is None:
+        if geometry.patches is None or geometry.corners is None:
+            return None
+        outer = item.matrix if item.matrix is not None else (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        scale = self.scale
+        linear = (outer[0] * scale, outer[1] * scale, outer[2] * scale, outer[3] * scale)
+        tolerances = numpy.asarray(
+            [abs(high - low) * PATCH_COLOR_TOLERANCE for low, high in ranges], dtype=numpy.float64
+        )
+        triangles = patch_triangles(
+            geometry.patches, geometry.corners, linear, PATCH_TOLERANCE, tolerances, PATCH_DIVISIONS
+        )
+    ix0, iy0, ix1, iy1 = box
+    values, painted = mesh_values(
+        triangles,
+        self.crop_x0,
+        self.crop_y1,
+        self.scale,
+        ix0,
+        iy0,
+        ix1,
+        iy1,
+        allowed,
+        item.matrix,
+        inverse,
+        bbox,
+    )
+    rows = values[painted.view(numpy.bool_)]
+    levels = PARAMETER_LEVELS if geometry.parametric else COMPONENT_LEVELS
+    columns = [
+        quantized(rows[:, index], low, high, levels) for index, (low, high) in enumerate(ranges)
+    ]
+    codes = numpy.stack([code for code, _ in columns], axis=1)
+    samples = numpy.stack([sample for _, sample in columns], axis=1)
+    if len(ranges) * 11 <= 63:
+        keys = numpy.zeros(len(codes), dtype=numpy.int64)
+        for index in range(len(ranges)):
+            keys = (keys << 11) | codes[:, index]
+    else:
+        keys = numpy.unique(codes, axis=0, return_inverse=True)[1].reshape(-1)
+
+    def arguments(positions: Any) -> list[Any]:
+        return [tuple(row) for row in samples[positions].tolist()]
+
+    return painted, keys, arguments
+
+
+def no_arguments(positions: Any) -> list[Any]:  # noqa: ARG001
+    return []
+
+
+def paint_geometry_shading(
+    self: RasterTarget,
+    item: ShadingItem,
+    shading: PreparedShading,
+    blend_mode: str | None,
+    background: tuple[float, ...] | None,
+) -> None:
+    """Paint a function-based (type 1) or mesh (types 4 to 7) shading. Its geometry is in
+    its target space, which item.matrix (or the identity) maps to default user space; BBox
+    clips there."""
+    geometry = shading.geometry
+    matrix = item.matrix
+    inverse = None
+    if matrix is not None:
+        inverse = invert_affine(matrix)
+        if inverse is None:
+            return
+    bbox = normalize_rect(shading.bbox) if shading.bbox is not None else None
+    reach = geometry_bounds(shading, matrix)
+    if background is not None:
+        box: tuple[float, float, float, float] | None = painted_area_box(self, item)
+    elif reach is None:
+        return
+    else:
+        box = intersect_box(self.shading_box(item, shading), reach)
+    if box is None:
+        return
+    clipped_box = self.clip.clipped_pixel_box(box)
+    if clipped_box is None:
+        return
+    ix0, iy0, ix1, iy1 = clipped_box[1]
+    allowed = numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8).reshape(
+        iy1 - iy0, ix1 - ix0
+    )
+    found: tuple[Any, Any, Callable[[Any], list[Any]]] | None = None
+    if reach is not None:
+        pixel_box = (ix0, iy0, ix1, iy1)
+        if isinstance(geometry, FunctionGeometry):
+            found = function_shading_values(self, item, geometry, pixel_box, allowed, inverse, bbox)
+        elif isinstance(geometry, MeshGeometry):
+            found = mesh_shading_values(self, item, geometry, pixel_box, allowed, inverse, bbox)
+    if found is None:
+        found = (numpy.zeros_like(allowed), numpy.zeros(0, dtype=numpy.int64), no_arguments)
+    painted, keys, arguments = found
+    blend_shading_colors(
+        self,
+        item,
+        shading,
+        kernel_blend_code(self.resolved_blend(blend_mode)),
+        (ix0, iy0),
+        painted,
+        keys,
+        arguments,
+        allowed if background is not None else None,
+        background,
+        many_colors=True,
+    )
 
 
 def paint_tiling_pattern(
@@ -417,6 +820,8 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
                 "fill_opacity": data.fill_opacity,
                 "soft_mask_alpha": data.soft_mask_alpha,
                 "color_rendering": pattern.color_rendering,
+                # A shading pattern paints Background where the shading does not (8.7.4.3).
+                "background": True,
             }
             if pattern.matrix is not None:
                 shading_data["matrix"] = pattern.matrix
@@ -488,6 +893,7 @@ def paint_pattern_over(
             "fill_opacity": opacity,
             "soft_mask_alpha": data.soft_mask_alpha,
             "color_rendering": pattern.color_rendering,
+            "background": True,
         }
         if pattern.matrix is not None:
             shading_data["matrix"] = pattern.matrix

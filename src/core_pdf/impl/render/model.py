@@ -383,6 +383,11 @@ def translated_data(
         a, b, c, d, e, f = matrix
         data["matrix"] = (a, b, c, d, e + tx, f + ty)
     elif kind == "shading" and isinstance(data.get("dictionary"), dict):
+        if data["dictionary"].get("ShadingType") not in {2, 3}:
+            # Other shadings move by giving them a space: the translation.
+            data["matrix"] = (1.0, 0.0, 0.0, 1.0, tx, ty)
+            data["blend_mode"] = data.get("blend_mode") or parent_blend_mode
+            return data
         dictionary = dict(data["dictionary"])
         coords = dictionary.get("Coords")
         if isinstance(coords, (list, tuple)):

@@ -51,6 +51,7 @@ lazy from core_pdf_cythonized._knockout import (
     composite_knockout_group,
 )
 lazy from core_pdf_cythonized._luminosity import luminosity_channel
+lazy from core_pdf_cythonized._mesh_shading import function_values, mesh_values, patch_triangles
 lazy from core_pdf_cythonized._nonisolated import composite_nonisolated_blend
 lazy from core_pdf_cythonized._outline import (
     outline_coordinate_arrays,
@@ -116,6 +117,9 @@ __all__ = (
     "accumulate_source_plane",
     "alpha_channel",
     "luminosity_channel",
+    "function_values",
+    "mesh_values",
+    "patch_triangles",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "blend_visible_rgba",

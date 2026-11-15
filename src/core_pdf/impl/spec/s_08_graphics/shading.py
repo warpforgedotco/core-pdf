@@ -5,11 +5,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar
+from typing import ClassVar, Final
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import require_pdf_number_array
 from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_records import GeneratedRecord
+
+# The key under which a shading dictionary read from a stream (types 4 to 7) keeps that
+# stream, for its data: bytes, which no name key (a str) equals.
+SHADING_STREAM_KEY: Final = b"stream"
 
 
 class ShadingSpec(GeneratedRecord):
@@ -108,4 +113,68 @@ def parse_shading(
     )
 
 
-__all__ = ("ShadingSpec", "parse_shading")
+class FunctionShadingSpec(GeneratedRecord):
+    """A type 1 shading: its Function maps each point (x, y) of Domain, [xmin xmax ymin ymax],
+    to a colour, and Matrix maps Domain into the shading's target space."""
+
+    domain: tuple[float, float, float, float]
+    matrix: tuple[float, float, float, float, float, float]
+    color_space: object
+    bbox: tuple[float, float, float, float] | None
+    evaluator: PdfFunctionEvaluator
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.4.5.2",
+    introduced="1.3",
+    rule="a function-based shading's Domain defaults to [0 1 0 1] and its Matrix to the identity",
+)
+def parse_function_shading(
+    dictionary: object,
+    *,
+    compile_function: Callable[[object], PdfFunctionEvaluator] = compile_pdf_function,
+) -> FunctionShadingSpec:
+    if not isinstance(dictionary, dict):
+        raise ValueError("invalid shading dictionary")
+    if dictionary.get("ShadingType") != 1:
+        raise ValueError("not a function-based shading")
+    domain = require_pdf_number_array(
+        dictionary.get("Domain", (0.0, 1.0, 0.0, 1.0)), "invalid shading domain"
+    )
+    if len(domain) != 4:
+        raise ValueError("invalid shading domain")
+    matrix = require_pdf_number_array(
+        dictionary.get("Matrix", (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)), "invalid shading matrix"
+    )
+    if len(matrix) != 6:
+        raise ValueError("invalid shading matrix")
+    color_space = dictionary.get("ColorSpace")
+    if color_space is None:
+        raise ValueError("missing shading color space")
+    function = dictionary.get("Function")
+    if function is None:
+        raise ValueError("missing shading function")
+    bbox_obj = dictionary.get("BBox")
+    bbox_values = (
+        () if bbox_obj is None else require_pdf_number_array(bbox_obj, "invalid shading bbox")
+    )
+    if bbox_obj is not None and len(bbox_values) != 4:
+        raise ValueError("invalid shading bbox")
+    bbox = (bbox_values[0], bbox_values[1], bbox_values[2], bbox_values[3]) if bbox_values else None
+    return FunctionShadingSpec(
+        (domain[0], domain[1], domain[2], domain[3]),
+        (matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]),
+        color_space,
+        bbox,
+        compile_function(function),
+    )
+
+
+__all__ = (
+    "SHADING_STREAM_KEY",
+    "FunctionShadingSpec",
+    "ShadingSpec",
+    "parse_function_shading",
+    "parse_shading",
+)

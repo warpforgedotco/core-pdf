@@ -55,6 +55,7 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
     parse_color_space,
 )
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+from core_pdf.impl.spec.s_08_graphics.shading import SHADING_STREAM_KEY
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
 from core_pdf.impl.spec.standards import SemanticContext
 from core_pdf.impl.spec.types import PdfName, PdfReference, PdfString
@@ -119,6 +120,7 @@ class ContentInterpreter:
         self.type3_uncolored = False
         self.resources: PdfDict = {}
         self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
+        self.shading_streams: dict[int, tuple[PdfStream, PdfDict]] = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
         self.default_handlers: dict[str, OperationHandler] = {
             name: getattr(self, handler) for name, handler in CONTENT_OPERATOR_HANDLERS.items()
@@ -1051,11 +1053,38 @@ class ContentInterpreter:
             return self.reject(PdfParseError("resource operator requires a name"), "resource", None)
         return name
 
+    @cites(
+        "ISO 32000-2",
+        "8.7.4.3",
+        introduced="1.3",
+        rule="shadings of types 4 to 7 are streams, whose data holds their geometry",
+    )
+    def resolve_shading(self, value: object) -> PdfDict | None:
+        """A shading dictionary. One read from a stream keeps the stream, whose data a mesh
+        shading needs, under SHADING_STREAM_KEY; each stream gives the same dictionary."""
+        resolved = self.resolver.resolve(value)
+        for _ in range(8):
+            if type(resolved) is not PdfReference:
+                break
+            resolved = self.resolver.resolve(resolved)
+        if type(resolved) is not PdfStream:
+            return self.resolver.resolve_dict(resolved)
+        cached = self.shading_streams.get(id(resolved))
+        if cached is not None and cached[0] is resolved:
+            return cached[1]
+        dictionary = self.resolver.resolve_dict(resolved.dictionary)
+        if dictionary is None:
+            return None
+        shading = dict(dictionary)
+        shading[SHADING_STREAM_KEY] = resolved
+        self.shading_streams[id(resolved)] = (resolved, shading)
+        return shading
+
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
         name = self.resource_operand_name(operands)
         if name is None:
             return
-        shading = self.resolver.resolve_dict(self.lookup_page_resource("Shading", name))
+        shading = self.resolve_shading(self.lookup_page_resource("Shading", name))
         if not isinstance(shading, dict):
             self.reject(PdfParseError("missing shading resource"), "shading", None)
             return
@@ -1266,8 +1295,7 @@ class ContentInterpreter:
                     None,
                 )
             shading: object = pattern_dict.get("Shading")
-            shading = self.resolver.resolve(shading)
-            shading_dict = self.resolver.resolve_dict(shading) if shading is not None else None
+            shading_dict = self.resolve_shading(shading) if shading is not None else None
             if not isinstance(shading_dict, dict):
                 return self.reject(PdfParseError(invalid), "pattern", None)
             extgstate = self.resolver.resolve_dict(pattern_dict.get("ExtGState"))
