@@ -1222,6 +1222,7 @@ class ContentInterpreter:
             self.reject(parse_error_from(error), "extended-graphics-state", None)
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
+        self.apply_extgstate_line_style(extgstate)
         intent = self.resolver.resolve(extgstate.get("RI"))
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
@@ -1259,6 +1260,42 @@ class ContentInterpreter:
         soft_mask = self.resolver.resolve(extgstate.get("SMask"))
         if soft_mask is not None:
             self.graphics.soft_mask = self.resolve_soft_mask(soft_mask)
+
+    @cites(
+        "ISO 32000-2",
+        "8.4.5",
+        introduced="1.3",
+        rule="LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash",
+    )
+    def apply_extgstate_line_style(self, extgstate: dict[str, Any]) -> None:
+        """A parameter dictionary's line style entries, each applied as its operator, w,
+        J, j, M or d, applies its operands (Table 57). These are this class's operators, not
+        a subclass's: a facade that mirrors another reader's operators, one that ignores gs,
+        sees no w or d here."""
+        resolve = self.resolver.resolve
+        line_width = extgstate.get("LW")
+        if line_width is not None:
+            ContentInterpreter.op_w(self, (resolve(line_width),), 0)
+        line_cap = extgstate.get("LC")
+        if line_cap is not None:
+            ContentInterpreter.op_J(self, (resolve(line_cap),), 0)
+        line_join = extgstate.get("LJ")
+        if line_join is not None:
+            ContentInterpreter.op_j(self, (resolve(line_join),), 0)
+        miter_limit = extgstate.get("ML")
+        if miter_limit is not None:
+            ContentInterpreter.op_M(self, (resolve(miter_limit),), 0)
+        dash = resolve(extgstate.get("D"))
+        if dash is not None:
+            if not isinstance(dash, (list, tuple)) or len(dash) != 2:
+                self.reject(
+                    PdfParseError("D must hold a dash array and a phase"), "dash-pattern", None
+                )
+                return
+            array = resolve(dash[0])
+            if isinstance(array, (list, tuple)):
+                array = [resolve(value) for value in array]
+            ContentInterpreter.op_d(self, (array, resolve(dash[1])), 0)
 
     def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
         pattern_name = self.resolver.resolve_name(name_operand)

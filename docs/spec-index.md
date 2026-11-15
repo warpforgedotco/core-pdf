@@ -41,6 +41,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
 | PDF 1.3 | Background fills the area a shading pattern paints, not one sh paints | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.render.raster_shading.shading_background` |
 | PDF 1.3 | Background holds one colour's components in the shading's colour space | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.graphics.shading.background_components` |
+| PDF 1.3 | LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash | ISO 32000-2 8.4.5 (Graphics state parameter dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style` |
 | PDF 1.3 | a Coons patch's inner control points follow from its boundary curves | ISO 32000-2 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points` |
 | PDF 1.3 | a free-form mesh's edge flags join each vertex to the previous triangle | ISO 32000-2 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.free_form_triangles` |
 | PDF 1.3 | a function-based shading paints its Function over Domain, mapped by Matrix | ISO 32000-2 8.7.4.5.2 (Type 1 (function-based) shadings) | `core_pdf.impl.render.raster_shading.function_shading_values` |
@@ -228,6 +229,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters`: an embedded file's Subtype and Params
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream`: the embedded file streams of EF
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
+- 8.4.5 (Graphics state parameter dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style`: LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
