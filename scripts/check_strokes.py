@@ -36,6 +36,7 @@ uv run --all-packages python scripts/check_strokes.py
 
 from __future__ import annotations
 
+import copy
 import math
 import sys
 from collections.abc import Sequence
@@ -94,6 +95,7 @@ class Stroke:
         dash: tuple[Sequence[float], float] | None = None,
         explicit_close: bool = False,
         circle: tuple[Point, float] | None = None,
+        repeat: int = 1,
     ) -> None:
         # As the content stream writes them, so that the reference strokes the same path.
         self.points = tuple((float(f"{x:.6g}"), float(f"{y:.6g}")) for x, y in points)
@@ -107,8 +109,13 @@ class Stroke:
         self.explicit_close = explicit_close
         # A circle (centre, radius) drawn with four Bezier curves instead of the points.
         self.circle = circle
+        # How many times the path holds the subpath: the stroke, one shape, is the same.
+        self.repeat = repeat
 
     def path(self) -> bytes:
+        return self.subpath() * self.repeat + b"S"
+
+    def subpath(self) -> bytes:
         if self.circle is not None:
             (cx, cy), r = self.circle
             k = r * 0.5522847498
@@ -120,12 +127,12 @@ class Stroke:
                 ((cx + k, cy - r), (cx + r, cy - k), (cx + r, cy)),
             ):
                 out += b"%s c " % numbers([x0, y0, x1, y1, x2, y2])
-            return out + b"h S"
+            return out + b"h "
         first, *rest = self.points
         if self.explicit_close:
             rest = [*rest, first]
         out = b"%s m " % numbers(first) + b"".join(b"%s l " % numbers(point) for point in rest)
-        return out + (b"h S" if self.closed else b"S")
+        return out + (b"h " if self.closed else b"")
 
     def operators(self) -> bytes:
         dash = b"[] 0 d"
@@ -706,6 +713,37 @@ def cases() -> list[Case]:
             "skewed circle of curves", [Stroke((), circle=((0.0, 0.0), 60.0), width=10.0)], ctm=SKEW
         ),
     ]
+    # A path holding its subpath twice strokes one shape: no edge pixel blends twice.
+    diagonal = [(40.0, 40.0), (260.0, 230.0)]
+    found += [
+        Case(
+            "opaque path held twice, round joins",
+            [Stroke(ZIGZAG, join=ROUND_JOIN, cap=ROUND, repeat=2)],
+        ),
+        Case(
+            "opaque dashed diagonal held twice",
+            [Stroke(diagonal, width=4.0, dash=([10.0, 10.0], 0.0), repeat=2)],
+        ),
+        Case(
+            "opaque dashed path held twice, square caps",
+            [Stroke(ZIGZAG, cap=SQUARE, dash=([30.0, 22.0], 9.0), repeat=2)],
+        ),
+        Case(
+            "alpha 0.5, dashed path held twice",
+            [Stroke(ZIGZAG, cap=ROUND, dash=([30.0, 22.0], 0.0), repeat=2)],
+            alpha=0.5,
+        ),
+        Case(
+            "opaque circle of curves held twice", [Stroke((), circle=CIRCLE, width=6.0, repeat=2)]
+        ),
+        Case(
+            "Multiply, path held twice",
+            [Stroke(TRIANGLE, closed=True, join=BEVEL, width=10.0, repeat=2)],
+            blend="Multiply",
+            backdrop=ORANGE,
+            colour=BLUE,
+        ),
+    ]
     # The line width is a diameter in user space (8.4.3.2): under a CTM that skews or
     # scales unevenly, the pen is an ellipse on the page, and the joins, caps, miter limit
     # and dashes follow user space.
@@ -754,18 +792,19 @@ def cases() -> list[Case]:
 def contains(
     shape: Shape, x: Grid, y: Grid
 ) -> numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]]:
-    """Whether each point lies inside the shape."""
+    """Whether each point lies inside the shape or on its edge, so that a point on the
+    edge two pieces share, as a segment's end and its join do, lies in the union."""
     kind, vertices, radius = shape
     if kind == "disc":
         cx, cy = vertices[0]
-        return (x - cx) ** 2 + (y - cy) ** 2 < radius * radius
+        return (x - cx) ** 2 + (y - cy) ** 2 <= radius * radius
     if kind == "ring":
         (cx, cy), (middle, half) = vertices
-        return numpy.abs(numpy.hypot(x - cx, y - cy) - middle) < half
+        return numpy.abs(numpy.hypot(x - cx, y - cy) - middle) <= half
     edges = list(zip(vertices, (*vertices[1:], vertices[0])))
     signs = [(b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) for a, b in edges]
-    return numpy.logical_and.reduce([sign > 0 for sign in signs]) | numpy.logical_and.reduce(
-        [sign < 0 for sign in signs]
+    return numpy.logical_and.reduce([sign >= 0 for sign in signs]) | numpy.logical_and.reduce(
+        [sign <= 0 for sign in signs]
     )
 
 
@@ -875,13 +914,25 @@ def eroded(
     return all_inside, all_outside
 
 
-def check(case: Case) -> tuple[int, int]:
+def rendered(case: Case) -> numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]:
     with PdfDocument(case.pdf()) as pdf:
         image = pdf.pages[0].render().rasterize()
-    pixels = numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(
-        image.height, image.width, 4
-    )
-    inside, checked = outline_pixels(case, image.height, image.width)
+    return numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(image.height, image.width, 4)
+
+
+def once(case: Case) -> Case:
+    """The case with each stroke's subpath held once."""
+    twin = copy.copy(case)
+    twin.strokes = tuple(copy.copy(stroke) for stroke in case.strokes)
+    for stroke in twin.strokes:
+        stroke.repeat = 1
+    return twin
+
+
+def check(case: Case) -> tuple[int, int]:
+    pixels = rendered(case)
+    height, width = pixels.shape[:2]
+    inside, checked = outline_pixels(case, height, width)
     painted, untouched = case.expected()
     difference = numpy.abs(pixels.astype(int) - numpy.array(painted)).max(axis=2)
     # A pixel nothing paints is transparent, whatever its colour.
@@ -894,7 +945,17 @@ def check(case: Case) -> tuple[int, int]:
         expected = painted if inside[row, column] else untouched
         pixel = tuple(int(value) for value in pixels[row, column])
         print(f"  {case.name}: pixel {column},{row}: {pixel}, not {expected}")
-    return int(checked.sum()), len(wrong)
+    if all(stroke.repeat == 1 for stroke in case.strokes):
+        return int(checked.sum()), len(wrong)
+    # A stroke holding its subpath twice is the same shape, painted the same, to the
+    # edges' blended pixels: each pixel must match the stroke holding it once.
+    twin = rendered(once(case))
+    unlike = numpy.argwhere((pixels != twin).any(axis=2))
+    for row, column in unlike[:3]:
+        pixel = tuple(int(value) for value in pixels[row, column])
+        expected = tuple(int(value) for value in twin[row, column])
+        print(f"  {case.name}: pixel {column},{row}: {pixel}, not {expected} as held once")
+    return int(checked.sum()) + height * width, len(wrong) + len(unlike)
 
 
 def main() -> int:

@@ -1658,11 +1658,12 @@ def walk_once(
     calls: typing.Optional[Callbacks],
     ends: cython.p_longlong,
     groups: cython.Py_ssize_t,
+    buffer: cython.pointer[cython.p_ushort],
+    capacity: cython.p_Py_ssize_t,
 ) -> cython.int:
     """Paint each group of subpaths, the strokes ending at ends, once, each in turn: piece
-    by piece where that paints the same, and otherwise by paint_once."""
-    buffer: cython.p_ushort = cython.NULL
-    capacity: cython.Py_ssize_t = 0
+    by piece where that paints the same, and otherwise by paint_once, in buffer, which
+    holds capacity sample masks and which the caller frees, an error raised or not."""
     group: cython.Py_ssize_t
     first: cython.Py_ssize_t = 0
     last: cython.Py_ssize_t
@@ -1672,13 +1673,10 @@ def walk_once(
         if in_pieces(w, first, last, p.alpha >= 255):
             result = walk_range(p, w, calls, first, last)
         else:
-            result = paint_once(
-                p, w, calls, first, last, cython.address(buffer), cython.address(capacity)
-            )
+            result = paint_once(p, w, calls, first, last, buffer, capacity)
         if result < 0:
             break
         first = last
-    free(buffer)
     return result
 
 
@@ -1736,6 +1734,9 @@ def stroke_polylines(
     if bounds == cython.NULL:
         raise MemoryError
     ends: cython.p_longlong = bounds + 3 * count
+    # paint_once's sample masks, grown to each stroke's box and freed here.
+    buffer: cython.p_ushort = cython.NULL
+    capacity: cython.Py_ssize_t = 0
     k: cython.Py_ssize_t
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
@@ -1813,11 +1814,20 @@ def stroke_polylines(
         w.cover = cython.NULL
         with cython.nogil:
             if once:
-                walk_once(cython.address(p), cython.address(w), calls, ends, groups)
+                walk_once(
+                    cython.address(p),
+                    cython.address(w),
+                    calls,
+                    ends,
+                    groups,
+                    cython.address(buffer),
+                    cython.address(capacity),
+                )
             else:
                 walk(cython.address(p), cython.address(w), calls)
         flush(cython.address(p), calls)
     finally:
+        free(buffer)
         free(bounds)
 
 

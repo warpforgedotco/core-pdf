@@ -207,9 +207,14 @@ def stroke_path(
         and all(type(channel) is int for channel in rgba)
     )
     dashed = bool(dash_pattern and dash_pattern[0])
-    # Painted once in the kernel, a coalesced path's strokes each in turn; dashes, which
-    # stroke_path strokes subpath by subpath, only when opaque.
-    once = matrix is None and native and (rgba[3] >= 255 or not dashed)
+    # Painted once in the kernel, a coalesced path's strokes each in turn. Dashes, which
+    # stroke_path strokes subpath by subpath, only when that paints the same as the
+    # stroke at once, opaque along the axes; stroke_once unions all the others.
+    once = (
+        matrix is None
+        and native
+        and (not dashed or (rgba[3] >= 255 and seamless_in_pieces(path, line_join, miter_limit)))
+    )
     if not once:
         pieces = (
             matrix is None

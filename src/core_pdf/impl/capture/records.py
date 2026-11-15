@@ -292,11 +292,33 @@ class CapturedPath:
         return paths
 
     def flattened_parts(self) -> list[DeferredPoints] | None:
+        """The path as the parts of a coalesced path: each stroke in it its own, so that
+        stroke_path can paint them apart."""
         if self._parts is not None:
             return self._parts
         deferred = self._deferred
-        if deferred is None or deferred[3]:
-            return None
+        if deferred is None:
+            xs: list[float] = []
+            ys: list[float] = []
+            spans: list[tuple[int, int, bool]] = []
+            for subpath in self.subpaths:
+                start = len(xs)
+                for x, y in subpath.points:
+                    xs.append(x)
+                    ys.append(y)
+                spans.append((start, len(xs), bool(subpath.closed)))
+            return [
+                (
+                    numpy.asarray(xs, dtype=numpy.float64),
+                    numpy.asarray(ys, dtype=numpy.float64),
+                    spans,
+                    False,
+                )
+            ]
+        if deferred[3]:
+            # An outline's subpaths are all closed.
+            column_x, column_y, spans, _ = deferred
+            return [(column_x, column_y, [(start, end, True) for start, end, _ in spans], False)]
         return [deferred]
 
     def subpath_count(self) -> int:
@@ -321,7 +343,9 @@ class CapturedPath:
                     for start, end, flag in spans
                 ]
                 self.subpaths = subpaths
+                # Its subpaths, which a caller may change, are the path from now on.
                 self._deferred = None
+                self._parts = None
                 self._summary = None
                 return subpaths
         raise AttributeError(name)
