@@ -21,6 +21,7 @@ lazy from core_pdf_cythonized._area_gaps import AreaGapQueue
 lazy from core_pdf_cythonized._bezier import cubic_sample_times
 lazy from core_pdf_cythonized._blend import blend_normal_alpha_array_numpy
 lazy from core_pdf_cythonized._blend_visible import blend_visible_rgba
+lazy from core_pdf_cythonized._char_gaps import CharGapRules
 lazy from core_pdf_cythonized._chars import no_char, pdfminer_chars, plumber_char_dicts
 lazy from core_pdf_cythonized._composite import (
     composite_elementary_normal,
@@ -93,6 +94,7 @@ __all__ = (
     "ObjectWriter",
     "collect_references",
     "AreaGapQueue",
+    "CharGapRules",
     "cell_distance_map",
     "glyph_feature_cells",
     "merge_collinear_rows",
