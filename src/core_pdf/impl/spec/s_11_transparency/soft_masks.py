@@ -1,12 +1,28 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""ISO 32000-2 11.6.5: soft-mask dictionaries: their group, backdrop and transfer function."""
+"""ISO 32000-2 11.6.5: soft-mask dictionaries: their group, backdrop and transfer function.
+
+A Luminosity mask (11.5.3) composites its group over an opaque backdrop of the BC colour,
+C = (1 - ag) C0 + ag Cg, in the group's colour space, and takes the luminosity of C; the
+transfer function then gives the mask value. Outside the group's bounding box the mask is
+the BC colour's luminosity through the transfer function (11.6.5.1).
+
+Where the clauses leave a choice open:
+
+- A device space's luminosity is "implementation-defined"; this takes the formulas of
+  11.5.3's example: a gray level as it is, 0.30 R + 0.59 G + 0.11 B, and
+  1 - min(1, 0.3 C + 0.59 M + 0.11 Y + K).
+- A CIE-based space should give its CIE 1931 Y. Core composites a CalGray, CalRGB or
+  ICCBased group as the device space of its family (blending_space), and takes the luminosity
+  the same way, as viewers commonly do, rather than the colorimetric Y.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfObject, PdfValueResolver
@@ -21,6 +37,9 @@ from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
 from core_pdf.impl.spec.types import PdfReference
 from core_records import GeneratedRecord
+
+if TYPE_CHECKING:
+    from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
 
 
 class SoftMask(GeneratedRecord):
@@ -206,4 +225,47 @@ def parse_soft_mask(
     )
 
 
-__all__ = ("SoftMask", "parse_soft_mask")
+@cites("ISO 32000-2", "11.5.3", introduced="1.4", rule="the colour a luminosity mask is taken from")
+def luminosity_mask_color(
+    backdrop: tuple[float, ...], color: tuple[float, ...], alpha: float
+) -> tuple[float, ...]:
+    """C = (1 - ag) x C0 + ag x Cg: the group's colour and alpha over the opaque backdrop C0,
+    component by component (in a subtractive space, on the colorant amounts or their
+    complements alike, since the weights sum to one)."""
+    return tuple(
+        (1.0 - alpha) * base + alpha * value for base, value in zip(backdrop, color, strict=True)
+    )
+
+
+@cites("ISO 32000-2", "11.5.3", introduced="1.4", rule="the luminosity of a device colour")
+def device_luminosity(space: BlendingSpace, components: tuple[float, ...]) -> float:
+    """The luminosity of a colour of a blending space, given as its own components: its gray
+    level, or 11.5.3's formula for DeviceRGB or DeviceCMYK."""
+    if space == "DeviceGray":
+        (gray,) = components
+        return gray
+    if space == "DeviceRGB":
+        red, green, blue = components
+        return 0.3 * red + 0.59 * green + 0.11 * blue
+    cyan, magenta, yellow, black = components
+    return 1.0 - min(1.0, 0.3 * cyan + 0.59 * magenta + 0.11 * yellow + black)
+
+
+@cites("ISO 32000-2", "11.6.5.1", introduced="1.4", rule="a luminosity mask outside its group")
+def luminosity_mask_value(
+    space: BlendingSpace, color: tuple[float, ...], transfer: PdfFunctionEvaluator | None = None
+) -> float:
+    """The mask value of a colour C of the group's space: its luminosity through the
+    transfer function TR (None: Identity). With the BC colour, the value outside the group's
+    bounding box."""
+    luminosity = device_luminosity(space, color)
+    return luminosity if transfer is None else transfer(luminosity)[0]
+
+
+__all__ = (
+    "SoftMask",
+    "device_luminosity",
+    "luminosity_mask_color",
+    "luminosity_mask_value",
+    "parse_soft_mask",
+)

@@ -31,7 +31,7 @@ bytes inside a DeviceCMYK group as outside one.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -55,8 +55,10 @@ from core_pdf.impl.render.model import (
 )
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace, group_blending_space
+lazy from core_pdf_cythonized import luminosity_channel
 
 if TYPE_CHECKING:
+    from core_pdf.impl.capture.records import CapturedSoftMask
     from core_pdf.impl.render.target import RasterTarget
 
 type Rgba = tuple[int, int, int, int]
@@ -254,6 +256,39 @@ def paint_space_group(
             self.space_images.clear()
     convert_group_space(passes, space, profile, parent_mode, parent_profile)
     self.composite_group(passes[0])
+
+
+# The luminosity_channel code of each blending space.
+LUMINOSITY_SPACES: dict[BlendingSpace, int] = {"DeviceRGB": 0, "DeviceGray": 1, "DeviceCMYK": 2}
+
+
+def luminosity_mask_channel(
+    self: RasterTarget, mask: CapturedSoftMask, items: Sequence[DisplayItem]
+) -> tuple[UInt8Array, Any]:
+    """A Luminosity soft mask's values before its transfer function, a byte per pixel, and
+    if it has one, which bytes occur (ISO 32000-2 11.5.3, 11.6.5.1). Its group composites
+    in its blending space over a fully opaque backdrop of the BC colour, a raster of the
+    parent's size for each pass of the space, so outside the group's bounding box the BC
+    colour stays; and each pixel's colour, C = (1 - ag) C0 + ag Cg, becomes its
+    luminosity."""
+    space = mask.blending_space
+    assert space is not None
+    profile = mask.blending_profile if space == "DeviceCMYK" else None
+    views: list[UInt8Array] = []
+    for mode in SPACE_PASSES[space]:
+        nested, view = self.blank_sibling()
+        nested.set_space_mode(mode, profile)
+        red, green, blue, _ = nested.paint_rgba(mask.backdrop, 1.0)
+        pixel = numpy.array((red, green, blue, 255), dtype=numpy.uint8).view(numpy.uint32)
+        view.reshape(-1).view(numpy.uint32).fill(pixel[0])
+        nested.paint_items(items, translation=mask.offset)
+        views.append(view)
+    return luminosity_channel(
+        views[0],
+        views[1] if len(views) > 1 else None,
+        LUMINOSITY_SPACES[space],
+        mask.transfer is not None,
+    )
 
 
 def convert_group_space(
