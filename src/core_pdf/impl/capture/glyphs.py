@@ -255,6 +255,8 @@ class GlyphPaint(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     clip_glyph: bool
     alpha_is_shape: bool
     graphics_soft_mask: object | None
+    fill_pattern: object | None = None
+    stroke_pattern: object | None = None
 
 
 @dataclass(slots=True)
@@ -298,6 +300,8 @@ def glyph_style(
         paint.alpha_is_shape,
         decoder.is_type3,
         paint.graphics_soft_mask,
+        paint.fill_pattern,
+        paint.stroke_pattern,
     )
 
 

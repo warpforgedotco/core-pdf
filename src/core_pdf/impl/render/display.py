@@ -290,8 +290,8 @@ class DisplayList:
                 style.blend_mode,
                 style.soft_mask_alpha,
                 False,
-                None,
-                None,
+                style.fill_pattern,
+                style.stroke_pattern,
                 style.alpha_is_shape,
                 graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None,
             )

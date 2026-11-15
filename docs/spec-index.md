@@ -41,6 +41,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
+| PDF 1.2 | text painted with a pattern colour shows the pattern through the glyphs | ISO 32000-2 9.3.6 (Text rendering mode) | `core_pdf.impl.capture.text_painting.glyph_paint` |
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
 | PDF 1.3 | Background fills the area a shading pattern paints, not one sh paints | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.render.raster_shading.shading_background` |
 | PDF 1.3 | Background holds one colour's components in the shading's colour space | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.graphics.shading.background_components` |
@@ -256,6 +257,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.7.4.5.6 (Type 5 (lattice-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.lattice_triangles`: a lattice-form mesh splits each cell of its lattice into two triangles
 - 8.7.4.5.7 (Type 6 (Coons patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.patch_arrays`: a patch with edge flag 1, 2 or 3 repeats an edge of the previous patch
 - 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points`: a Coons patch's inner control points follow from its boundary curves
+- 9.3.6 (Text rendering mode) `core_pdf.impl.capture.text_painting.glyph_paint`: text painted with a pattern colour shows the pattern through the glyphs
 - 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.truetype_uses_symbolic_cmap`: a symbolic TrueType font maps codes by its (3,0) or (1,0) cmap, others by glyph name

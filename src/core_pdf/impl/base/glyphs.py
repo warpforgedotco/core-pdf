@@ -95,6 +95,9 @@ class GlyphStyle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     alpha_is_shape: bool
     paint_from_program: bool
     graphics_soft_mask: object | None
+    # The captured patterns text paints with in place of fill and stroke_color (9.3.6).
+    fill_pattern: object | None = None
+    stroke_pattern: object | None = None
 
 
 STYLE_FIELDS: tuple[str, ...] = GlyphStyle.__fields__
@@ -172,6 +175,8 @@ class GlyphObservation(ReprFields):
         alpha_is_shape: bool
         paint_from_program: bool
         graphics_soft_mask: object | None
+        fill_pattern: object | None
+        stroke_pattern: object | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "text",
