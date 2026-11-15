@@ -29,8 +29,13 @@ def circle_path(cx: float, cy: float, radius: float) -> CapturedPath:
 
 
 def dash_subpath(
-    subpath: CapturedSubpath, dash_pattern: tuple[list[float], float]
+    subpath: CapturedSubpath,
+    dash_pattern: tuple[list[float], float],
+    zero_length: list[tuple[float, float, float, float]] | None = None,
 ) -> list[CapturedSubpath]:
+    """The dashes of a subpath (ISO 32000-2 8.4.3.6). A zero-length dash is a subpath of
+    one point, a dot with round caps; zero_length also gets its point and the unit vector
+    of the path there, the direction projecting square caps follow."""
     lengths = [max(0.0, float(value)) for value in dash_pattern[0]]
     if len(lengths) % 2:
         lengths *= 2
@@ -60,15 +65,23 @@ def dash_subpath(
             if remaining <= 0.0:
                 if index % 2 == 0 and lengths[index] == 0.0:
                     pieces.append(CapturedSubpath([point, point]))
+                    if zero_length is not None:
+                        zero_length.append((*point, dx / distance, dy / distance))
                 index = (index + 1) % len(lengths)
                 remaining = lengths[index]
                 continue
             if position >= distance:
                 break
             step = min(remaining, distance - position)
+            # The segment's own end where the dash reaches it, so that a closed subpath's
+            # last dash still ends on its first point and joins its first dash.
             endpoint = (
-                start[0] + dx * ((position + step) / distance),
-                start[1] + dy * ((position + step) / distance),
+                end
+                if position + step >= distance
+                else (
+                    start[0] + dx * ((position + step) / distance),
+                    start[1] + dy * ((position + step) / distance),
+                )
             )
             if index % 2 == 0:
                 if not current:

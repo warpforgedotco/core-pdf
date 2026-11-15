@@ -8,11 +8,15 @@ from cython.cimports.core_pdf_cythonized._pixel_blend import blend_normal_pixel,
 from cython.cimports.core_pdf_cythonized._pymath import py_max, py_min, raise_not_integral
 from cython.cimports.core_pdf_cythonized._rect import fill_rect_pixels
 from cython.cimports.core_pdf_cythonized._stroke import (
+    CAP_BUTT,
+    CAP_ROUND,
     CLIP_NONE,
     CLIP_ROWS,
     FAILED_INFINITY,
     FAILED_MEMORY,
     FAILED_NAN,
+    JOIN_MITER,
+    JOIN_ROUND,
 )
 from cython.cimports.core_pdf_cythonized._stroke_segment import segment_samples
 from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rintf
@@ -703,27 +707,125 @@ def fill_terminal(
     return fill_rect(p, x - radius, y - radius, x + radius, y + radius)
 
 
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def fill_convex(
+    p: cython.pointer[Paint], xs: cython.p_double, ys: cython.p_double, n: cython.int
+) -> cython.int:
+    """Fill a convex polygon of n <= 4 page-space vertices, in either order, counting the
+    4 x 4 samples of each pixel inside every edge, as line_raster samples a segment."""
+    box = cython.declare(cython.double[4])
+    box[0] = xs[0]
+    box[1] = ys[0]
+    box[2] = xs[0]
+    box[3] = ys[0]
+    k: cython.int
+    area: cython.double = 0.0
+    for k in range(n):
+        box[0] = py_min(box[0], xs[k])
+        box[1] = py_min(box[1], ys[k])
+        box[2] = py_max(box[2], xs[k])
+        box[3] = py_max(box[3], ys[k])
+        area += xs[k] * ys[(k + 1) % n] - xs[(k + 1) % n] * ys[k]
+    if area == 0.0:
+        return 0
+    orientation: cython.double = 1.0 if area > 0.0 else -1.0
+    # Edge k holds the samples where a[k] x + b[k] y + c[k] >= 0.
+    a = cython.declare(cython.double[4])
+    b = cython.declare(cython.double[4])
+    c = cython.declare(cython.double[4])
+    for k in range(n):
+        a[k] = -(ys[(k + 1) % n] - ys[k]) * orientation
+        b[k] = (xs[(k + 1) % n] - xs[k]) * orientation
+        c[k] = -(a[k] * xs[k] + b[k] * ys[k])
+    pixel_box = cython.declare(cython.Py_ssize_t[4])
+    found: cython.int = clipped_pixel_box(p, box, pixel_box)
+    if found <= 0:
+        return found
+    ix0: cython.Py_ssize_t = pixel_box[0]
+    iy0: cython.Py_ssize_t = pixel_box[1]
+    ix1: cython.Py_ssize_t = pixel_box[2]
+    iy1: cython.Py_ssize_t = pixel_box[3]
+    px: cython.Py_ssize_t
+    py: cython.Py_ssize_t
+    sx: cython.int
+    sy: cython.int
+    count: cython.int
+    inside: cython.bint
+    alpha: cython.int
+    sample_x = cython.declare(cython.double[4])
+    sample_y: cython.double
+    span_count: cython.Py_ssize_t = 0
+    spans: cython.p_const_longlong = cython.NULL
+    any_covered: cython.bint = False
+    covered_box = cython.declare(cython.Py_ssize_t[4])
+    for py in range(iy0, iy1):
+        if p.clip_mode == CLIP_ROWS:
+            span_count = row_spans(p, py, cython.address(spans))
+        for px in range(ix0, ix1):
+            if p.clip_mode == CLIP_ROWS and not pixel_in_row(spans, span_count, px):
+                continue
+            for sx in range(4):
+                sample_x[sx] = (
+                    p.crop_x0 + (cython.cast(cython.double, px) + 0.125 + 0.25 * sx) / p.scale
+                )
+            count = 0
+            for sy in range(4):
+                sample_y = (
+                    p.crop_y1 - (cython.cast(cython.double, py) + 0.125 + 0.25 * sy) / p.scale
+                )
+                for sx in range(4):
+                    inside = True
+                    for k in range(n):
+                        if a[k] * sample_x[sx] + b[k] * sample_y + c[k] < 0.0:
+                            inside = False
+                            break
+                    if inside:
+                        count += 1
+            if not count:
+                continue
+            alpha = coverage_alpha(p.alpha, count)
+            if alpha <= 0:
+                continue
+            blend_normal_pixel(p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, alpha)
+            if not any_covered:
+                any_covered = True
+                covered_box[0] = px
+                covered_box[1] = py
+                covered_box[2] = px + 1
+                covered_box[3] = py + 1
+            else:
+                if px < covered_box[0]:
+                    covered_box[0] = px
+                if px + 1 > covered_box[2]:
+                    covered_box[2] = px + 1
+                covered_box[3] = py + 1
+    if any_covered:
+        extend(p, covered_box[1], covered_box[3], covered_box[0], covered_box[2])
+    return 0
+
+
 Walk = cython.struct(
     xs=cython.p_const_double,
     ys=cython.p_const_double,
     bounds=cython.p_const_longlong,
-    ends_differ=cython.p_const_uchar,
-    coincident=cython.p_const_uchar,
     count=cython.Py_ssize_t,
     line_width=cython.double,
+    half=cython.double,
     native=cython.bint,
-    cap_nonzero=cython.bint,
-    cap_butt=cython.bint,
-    cap_round=cython.bint,
-    join_round=cython.bint,
+    line_cap=cython.int,
+    line_join=cython.int,
+    miter_limit_squared=cython.double,
 )
 
 
 @cython.cclass
 class Callbacks:
     line: object
-    join: object
-    cap: object
+    polygon: object
+    square: object
+    circle: object
     dot: object
     extend: object
 
@@ -771,21 +873,106 @@ def line(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
+def terminal(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    x: cython.double,
+    y: cython.double,
+    round_shape: cython.bint,
+) -> cython.int:
+    """A disc, or a square a line width wide, around (x, y)."""
+    if w.native:
+        if fill_terminal(p, x, y, w.line_width, round_shape) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
+    with cython.gil:
+        if round_shape:
+            calls.circle(x, y)
+        else:
+            calls.square(x, y)
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def polygon(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    xs: cython.p_double,
+    ys: cython.p_double,
+    n: cython.int,
+) -> cython.int:
+    if w.native:
+        if fill_convex(p, xs, ys, n) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
+    with cython.gil:
+        if n == 3:
+            calls.polygon((xs[0], ys[0], xs[1], ys[1], xs[2], ys[2]))
+        else:
+            calls.polygon((xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], xs[3], ys[3]))
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
 def join(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
     calls: typing.Optional[Callbacks],
     x: cython.double,
     y: cython.double,
+    ax: cython.double,
+    ay: cython.double,
+    bx: cython.double,
+    by: cython.double,
 ) -> cython.int:
-    if w.native:
-        if fill_terminal(p, x, y, w.line_width, w.join_round) < 0:
-            with cython.gil:
-                failed(p, calls)
+    """The join at (x, y) of a segment arriving along the unit vector (ax, ay) and one
+    leaving along (bx, by). The two segments' rectangles leave uncovered only the wedge on
+    the outer side between their ends; a miter join fills it out to where the outer edges
+    meet, a bevel join only to the line between their corners, and a round join with the
+    disc around (x, y) (ISO 32000-2 8.4.3.4). A miter whose length over the line width,
+    1 / sin(angle / 2) = sqrt(2 / (1 + cos)), passes the miter limit is a bevel instead
+    (8.4.3.5)."""
+    if w.line_join == JOIN_ROUND:
+        return terminal(p, w, calls, x, y, True)
+    cross: cython.double = ax * by - ay * bx
+    if cross == 0.0:
+        # Straight on, or straight back, where a miter is infinite and a bevel empty.
         return 0
-    with cython.gil:
-        calls.join(x, y)
-    return 0
+    dot: cython.double = ax * bx + ay * by
+    miter: cython.bint = w.line_join == JOIN_MITER and (1.0 + dot) * w.miter_limit_squared >= 2.0
+    if miter and (ax == 0.0 or ay == 0.0) and (bx == 0.0 or by == 0.0):
+        # A right angle between axis-aligned segments: the miter is the outer quarter of
+        # the square around the corner, whose other three quarters the segments cover.
+        return terminal(p, w, calls, x, y, False)
+    # The outer side: right of the path on a left turn, left of it on a right turn.
+    side: cython.double = w.half if cross > 0.0 else -w.half
+    first_x: cython.double = ay * side
+    first_y: cython.double = -ax * side
+    second_x: cython.double = by * side
+    second_y: cython.double = -bx * side
+    xs = cython.declare(cython.double[4])
+    ys = cython.declare(cython.double[4])
+    xs[0] = x
+    ys[0] = y
+    xs[1] = x + first_x
+    ys[1] = y + first_y
+    if miter:
+        xs[2] = x + (first_x + second_x) / (1.0 + dot)
+        ys[2] = y + (first_y + second_y) / (1.0 + dot)
+        xs[3] = x + second_x
+        ys[3] = y + second_y
+        return polygon(p, w, calls, xs, ys, 4)
+    xs[2] = x + second_x
+    ys[2] = y + second_y
+    return polygon(p, w, calls, xs, ys, 3)
 
 
 @cython.cfunc
@@ -797,17 +984,33 @@ def cap(
     calls: typing.Optional[Callbacks],
     x: cython.double,
     y: cython.double,
+    ux: cython.double,
+    uy: cython.double,
 ) -> cython.int:
-    if w.native:
-        if w.cap_butt:
-            return 0
-        if fill_terminal(p, x, y, w.line_width, w.cap_round) < 0:
-            with cython.gil:
-                failed(p, calls)
+    """The cap at the end (x, y) of a subpath leaving it along the unit vector (ux, uy):
+    nothing, the disc around it, or the half line width square beyond it (8.4.3.3)."""
+    if w.line_cap == CAP_BUTT:
         return 0
-    with cython.gil:
-        calls.cap(x, y)
-    return 0
+    if w.line_cap == CAP_ROUND:
+        return terminal(p, w, calls, x, y, True)
+    if ux == 0.0 or uy == 0.0:
+        # Along an axis, the square around the end: its inner half is the segment's.
+        return terminal(p, w, calls, x, y, False)
+    normal_x: cython.double = -uy * w.half
+    normal_y: cython.double = ux * w.half
+    ahead_x: cython.double = ux * w.half
+    ahead_y: cython.double = uy * w.half
+    xs = cython.declare(cython.double[4])
+    ys = cython.declare(cython.double[4])
+    xs[0] = x + normal_x
+    ys[0] = y + normal_y
+    xs[1] = x + normal_x + ahead_x
+    ys[1] = y + normal_y + ahead_y
+    xs[2] = x - normal_x + ahead_x
+    ys[2] = y - normal_y + ahead_y
+    xs[3] = x - normal_x
+    ys[3] = y - normal_y
+    return polygon(p, w, calls, xs, ys, 4)
 
 
 @cython.cfunc
@@ -818,55 +1021,82 @@ def walk(
 ) -> cython.int:
     k: cython.Py_ssize_t
     start: cython.Py_ssize_t
-    n: cython.Py_ssize_t
+    end: cython.Py_ssize_t
     index: cython.Py_ssize_t
     closed: cython.bint
-    same: cython.bint
+    found: cython.bint
     x0: cython.double
     y0: cython.double
     x1: cython.double
     y1: cython.double
+    dx: cython.double
+    dy: cython.double
+    length: cython.double
+    ux: cython.double
+    uy: cython.double
+    first_x: cython.double = 0.0
+    first_y: cython.double = 0.0
+    last_x: cython.double = 0.0
+    last_y: cython.double = 0.0
     for k in range(w.count):
         start = w.bounds[3 * k]
-        n = w.bounds[3 * k + 1] - start
+        end = w.bounds[3 * k + 1]
         closed = w.bounds[3 * k + 2]
-        if n < 2:
+        if end - start < 2:
             continue
         x0 = w.xs[start]
         y0 = w.ys[start]
-        x1 = w.xs[start + n - 1]
-        y1 = w.ys[start + n - 1]
-        if n == 2 and not closed:
-            if w.coincident != cython.NULL:
-                same = w.coincident[k] != 0
-            else:
-                same = x0 == x1 and y0 == y1
-            if same:
-                if w.cap_round:
-                    with cython.gil:
-                        flush(p, calls)
-                        calls.dot(x0, y0)
+        x1 = w.xs[end - 1]
+        y1 = w.ys[end - 1]
+        # The segments first, then the joins and caps, each joining the directions of the
+        # segments either side of it: a zero-length segment has none, and is passed over.
+        found = False
+        for index in range(start, end - 1):
+            if w.xs[index] == w.xs[index + 1] and w.ys[index] == w.ys[index + 1]:
                 continue
-            line(p, w, calls, x0, y0, x1, y1)
-            if w.cap_nonzero:
-                cap(p, w, calls, x0, y0)
-                cap(p, w, calls, x1, y1)
-            continue
-        for index in range(start, start + n - 1):
+            found = True
             line(p, w, calls, w.xs[index], w.ys[index], w.xs[index + 1], w.ys[index + 1])
-        if w.ends_differ != cython.NULL:
-            same = not w.ends_differ[k]
-        else:
-            same = not (x0 != x1 or y0 != y1)
-        if closed and not same:
+        if not found:
+            # A subpath of one point: a dot with round caps, and nothing otherwise, as its
+            # caps have no direction (ISO 32000-2 8.5.3.2).
+            if w.line_cap == CAP_ROUND:
+                with cython.gil:
+                    flush(p, calls)
+                    calls.dot(x0, y0)
+            continue
+        if closed and (x0 != x1 or y0 != y1):
             line(p, w, calls, x1, y1, x0, y0)
-        for index in range(start + 1, start + n - 1):
-            join(p, w, calls, w.xs[index], w.ys[index])
+        found = False
+        for index in range(start, end - 1):
+            dx = w.xs[index + 1] - w.xs[index]
+            dy = w.ys[index + 1] - w.ys[index]
+            if dx == 0.0 and dy == 0.0:
+                continue
+            length = pow(dx * dx + dy * dy, p.exponent)
+            ux = dx / length
+            uy = dy / length
+            if found:
+                join(p, w, calls, w.xs[index], w.ys[index], last_x, last_y, ux, uy)
+            else:
+                first_x = ux
+                first_y = uy
+                found = True
+            last_x = ux
+            last_y = uy
         if closed:
-            join(p, w, calls, x0, y0)
-        elif w.cap_nonzero:
-            cap(p, w, calls, x0, y0)
-            cap(p, w, calls, x1, y1)
+            if x0 != x1 or y0 != y1:
+                dx = x0 - x1
+                dy = y0 - y1
+                length = pow(dx * dx + dy * dy, p.exponent)
+                ux = dx / length
+                uy = dy / length
+                join(p, w, calls, x1, y1, last_x, last_y, ux, uy)
+                last_x = ux
+                last_y = uy
+            join(p, w, calls, x0, y0, last_x, last_y, first_x, first_y)
+        else:
+            cap(p, w, calls, x0, y0, -first_x, -first_y)
+            cap(p, w, calls, x1, y1, last_x, last_y)
     return 0
 
 
@@ -876,8 +1106,6 @@ def stroke_polylines(
     ys: cython.const[cython.double][::1],
     spans: typing.Optional[list],
     outline: cython.bint,
-    ends_differ: typing.Optional[cython.const[cython.uchar][::1]],
-    coincident: typing.Optional[cython.const[cython.uchar][::1]],
     crop_x0: cython.double,
     crop_y1: cython.double,
     scale: cython.double,
@@ -893,14 +1121,14 @@ def stroke_polylines(
     blue: cython.int,
     alpha: cython.int,
     native: cython.bint,
-    cap_nonzero: cython.bint,
-    cap_butt: cython.bint,
-    cap_round: cython.bint,
-    join_round: cython.bint,
+    line_cap: cython.int,
+    line_join: cython.int,
+    miter_limit: cython.double,
     exponent: cython.double,
     on_line,
-    on_join,
-    on_cap,
+    on_polygon,
+    on_square,
+    on_circle,
     on_dot,
     on_extend,
 ):
@@ -909,10 +1137,6 @@ def stroke_polylines(
     if xs.shape[0] != ys.shape[0]:
         raise ValueError("xs and ys differ in length")
     count: cython.Py_ssize_t = len(spans)
-    if ends_differ is not None and ends_differ.shape[0] != count:
-        raise ValueError("ends_differ must hold one byte per span")
-    if coincident is not None and coincident.shape[0] != count:
-        raise ValueError("coincident must hold one byte per span")
     if clip_mode == CLIP_ROWS:
         if row_offsets is None or row_spans is None or row_offsets.shape[0] < 1:
             raise ValueError("a clip path needs its rows")
@@ -930,8 +1154,9 @@ def stroke_polylines(
     w = cython.declare(Walk)
     calls: Callbacks = Callbacks.__new__(Callbacks)
     calls.line = on_line
-    calls.join = on_join
-    calls.cap = on_cap
+    calls.polygon = on_polygon
+    calls.square = on_square
+    calls.circle = on_circle
     calls.dot = on_dot
     calls.extend = on_extend
     try:
@@ -977,19 +1202,13 @@ def stroke_polylines(
         w.xs = cython.address(xs[0]) if xs.shape[0] else cython.NULL
         w.ys = cython.address(ys[0]) if ys.shape[0] else cython.NULL
         w.bounds = bounds
-        w.ends_differ = (
-            cython.address(ends_differ[0]) if ends_differ is not None and count else cython.NULL
-        )
-        w.coincident = (
-            cython.address(coincident[0]) if coincident is not None and count else cython.NULL
-        )
         w.count = count
         w.line_width = line_width
+        w.half = py_max(0.5 / scale, line_width * 0.5)
         w.native = native
-        w.cap_nonzero = cap_nonzero
-        w.cap_butt = cap_butt
-        w.cap_round = cap_round
-        w.join_round = join_round
+        w.line_cap = line_cap
+        w.line_join = line_join
+        w.miter_limit_squared = miter_limit * miter_limit
         with cython.nogil:
             walk(cython.address(p), cython.address(w), calls)
         flush(cython.address(p), calls)

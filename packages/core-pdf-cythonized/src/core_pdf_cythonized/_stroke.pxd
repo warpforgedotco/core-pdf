@@ -9,3 +9,14 @@ cdef enum:
     CLIP_NONE = 0
     CLIP_RECT = 1
     CLIP_ROWS = 2
+
+# The line cap and line join styles (ISO 32000-2 8.4.3.3 and 8.4.3.4).
+cdef enum:
+    CAP_BUTT = 0
+    CAP_ROUND = 1
+    CAP_SQUARE = 2
+
+cdef enum:
+    JOIN_MITER = 0
+    JOIN_ROUND = 1
+    JOIN_BEVEL = 2

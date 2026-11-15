@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 lazy import numpy
 
-from core_pdf.impl.capture.records import CapturedPath
+from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
 from core_pdf.impl.render.model import LineCap, LineJoin
 from core_pdf.impl.render.paths import (
     RASTER_KERNEL_MIN_PIXEL_AREA,
@@ -22,6 +22,7 @@ from core_pdf.impl.render.paths import (
     stroke_half_width,
 )
 from core_pdf.impl.render.raster_support import subpath_columns
+from core_pdf.impl.spec.citations import cites
 lazy from core_pdf_cythonized import stroke_polylines, stroke_segment_samples
 
 if TYPE_CHECKING:
@@ -144,32 +145,6 @@ def fill_line(
     self.blend_counts(counts, ix0, iy0, None, rgba, blend_mode)
 
 
-def fill_join(
-    self: RasterTarget,
-    px: float,
-    py: float,
-    line_width: float,
-    rgba: tuple[int, int, int, int],
-    line_join: int = 0,
-    blend_mode: str | None = None,
-) -> None:
-    self.fill_terminal(px, py, line_width, rgba, line_join == LineJoin.ROUND, blend_mode)
-
-
-def fill_cap(
-    self: RasterTarget,
-    px: float,
-    py: float,
-    line_width: float,
-    rgba: tuple[int, int, int, int],
-    line_cap: int,
-    blend_mode: str | None = None,
-) -> None:
-    if line_cap == LineCap.BUTT:
-        return
-    self.fill_terminal(px, py, line_width, rgba, line_cap == LineCap.ROUND, blend_mode)
-
-
 def fill_terminal(
     self: RasterTarget,
     px: float,
@@ -186,6 +161,9 @@ def fill_terminal(
         self.fill_rect((px - radius, py - radius, px + radius, py + radius), rgba, blend_mode)
 
 
+@cites("ISO 32000-2", "8.4.3.3", introduced="1.0", rule="butt, round and projecting square caps")
+@cites("ISO 32000-2", "8.4.3.4", introduced="1.0", rule="miter, round and bevel joins")
+@cites("ISO 32000-2", "8.4.3.5", introduced="1.0", rule="a miter past the miter limit is a bevel")
 def stroke_path(
     self: RasterTarget,
     path: CapturedPath,
@@ -195,13 +173,18 @@ def stroke_path(
     blend_mode: str | None = None,
     line_cap: int = 0,
     line_join: int = 0,
+    miter_limit: float = 10.0,
 ) -> None:
+    """Stroke each subpath: its segments, the joins between them and the caps at the ends
+    of an open one, which stroke_polylines works out from the segments' directions."""
     scale = self.scale
     if self.clip.regions:
         clip_box = self.clip.current_clip()
         path_box = self.clip.path_bbox(path)
         if clip_box is not None and path_box is not None:
-            stroke_pad = stroke_half_width(scale, float(line_width))
+            # A miter reaches out from its corner by half the line width times the limit.
+            reach = miter_limit if line_join == LineJoin.MITER else 1.0
+            stroke_pad = stroke_half_width(scale, float(line_width)) * max(reach, 1.5)
             stroke_box = (
                 path_box[0] - stroke_pad,
                 path_box[1] - stroke_pad,
@@ -212,23 +195,26 @@ def stroke_path(
                 return
     if dash_pattern and dash_pattern[0]:
         for subpath in path.subpaths:
+            points: list[tuple[float, float, float, float]] = []
             self.stroke_path(
-                CapturedPath(dash_subpath(subpath, dash_pattern)),
+                CapturedPath(dash_subpath(subpath, dash_pattern, points)),
                 line_width,
                 rgba,
                 None,
                 blend_mode,
                 line_cap,
                 line_join,
+                miter_limit,
             )
+            if line_cap == LineCap.PROJECTING_SQUARE:
+                for x, y, ux, uy in points:
+                    self.fill_path(square_dash(x, y, ux, uy, line_width, scale), rgba, blend_mode)
         return
     deferred = path.deferred_columns()
     if deferred is not None:
         xs, ys, spans, outline = deferred
-        ends_differ: bytes | None = None
-        coincident: bytes | None = None
     else:
-        xs, ys, spans, ends_differ, coincident = subpath_columns(path.subpaths)
+        xs, ys, spans = subpath_columns(path.subpaths)
         outline = False
     width_type = type(line_width)
     native = (
@@ -247,11 +233,15 @@ def stroke_path(
     def line(x0: float, y0: float, x1: float, y1: float) -> None:
         self.fill_line(x0, y0, x1, y1, line_width, rgba, blend_mode)
 
-    def join(x: float, y: float) -> None:
-        self.fill_join(x, y, line_width, rgba, line_join, blend_mode)
+    def polygon(coordinates: tuple[float, ...]) -> None:
+        corners = list(zip(coordinates[::2], coordinates[1::2], strict=True))
+        self.fill_path(CapturedPath([CapturedSubpath(corners, closed=True)]), rgba, blend_mode)
 
-    def cap(x: float, y: float) -> None:
-        self.fill_cap(x, y, line_width, rgba, line_cap, blend_mode)
+    def square(x: float, y: float) -> None:
+        self.fill_terminal(x, y, line_width, rgba, False, blend_mode)
+
+    def circle(x: float, y: float) -> None:
+        self.fill_terminal(x, y, line_width, rgba, True, blend_mode)
 
     def dot(x: float, y: float) -> None:
         radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
@@ -263,8 +253,6 @@ def stroke_path(
         ys,
         spans,
         outline,
-        ends_differ,
-        coincident,
         self.crop_x0,
         self.crop_y1,
         scale,
@@ -274,17 +262,34 @@ def stroke_path(
         0 if region is None else region.rows_origin,
         row_offsets,
         row_spans,
-        float(line_width) if native else 0.0,
+        float(line_width),
         *(rgba if native else (0, 0, 0, 0)),
         native,
-        bool(line_cap != 0),
-        bool(line_cap == LineCap.BUTT),
-        bool(line_cap == LineCap.ROUND),
-        bool(line_join == LineJoin.ROUND),
+        int(line_cap),
+        int(line_join),
+        max(1.0, float(miter_limit)),
         0.5,
         line,
-        join,
-        cap,
+        polygon,
+        square,
+        circle,
         dot,
         self.extend_paint_box,
     )
+
+
+def square_dash(
+    x: float, y: float, ux: float, uy: float, line_width: float, scale: float
+) -> CapturedPath:
+    """A zero-length dash's projecting square caps: the square a line width wide around
+    it, along the path's direction there (ISO 32000-2 8.4.3.6)."""
+    half = stroke_half_width(scale, float(line_width))
+    ax, ay = ux * half, uy * half
+    nx, ny = -ay, ax
+    corners = [
+        (x - ax + nx, y - ay + ny),
+        (x + ax + nx, y + ay + ny),
+        (x + ax - nx, y + ay - ny),
+        (x - ax - nx, y - ay - ny),
+    ]
+    return CapturedPath([CapturedSubpath(corners, closed=True)])

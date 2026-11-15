@@ -12,6 +12,7 @@ from core_pdf.impl.capture.records import CapturedDrawing, CapturedPath, Capture
 from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl.render.model import (
+    DEFAULT_MITER_LIMIT,
     DisplayItem,
     DisplayListItem,
     ImagePaintItem,
@@ -297,9 +298,12 @@ class DisplayList:
             self.glyph_paint_fields[id(style)] = (style, fields)
         else:
             fields = cached[1]
-        # PathPaintItem's __init__ only assigns its fields, in this order.
+        # PathPaintItem's __init__ only assigns its fields, in this order. Glyph outlines
+        # are stroked with the default miter limit.
         self.items.append(
-            PATH_PAINT_LAYOUT.build((paint_kind, seqno, bbox, path, *fields, edge_array))
+            PATH_PAINT_LAYOUT.build(
+                (paint_kind, seqno, bbox, path, *fields, edge_array, DEFAULT_MITER_LIMIT)
+            )
         )
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
@@ -364,6 +368,11 @@ class DisplayList:
                     ),
                     line_cap=int(data.get("line_cap") or 0),
                     line_join=int(data.get("line_join") or 0),
+                    miter_limit=(
+                        float(limit)
+                        if is_pdf_number(limit := data.get("miter_limit"))
+                        else DEFAULT_MITER_LIMIT
+                    ),
                     dash_pattern=data.get("dash_pattern"),
                     fill_rule=data.get("fill_rule") or "nonzero",
                     blend_mode=data.get("blend_mode"),
@@ -416,6 +425,7 @@ class DisplayList:
                 and previous.line_width == drawing.line_width
                 and previous.line_cap == drawing.line_cap
                 and previous.line_join == drawing.line_join
+                and previous.miter_limit == drawing.miter_limit
                 and previous.dash_pattern == drawing.dash_pattern
                 and previous.blend_mode == drawing.blend_mode
                 and previous.soft_mask_alpha == drawing.soft_mask_alpha

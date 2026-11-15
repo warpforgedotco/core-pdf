@@ -876,6 +876,7 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         None,
         data.line_cap,
         data.line_join,
+        data.miter_limit,
     )
     self.push_group(
         bytearray(len(self.pixels)),
