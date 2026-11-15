@@ -37,6 +37,7 @@ from core_pdf.impl.capture.recording_support import (
 )
 from core_pdf.impl.capture.records import CapturedTextBoundary
 from core_pdf.impl.fonts.decoder import DecodedGlyph, FontDecoder
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
@@ -56,12 +57,35 @@ def update_pending_run(self: TextState, new_run: TextRun) -> None:
         self.run_accumulator.append(new_run)
 
 
+@cites(
+    "ISO 32000-2",
+    "9.3.6",
+    introduced="1.2",
+    rule="text painted with a pattern colour shows the pattern through the glyphs",
+)
 def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphPaint:
+    graphics = self.graphics
+    render_mode = self.text_paint_mode()
+    # A pattern is captured only for a render, and only for the paint the mode uses.
+    fill_pattern = stroke_pattern = None
+    if self.options.render_details:
+        fill_pattern = graphics.fill_pattern
+        stroke_pattern = graphics.stroke_pattern
     return GlyphPaint(
         clip_bbox=self.clip_bbox,
         page_clip=self.page_clip,
         fill=fill_color,
-        render_mode=self.text_paint_mode(),
+        render_mode=render_mode,
+        fill_pattern=(
+            self.capture_pattern(fill_pattern)
+            if fill_pattern is not None and render_mode in {0, 2, 4, 6}
+            else None
+        ),
+        stroke_pattern=(
+            self.capture_pattern(stroke_pattern)
+            if stroke_pattern is not None and render_mode in {1, 2, 5, 6}
+            else None
+        ),
         fill_opacity=self.graphics.fill_opacity,
         stroke_color=self.capture_color(stroke=True),
         stroke_opacity=self.graphics.stroke_opacity,

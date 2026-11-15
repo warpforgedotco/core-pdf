@@ -348,6 +348,7 @@ jobs:
           $run/check_blend_modes.py
           $run/check_shading.py
           $run/check_patterns.py
+          $run/check_pattern_text.py
           $run/check_strokes.py
           $run/check_mesh_shading.py
           $run/check_pdf_functions.py

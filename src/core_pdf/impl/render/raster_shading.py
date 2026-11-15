@@ -878,16 +878,25 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.line_join,
         data.miter_limit,
     )
+    mask = SoftMaskPlane(view[..., 3], None)
     self.push_group(
         bytearray(len(self.pixels)),
         None,
         blend_mode,
         isolated=True,
         alpha_is_shape=data.alpha_is_shape,
-        mask_alpha=SoftMaskPlane(view[..., 3], None),
+        mask_alpha=mask,
     )
     try:
+        group = self.buffer_stack[-1]
         self.paint_pattern_over(pattern, data, box, data.stroke_opacity)
+        shape = group.source_shape
+        window = group.paint_window.slices()
+        if shape is not None and window is not None and not group.alpha_is_shape:
+            # The stroke's coverage is its shape, not only its opacity: in a knockout group,
+            # such as text's, the pixels it misses keep what earlier members painted (11.4.6).
+            rows, columns = window
+            shape[rows, columns] *= mask[rows, columns]
     finally:
         self.composite_group(self.pop_group())
     return True
