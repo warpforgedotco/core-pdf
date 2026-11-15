@@ -24,6 +24,7 @@ from core_pdf.impl.capture.recording_support import (
     DRAWING_LAYOUT,
     DRAWING_PAINTS,
     DRAWING_RAW_DATA,
+    DRAWING_SHADING_MATRIX,
     SPACES_THAT_MAY_NOT_PAINT,
     flatten_path,
 )
@@ -166,6 +167,7 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 graphics.alpha_is_shape,
                 self.capture_graphics_soft_mask() if graphics.soft_mask is not None else None,
                 DRAWING_GROUP_COLOR_SPACE,
+                DRAWING_SHADING_MATRIX,
             )
         )
     )

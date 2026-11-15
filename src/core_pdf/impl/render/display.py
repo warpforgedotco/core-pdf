@@ -468,6 +468,7 @@ class DisplayList:
             color_rendering=drawing.color_rendering,
             path=drawing.path,
             items=drawing.items,
+            **({"matrix": drawing.shading_matrix} if drawing.shading_matrix is not None else {}),
         )
 
 

@@ -17,6 +17,7 @@ from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState
@@ -115,8 +116,11 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             }
             with suppress(ValueError):
                 rendering = override_color_rendering(values, rendering)
+        matrix = pattern.matrix
         result = ShadingPattern(
-            self.capture_shading_dictionary(pattern.dictionary), color_rendering=rendering
+            self.capture_shading_dictionary(pattern.dictionary),
+            color_rendering=rendering,
+            matrix=None if matrix == IDENTITY_MATRIX else matrix,
         )
     elif isinstance(pattern, model.TilingPattern):
         nested = self.nested_capture_state()

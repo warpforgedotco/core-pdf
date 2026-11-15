@@ -446,6 +446,9 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
     group_color_space: ColorSpace | None = None
+    # A shading's map from shading space to default user space (the CTM at sh), or None
+    # for the identity.
+    shading_matrix: Matrix | None = None
 
     def __post_init__(self) -> None:
         if not self.items:
@@ -522,6 +525,8 @@ def marker_drawing(
 class ShadingPattern(GeneratedRecord):
     dictionary: dict[Any, Any]
     color_rendering: ColorRendering = DEFAULT_COLOR_RENDERING
+    # The map from pattern space to default user space, or None for the identity.
+    matrix: Matrix | None = None
 
 
 class TilingPattern(GeneratedRecord):

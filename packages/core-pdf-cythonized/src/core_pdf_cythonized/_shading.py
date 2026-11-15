@@ -36,13 +36,31 @@ def axial_t(
 @cython.inline
 @cython.nogil
 @cython.exceptval(check=False)
+def radial_usable(
+    c: cython.p_const_double,
+    dr: cython.double,
+    s: cython.double,
+    extend0: cython.bint,
+    extend1: cython.bint,
+) -> cython.bint:
+    return isfinite(s) and c[2] + s * dr >= 0.0 and (s >= 0.0 or extend0) and (s <= 1.0 or extend1)
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
 def radial_t(
     c: cython.p_const_double,
     px: cython.double,
     py: cython.double,
     half: cython.double,
+    extend0: cython.bint,
+    extend1: cython.bint,
     t: cython.p_double,
 ) -> cython.bint:
+    """The largest s whose circle passes through the point with a radius of at least 0,
+    and outside [0, 1] only on an extended side (8.7.4.5.4)."""
     dx: cython.double = c[3] - c[0]
     dy: cython.double = c[4] - c[1]
     dr: cython.double = c[5] - c[2]
@@ -53,43 +71,48 @@ def radial_t(
     cc: cython.double = qx * qx + qy * qy - c[2] * c[2]
     disc: cython.double
     root: cython.double
-    t0: cython.double
-    t1: cython.double
-    valid0: cython.bint
-    valid1: cython.bint
-    in0: cython.bint
-    in1: cython.bint
+    s0: cython.double
+    s1: cython.double
+    high: cython.double
+    low: cython.double
     if fabs(a) <= 1e-12:
         if fabs(b) <= 1e-12:
             return False
-        t[0] = -cc / b
+        s0 = -cc / b
+        if not radial_usable(c, dr, s0, extend0, extend1):
+            return False
+        t[0] = s0
         return True
     disc = b * b - 4.0 * a * cc
     if disc < 0.0:
         return False
     root = pow(disc, half)
-    t0 = (-b - root) / (2.0 * a)
-    t1 = (-b + root) / (2.0 * a)
-    valid0 = isfinite(t0)
-    valid1 = isfinite(t1)
-    if not valid0 and not valid1:
-        return False
-    in0 = valid0 and 0.0 <= t0 <= 1.0
-    in1 = valid1 and 0.0 <= t1 <= 1.0
-    if in0 or in1:
-        if in0 and in1:
-            t[0] = t1 if t1 > t0 else t0
-        else:
-            t[0] = t0 if in0 else t1
-        return True
-    if valid0 and valid1:
-        t[0] = t1 if fabs(t1 - 0.5) < fabs(t0 - 0.5) else t0
+    s0 = (-b - root) / (2.0 * a)
+    s1 = (-b + root) / (2.0 * a)
+    if s1 > s0:
+        high = s1
+        low = s0
     else:
-        t[0] = t0 if valid0 else t1
-    return True
+        high = s0
+        low = s1
+    if radial_usable(c, dr, high, extend0, extend1):
+        t[0] = high
+        return True
+    if radial_usable(c, dr, low, extend0, extend1):
+        t[0] = low
+        return True
+    return False
 
 
-def shading_t(kind: cython.int, coords, px: cython.double, py: cython.double, half: cython.double):
+def shading_t(
+    kind: cython.int,
+    coords,
+    px: cython.double,
+    py: cython.double,
+    half: cython.double,
+    extend0: cython.bint = True,
+    extend1: cython.bint = True,
+):
     c = cython.declare(cython.double[6])
     t = cython.declare(cython.double)
     i: cython.Py_ssize_t
@@ -101,7 +124,7 @@ def shading_t(kind: cython.int, coords, px: cython.double, py: cython.double, ha
     found = (
         axial_t(c, px, py, cython.address(t))
         if kind == 2
-        else radial_t(c, px, py, half, cython.address(t))
+        else radial_t(c, px, py, half, extend0, extend1, cython.address(t))
     )
     return t if found else None
 
@@ -122,7 +145,13 @@ def shading_values(
     domain0: cython.double,
     domain_span: cython.double,
     half: cython.double,
+    inverse=None,
+    bbox=None,
 ):
+    """Each pixel's function input and whether the shading paints it. Without inverse the
+    pixel centre's default user space point is the shading-space point; with it, inverse
+    (a, b, c, d, e, f) maps that point to shading space, and bbox, when given, keeps only the
+    points inside it there."""
     height: cython.Py_ssize_t = iy1 - iy0
     width: cython.Py_ssize_t = ix1 - ix0
     if allowed.shape[0] != height or allowed.shape[1] != width:
@@ -134,6 +163,22 @@ def shading_values(
     i: cython.Py_ssize_t
     for i in range(need):
         c[i] = coords[i]
+    m = cython.declare(cython.double[6])
+    box = cython.declare(cython.double[4])
+    mapped: cython.bint = inverse is not None
+    boxed: cython.bint = bbox is not None
+    if mapped:
+        if len(inverse) != 6:
+            raise ValueError("inverse must hold six numbers")
+        for i in range(6):
+            m[i] = inverse[i]
+    if boxed:
+        if not mapped:
+            raise ValueError("bbox needs an inverse")
+        if len(bbox) != 4:
+            raise ValueError("bbox must hold four numbers")
+        for i in range(4):
+            box[i] = bbox[i]
     values_array = numpy.zeros((height, width), dtype=numpy.float64)
     painted_array = numpy.zeros((height, width), dtype=numpy.uint8)
     values: cython.double[:, ::1] = values_array
@@ -142,6 +187,8 @@ def shading_values(
     col: cython.Py_ssize_t
     page_x: cython.double
     page_y: cython.double
+    shading_x: cython.double
+    shading_y: cython.double
     t = cython.declare(cython.double)
     found: cython.bint
     with cython.nogil:
@@ -151,10 +198,22 @@ def shading_values(
                 if not allowed[r, col]:
                     continue
                 page_x = crop_x0 + (cython.cast(cython.double, ix0 + col) + 0.5) / scale
-                if kind == 2:
-                    found = axial_t(c, page_x, page_y, cython.address(t))
+                if mapped:
+                    shading_x = m[0] * page_x + m[2] * page_y + m[4]
+                    shading_y = m[1] * page_x + m[3] * page_y + m[5]
+                    if boxed and not (
+                        box[0] <= shading_x <= box[2] and box[1] <= shading_y <= box[3]
+                    ):
+                        continue
                 else:
-                    found = radial_t(c, page_x, page_y, half, cython.address(t))
+                    shading_x = page_x
+                    shading_y = page_y
+                if kind == 2:
+                    found = axial_t(c, shading_x, shading_y, cython.address(t))
+                else:
+                    found = radial_t(
+                        c, shading_x, shading_y, half, extend0, extend1, cython.address(t)
+                    )
                 if not found:
                     continue
                 if t < 0.0:

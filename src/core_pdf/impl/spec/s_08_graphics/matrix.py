@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Final, NamedTuple
 
@@ -47,4 +48,16 @@ def multiply_affine(left: Sequence[int | float], right: Sequence[int | float]) -
     )
 
 
-__all__ = ("Matrix", "IDENTITY_MATRIX", "multiply_affine")
+def invert_affine(matrix: Sequence[int | float]) -> Matrix | None:
+    """The matrix that undoes matrix, or None when it is singular or not finite."""
+    a, b, c, d, e, f = (float(value) for value in matrix)
+    det = a * d - b * c
+    if det == 0.0 or not math.isfinite(det):
+        return None
+    inverse = Matrix(
+        d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det
+    )
+    return inverse if all(math.isfinite(value) for value in inverse) else None
+
+
+__all__ = ("Matrix", "IDENTITY_MATRIX", "invert_affine", "multiply_affine")

@@ -13,9 +13,11 @@ from core_pdf.impl.base.types import PdfName
 from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.capture.records import CapturedDrawing, CapturedInlineImage
 from core_pdf.impl.graphics.color_spec import raw_color_space_paints
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 lazy from core_pdf.impl.graphics.images import image_overrides_graphics_soft_mask
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
@@ -141,10 +143,13 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
         self.sequence += 1
 
 
+@cites("ISO 32000-2", "8.7.4.2", introduced="1.3", rule="sh paints in the current user space")
 def paint_shading(self: TextState, state: object, shading: PdfDict) -> None:
     if not self.is_graphics_visible():
         return
     dictionary = self.capture_shading_dictionary(shading)
+    # sh paints in the current user space (8.7.4.2).
+    ctm = self.graphics.ctm
     self.drawings.append(
         CapturedDrawing(
             seqno=self.sequence,
@@ -167,6 +172,7 @@ def paint_shading(self: TextState, state: object, shading: PdfDict) -> None:
             dictionary=dictionary,
             stream_order=self.stream_order,
             xobject_depth=self.xobject_depth,
+            shading_matrix=None if ctm == IDENTITY_MATRIX else ctm,
         )
     )
     self.sequence += 1

@@ -35,7 +35,10 @@ Features a version introduced, which core reads whatever version a document decl
 
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
+| PDF 1.3 | a shading pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.3 | an embedded file's Subtype and Params | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters` |
+| PDF 1.3 | axial and radial shadings are computed in shading space, clipped by BBox there | ISO 32000-2 8.7.4.5.3 (Type 2 (axial) shadings) | `core_pdf.impl.render.raster_shading.paint_shading` |
+| PDF 1.3 | sh paints in the current user space | ISO 32000-2 8.7.4.2 (Shading operator) | `core_pdf.impl.capture.image_painting.paint_shading` |
 | PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
 | PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
@@ -208,6 +211,9 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 8.7.3.1 (General) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a shading pattern's space: its Matrix on the parent content stream's default space
+- 8.7.4.2 (Shading operator) `core_pdf.impl.capture.image_painting.paint_shading`: sh paints in the current user space
+- 8.7.4.5.3 (Type 2 (axial) shadings) `core_pdf.impl.render.raster_shading.paint_shading`: axial and radial shadings are computed in shading space, clipped by BBox there
 - 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.truetype_uses_symbolic_cmap`: a symbolic TrueType font maps codes by its (3,0) or (1,0) cmap, others by glyph name
