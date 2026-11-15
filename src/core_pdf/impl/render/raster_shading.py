@@ -877,6 +877,7 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.line_cap,
         data.line_join,
         data.miter_limit,
+        data.stroke_matrix,
     )
     mask = SoftMaskPlane(view[..., 3], None)
     self.push_group(

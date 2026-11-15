@@ -12,18 +12,21 @@ from cython.cimports.core_pdf_cythonized._stroke import (
     CAP_ROUND,
     CLIP_NONE,
     CLIP_ROWS,
+    COVER_DISC,
+    COVER_POLYGON,
     FAILED_INFINITY,
     FAILED_MEMORY,
     FAILED_NAN,
+    JOIN_BEVEL,
     JOIN_MITER,
     JOIN_ROUND,
 )
 from cython.cimports.core_pdf_cythonized._stroke_segment import segment_samples
-from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rintf
-from cython.cimports.libc.stdlib import free, malloc
-from cython.cimports.libc.string import memcpy
+from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rintf, sqrt
+from cython.cimports.libc.stdlib import calloc, free, malloc
+from cython.cimports.libc.string import memcpy, memset
 
-__all__ = ("stroke_polylines",)
+__all__ = ("axis_aligned_polylines", "stroke_coverage", "stroke_polylines")
 
 
 Paint = cython.struct(
@@ -806,6 +809,352 @@ def fill_convex(
     return 0
 
 
+# A stroke's coverage, built before it is painted: each pixel of the window
+# (left, top, width, height) holds, as bits, the 4 x 4 samples any piece of the stroke
+# covers, so that pieces which overlap or meet count each sample once. The pieces are
+# worked out in stroke space, which forward maps to page space: the identity, or under a
+# CTM that scales unevenly or skews, the map under which the pen is a circle.
+Cover = cython.struct(
+    masks=cython.p_ushort,
+    left=cython.Py_ssize_t,
+    top=cython.Py_ssize_t,
+    width=cython.Py_ssize_t,
+    height=cython.Py_ssize_t,
+    crop_x0=cython.double,
+    crop_y1=cython.double,
+    scale=cython.double,
+    transformed=cython.bint,
+    forward=cython.double[4],
+    inverse=cython.double[4],
+)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_window(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+    out: cython.p_Py_ssize_t,
+) -> cython.int:
+    """The window's columns out[0]:out[2] and rows out[1]:out[3] that the stroke-space box
+    (x0, y0, x1, y1) reaches: 1, or 0 when it reaches none, or -1 on a NaN or infinity."""
+    low_x: cython.double = x0
+    low_y: cython.double = y0
+    high_x: cython.double = x1
+    high_y: cython.double = y1
+    k: cython.int
+    corner_x: cython.double
+    corner_y: cython.double
+    page_x: cython.double
+    page_y: cython.double
+    if c.transformed:
+        for k in range(4):
+            corner_x = x0 if k & 1 == 0 else x1
+            corner_y = y0 if k & 2 == 0 else y1
+            page_x = c.forward[0] * corner_x + c.forward[2] * corner_y
+            page_y = c.forward[1] * corner_x + c.forward[3] * corner_y
+            if k == 0:
+                low_x = page_x
+                high_x = page_x
+                low_y = page_y
+                high_y = page_y
+            else:
+                low_x = py_min(low_x, page_x)
+                high_x = py_max(high_x, page_x)
+                low_y = py_min(low_y, page_y)
+                high_y = py_max(high_y, page_y)
+    value: cython.double = floor((low_x - c.crop_x0) * c.scale)
+    if not checked(p, value):
+        return -1
+    out[0] = clamped(value - c.left, c.width)
+    value = ceil((high_x - c.crop_x0) * c.scale)
+    if not checked(p, value):
+        return -1
+    out[2] = clamped(value - c.left, c.width)
+    value = floor((c.crop_y1 - high_y) * c.scale)
+    if not checked(p, value):
+        return -1
+    out[1] = clamped(value - c.top, c.height)
+    value = ceil((c.crop_y1 - low_y) * c.scale)
+    if not checked(p, value):
+        return -1
+    out[3] = clamped(value - c.top, c.height)
+    if out[2] <= out[0] or out[3] <= out[1]:
+        return 0
+    return 1
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_samples(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    kind: cython.int,
+    box: cython.p_double,
+    a: cython.p_double,
+    b: cython.p_double,
+    offset: cython.p_double,
+    n: cython.int,
+) -> cython.int:
+    """Set the bit of each sample inside a convex polygon, where
+    a[k] x + b[k] y + offset[k] >= 0 for every edge k < n, or inside the disc around
+    (a[0], b[0]) whose radius squared is offset[0]; box bounds the shape in stroke space.
+    The samples sit where fill_convex and line_raster put them, a quarter of a pixel apart
+    from an eighth of one in. A pixel whose corner samples are all inside every edge, or
+    all outside one, is settled from them."""
+    window = cython.declare(cython.Py_ssize_t[4])
+    found: cython.int = cover_window(p, c, box[0], box[1], box[2], box[3], window)
+    if found <= 0:
+        return found
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    sx: cython.int
+    sy: cython.int
+    k: cython.int
+    bits: cython.uint
+    inside: cython.bint
+    whole: cython.bint
+    none: cython.bint
+    x: cython.double
+    y: cython.double
+    dx: cython.double
+    dy: cython.double
+    value: cython.double
+    low: cython.double
+    high: cython.double
+    step: cython.double = 0.25 / c.scale
+    left_x: cython.double
+    top_y: cython.double
+    # The edges as functions of the page point, and their change from one sample to the
+    # next across and down.
+    edge_x = cython.declare(cython.double[4])
+    edge_y = cython.declare(cython.double[4])
+    across = cython.declare(cython.double[4])
+    down = cython.declare(cython.double[4])
+    base = cython.declare(cython.double[4])
+    page_x = cython.declare(cython.double[4])
+    page_y = cython.declare(cython.double[4])
+    if kind == COVER_POLYGON:
+        for k in range(n):
+            if c.transformed:
+                edge_x[k] = a[k] * c.inverse[0] + b[k] * c.inverse[1]
+                edge_y[k] = a[k] * c.inverse[2] + b[k] * c.inverse[3]
+            else:
+                edge_x[k] = a[k]
+                edge_y[k] = b[k]
+            across[k] = edge_x[k] * step
+            down[k] = -edge_y[k] * step
+    for i in range(window[1], window[3]):
+        top_y = c.crop_y1 - (cython.cast(cython.double, c.top + i) + 0.125) / c.scale
+        for j in range(window[0], window[2]):
+            left_x = c.crop_x0 + (cython.cast(cython.double, c.left + j) + 0.125) / c.scale
+            bits = 0
+            if kind == COVER_POLYGON:
+                whole = True
+                none = False
+                for k in range(n):
+                    base[k] = edge_x[k] * left_x + edge_y[k] * top_y + offset[k]
+                    low = base[k]
+                    high = base[k]
+                    for sy in range(0, 4, 3):
+                        for sx in range(0, 4, 3):
+                            value = base[k] + sx * across[k] + sy * down[k]
+                            low = py_min(low, value)
+                            high = py_max(high, value)
+                    if high < 0.0:
+                        none = True
+                        break
+                    if low < 0.0:
+                        whole = False
+                if none:
+                    continue
+                if whole:
+                    bits = 0xFFFF
+                else:
+                    for sy in range(4):
+                        for sx in range(4):
+                            inside = True
+                            for k in range(n):
+                                if base[k] + sx * across[k] + sy * down[k] < 0.0:
+                                    inside = False
+                                    break
+                            if inside:
+                                bits |= cython.cast(cython.uint, 1) << (4 * sy + sx)
+            elif not c.transformed:
+                # The nearest and farthest points of the samples' square from the centre.
+                dx = py_max(py_max(left_x - a[0], a[0] - (left_x + 3.0 * step)), 0.0)
+                dy = py_max(py_max((top_y - 3.0 * step) - b[0], b[0] - top_y), 0.0)
+                if dx * dx + dy * dy > offset[0]:
+                    continue
+                dx = py_max(fabs(left_x - a[0]), fabs(left_x + 3.0 * step - a[0]))
+                dy = py_max(fabs(top_y - b[0]), fabs(top_y - 3.0 * step - b[0]))
+                if dx * dx + dy * dy <= offset[0]:
+                    bits = 0xFFFF
+                else:
+                    for sy in range(4):
+                        for sx in range(4):
+                            dx = left_x + sx * step - a[0]
+                            dy = top_y - sy * step - b[0]
+                            if dx * dx + dy * dy <= offset[0]:
+                                bits |= cython.cast(cython.uint, 1) << (4 * sy + sx)
+            else:
+                for sx in range(4):
+                    page_x[sx] = left_x + sx * step
+                for sy in range(4):
+                    page_y[sy] = top_y - sy * step
+                for sy in range(4):
+                    for sx in range(4):
+                        x = c.inverse[0] * page_x[sx] + c.inverse[2] * page_y[sy]
+                        y = c.inverse[1] * page_x[sx] + c.inverse[3] * page_y[sy]
+                        dx = x - a[0]
+                        dy = y - b[0]
+                        if dx * dx + dy * dy <= offset[0]:
+                            bits |= cython.cast(cython.uint, 1) << (4 * sy + sx)
+            if bits:
+                c.masks[i * c.width + j] |= cython.cast(cython.ushort, bits)
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_convex(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    xs: cython.p_double,
+    ys: cython.p_double,
+    n: cython.int,
+) -> cython.int:
+    """Cover a convex polygon of n <= 4 stroke-space vertices, in either order."""
+    box = cython.declare(cython.double[4])
+    box[0] = xs[0]
+    box[1] = ys[0]
+    box[2] = xs[0]
+    box[3] = ys[0]
+    k: cython.int
+    area: cython.double = 0.0
+    for k in range(n):
+        box[0] = py_min(box[0], xs[k])
+        box[1] = py_min(box[1], ys[k])
+        box[2] = py_max(box[2], xs[k])
+        box[3] = py_max(box[3], ys[k])
+        area += xs[k] * ys[(k + 1) % n] - xs[(k + 1) % n] * ys[k]
+    if area == 0.0:
+        return 0
+    orientation: cython.double = 1.0 if area > 0.0 else -1.0
+    a = cython.declare(cython.double[4])
+    b = cython.declare(cython.double[4])
+    offset = cython.declare(cython.double[4])
+    for k in range(n):
+        a[k] = -(ys[(k + 1) % n] - ys[k]) * orientation
+        b[k] = (xs[(k + 1) % n] - xs[k]) * orientation
+        offset[k] = -(a[k] * xs[k] + b[k] * ys[k])
+    return cover_samples(p, c, COVER_POLYGON, box, a, b, offset, n)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_disc(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    cx: cython.double,
+    cy: cython.double,
+    radius: cython.double,
+) -> cython.int:
+    """Cover the disc of the radius around (cx, cy) in stroke space."""
+    box = cython.declare(cython.double[4])
+    box[0] = cx - radius
+    box[1] = cy - radius
+    box[2] = cx + radius
+    box[3] = cy + radius
+    a: cython.double = cx
+    b: cython.double = cy
+    radius2: cython.double = radius * radius
+    return cover_samples(
+        p, c, COVER_DISC, box, cython.address(a), cython.address(b), cython.address(radius2), 1
+    )
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_segment(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+    half: cython.double,
+) -> cython.int:
+    """Cover the rectangle reaching half either side of a segment."""
+    dx: cython.double = x1 - x0
+    dy: cython.double = y1 - y0
+    length_squared: cython.double = dx * dx + dy * dy
+    if length_squared == 0.0:
+        return 0
+    length: cython.double = pow(length_squared, p.exponent)
+    normal_x: cython.double = -dy / length * half
+    normal_y: cython.double = dx / length * half
+    xs = cython.declare(cython.double[4])
+    ys = cython.declare(cython.double[4])
+    xs[0] = x0 + normal_x
+    ys[0] = y0 + normal_y
+    xs[1] = x1 + normal_x
+    ys[1] = y1 + normal_y
+    xs[2] = x1 - normal_x
+    ys[2] = y1 - normal_y
+    xs[3] = x0 - normal_x
+    ys[3] = y0 - normal_y
+    return cover_convex(p, c, xs, ys, 4)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def cover_square(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    x: cython.double,
+    y: cython.double,
+    ux: cython.double,
+    uy: cython.double,
+    half: cython.double,
+) -> cython.int:
+    """Cover the square reaching half each way around (x, y), its sides along (ux, uy)."""
+    ahead_x: cython.double = ux * half
+    ahead_y: cython.double = uy * half
+    xs = cython.declare(cython.double[4])
+    ys = cython.declare(cython.double[4])
+    xs[0] = x - ahead_x - ahead_y
+    ys[0] = y - ahead_y + ahead_x
+    xs[1] = x + ahead_x - ahead_y
+    ys[1] = y + ahead_y + ahead_x
+    xs[2] = x + ahead_x + ahead_y
+    ys[2] = y + ahead_y - ahead_x
+    xs[3] = x - ahead_x + ahead_y
+    ys[3] = y - ahead_y - ahead_x
+    return cover_convex(p, c, xs, ys, 4)
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def sample_count(bits: cython.uint) -> cython.uchar:
+    bits = bits - ((bits >> 1) & 0x5555)
+    bits = (bits & 0x3333) + ((bits >> 2) & 0x3333)
+    bits = (bits + (bits >> 4)) & 0x0F0F
+    return cython.cast(cython.uchar, (bits + (bits >> 8)) & 0x1F)
+
+
 Walk = cython.struct(
     xs=cython.p_const_double,
     ys=cython.p_const_double,
@@ -817,6 +1166,7 @@ Walk = cython.struct(
     line_cap=cython.int,
     line_join=cython.int,
     miter_limit_squared=cython.double,
+    cover=cython.pointer[Cover],
 )
 
 
@@ -860,6 +1210,11 @@ def line(
     x1: cython.double,
     y1: cython.double,
 ) -> cython.int:
+    if w.cover != cython.NULL:
+        if cover_segment(p, w.cover, x0, y0, x1, y1, w.half) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.native:
         if fill_line(p, x0, y0, x1, y1, w.line_width) < 0:
             with cython.gil:
@@ -882,6 +1237,16 @@ def terminal(
     round_shape: cython.bint,
 ) -> cython.int:
     """A disc, or a square a line width wide, around (x, y)."""
+    found: cython.int
+    if w.cover != cython.NULL:
+        if round_shape:
+            found = cover_disc(p, w.cover, x, y, w.half)
+        else:
+            found = cover_square(p, w.cover, x, y, 1.0, 0.0, w.half)
+        if found < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.native:
         if fill_terminal(p, x, y, w.line_width, round_shape) < 0:
             with cython.gil:
@@ -906,6 +1271,11 @@ def polygon(
     ys: cython.p_double,
     n: cython.int,
 ) -> cython.int:
+    if w.cover != cython.NULL:
+        if cover_convex(p, w.cover, xs, ys, n) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.native:
         if fill_convex(p, xs, ys, n) < 0:
             with cython.gil:
@@ -1019,6 +1389,20 @@ def cap(
 def walk(
     p: cython.pointer[Paint], w: cython.pointer[Walk], calls: typing.Optional[Callbacks]
 ) -> cython.int:
+    return walk_range(p, w, calls, 0, w.count)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def walk_range(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+) -> cython.int:
+    """Stroke the subpaths first to last."""
     k: cython.Py_ssize_t
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
@@ -1038,7 +1422,7 @@ def walk(
     first_y: cython.double = 0.0
     last_x: cython.double = 0.0
     last_y: cython.double = 0.0
-    for k in range(w.count):
+    for k in range(first, last):
         start = w.bounds[3 * k]
         end = w.bounds[3 * k + 1]
         closed = w.bounds[3 * k + 2]
@@ -1059,7 +1443,11 @@ def walk(
         if not found:
             # A subpath of one point: a dot with round caps, and nothing otherwise, as its
             # caps have no direction (ISO 32000-2 8.5.3.2).
-            if w.line_cap == CAP_ROUND:
+            if w.line_cap == CAP_ROUND and w.cover != cython.NULL:
+                if cover_disc(p, w.cover, x0, y0, w.half) < 0:
+                    with cython.gil:
+                        failed(p, calls)
+            elif w.line_cap == CAP_ROUND:
                 with cython.gil:
                     flush(p, calls)
                     calls.dot(x0, y0)
@@ -1100,6 +1488,200 @@ def walk(
     return 0
 
 
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def in_pieces(
+    w: cython.pointer[Walk], first: cython.Py_ssize_t, last: cython.Py_ssize_t, opaque: cython.bint
+) -> cython.bint:
+    """Whether painting the stroke of subpaths first to last piece by piece paints what
+    painting it once would: it is one segment with butt caps, or, opaque, its pieces only
+    overlap,
+    every segment running along an axis and every corner a disc or the square around it,
+    with no miter or bevel polygon meeting a segment's end along an edge, where two partial
+    coverages painted in turn leave a lighter seam."""
+    k: cython.Py_ssize_t
+    index: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    segments: cython.Py_ssize_t = 0
+    aligned: cython.bint = True
+    for k in range(first, last):
+        start = w.bounds[3 * k]
+        end = w.bounds[3 * k + 1]
+        if end - start < 2:
+            continue
+        for index in range(start, end - 1):
+            if w.xs[index] == w.xs[index + 1] and w.ys[index] == w.ys[index + 1]:
+                continue
+            segments += 1
+            if w.xs[index] != w.xs[index + 1] and w.ys[index] != w.ys[index + 1]:
+                aligned = False
+        if w.bounds[3 * k + 2] and (w.xs[start] != w.xs[end - 1] or w.ys[start] != w.ys[end - 1]):
+            segments += 1
+            if w.xs[start] != w.xs[end - 1] and w.ys[start] != w.ys[end - 1]:
+                aligned = False
+        elif w.bounds[3 * k + 2]:
+            # Closed: its last point meets its first at a join.
+            segments += 1
+    if segments <= 1 and w.line_cap == CAP_BUTT:
+        return True
+    if not opaque or not aligned or w.line_join == JOIN_BEVEL:
+        return False
+    # A right angle's miter is a bevel below a miter limit of the square root of 2.
+    return w.line_join != JOIN_MITER or w.miter_limit_squared >= 2.0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def paint_once(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+    buffer: cython.pointer[cython.p_ushort],
+    capacity: cython.p_Py_ssize_t,
+) -> cython.int:
+    """Paint the stroke of subpaths first to last once: count the samples of each pixel any
+    of its pieces covers, each once, then blend each pixel by that coverage (ISO 32000-2
+    8.5.3.2). buffer holds capacity sample masks, and grows to the stroke's box."""
+    k: cython.Py_ssize_t
+    index: cython.Py_ssize_t
+    found: cython.bint = False
+    low_x: cython.double = 0.0
+    low_y: cython.double = 0.0
+    high_x: cython.double = 0.0
+    high_y: cython.double = 0.0
+    for k in range(first, last):
+        for index in range(w.bounds[3 * k], w.bounds[3 * k + 1]):
+            if not found:
+                low_x = w.xs[index]
+                high_x = w.xs[index]
+                low_y = w.ys[index]
+                high_y = w.ys[index]
+                found = True
+                continue
+            low_x = py_min(low_x, w.xs[index])
+            high_x = py_max(high_x, w.xs[index])
+            low_y = py_min(low_y, w.ys[index])
+            high_y = py_max(high_y, w.ys[index])
+    if not found:
+        return 0
+    # A miter's tip reaches at most the miter limit times half the line width from its
+    # corner, and a projecting cap's corner the square root of 2 times.
+    reach: cython.double = w.half * (
+        py_max(sqrt(w.miter_limit_squared), 1.5) if w.line_join == JOIN_MITER else 1.5
+    )
+    box = cython.declare(cython.double[4])
+    box[0] = low_x - reach
+    box[1] = low_y - reach
+    box[2] = high_x + reach
+    box[3] = high_y + reach
+    pixel_box = cython.declare(cython.Py_ssize_t[4])
+    result: cython.int = clipped_pixel_box(p, box, pixel_box)
+    if result < 0:
+        with cython.gil:
+            failed(p, calls)
+    if result <= 0:
+        return 0
+    c = cython.declare(Cover)
+    c.left = pixel_box[0]
+    c.top = pixel_box[1]
+    c.width = pixel_box[2] - pixel_box[0]
+    c.height = pixel_box[3] - pixel_box[1]
+    c.crop_x0 = p.crop_x0
+    c.crop_y1 = p.crop_y1
+    c.scale = p.scale
+    c.transformed = False
+    size: cython.Py_ssize_t = c.width * c.height
+    if size > capacity[0]:
+        free(buffer[0])
+        buffer[0] = cython.cast(cython.p_ushort, malloc(size * cython.sizeof(cython.ushort)))
+        capacity[0] = 0 if buffer[0] == cython.NULL else size
+        if buffer[0] == cython.NULL:
+            p.error = FAILED_MEMORY
+            with cython.gil:
+                failed(p, calls)
+    c.masks = buffer[0]
+    memset(c.masks, 0, size * cython.sizeof(cython.ushort))
+    w.cover = cython.address(c)
+    walk_range(p, w, calls, first, last)
+    w.cover = cython.NULL
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    py: cython.Py_ssize_t
+    px: cython.Py_ssize_t
+    bits: cython.ushort
+    alpha: cython.int
+    span_count: cython.Py_ssize_t = 0
+    spans: cython.p_const_longlong = cython.NULL
+    painted: cython.bint = False
+    window = cython.declare(cython.Py_ssize_t[4])
+    for i in range(c.height):
+        py = c.top + i
+        if p.clip_mode == CLIP_ROWS:
+            span_count = row_spans(p, py, cython.address(spans))
+        for j in range(c.width):
+            bits = c.masks[i * c.width + j]
+            if not bits:
+                continue
+            px = c.left + j
+            if p.clip_mode == CLIP_ROWS and not pixel_in_row(spans, span_count, px):
+                continue
+            alpha = coverage_alpha(p.alpha, sample_count(bits))
+            if alpha <= 0:
+                continue
+            blend_normal_pixel(p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, alpha)
+            if not painted:
+                painted = True
+                window[0] = px
+                window[1] = py
+                window[2] = px + 1
+                window[3] = py + 1
+            else:
+                window[0] = px if px < window[0] else window[0]
+                window[2] = px + 1 if px + 1 > window[2] else window[2]
+                window[3] = py + 1
+    if painted:
+        extend(p, window[1], window[3], window[0], window[2])
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def walk_once(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    ends: cython.p_longlong,
+    groups: cython.Py_ssize_t,
+) -> cython.int:
+    """Paint each group of subpaths, the strokes ending at ends, once, each in turn: piece
+    by piece where that paints the same, and otherwise by paint_once."""
+    buffer: cython.p_ushort = cython.NULL
+    capacity: cython.Py_ssize_t = 0
+    group: cython.Py_ssize_t
+    first: cython.Py_ssize_t = 0
+    last: cython.Py_ssize_t
+    result: cython.int = 0
+    for group in range(groups):
+        last = ends[group]
+        if in_pieces(w, first, last, p.alpha >= 255):
+            result = walk_range(p, w, calls, first, last)
+        else:
+            result = paint_once(
+                p, w, calls, first, last, cython.address(buffer), cython.address(capacity)
+            )
+        if result < 0:
+            break
+        first = last
+    free(buffer)
+    return result
+
+
 def stroke_polylines(
     pixels: cython.uchar[:, :, ::1],
     xs: cython.const[cython.double][::1],
@@ -1125,6 +1707,8 @@ def stroke_polylines(
     line_join: cython.int,
     miter_limit: cython.double,
     exponent: cython.double,
+    once: cython.bint,
+    group_ends: typing.Optional[list],
     on_line,
     on_polygon,
     on_square,
@@ -1142,11 +1726,16 @@ def stroke_polylines(
             raise ValueError("a clip path needs its rows")
         if row_offsets[row_offsets.shape[0] - 1] * 2 > row_spans.shape[0]:
             raise ValueError("row offsets run past the spans")
+    if once and not native:
+        raise ValueError("a stroke painted once is painted natively")
+    groups: cython.Py_ssize_t = 1 if group_ends is None else len(group_ends)
     bounds: cython.pointer[cython.longlong] = cython.cast(
-        cython.pointer[cython.longlong], malloc((3 * count + 1) * cython.sizeof(cython.longlong))
+        cython.pointer[cython.longlong],
+        malloc((3 * count + groups + 1) * cython.sizeof(cython.longlong)),
     )
     if bounds == cython.NULL:
         raise MemoryError
+    ends: cython.p_longlong = bounds + 3 * count
     k: cython.Py_ssize_t
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
@@ -1167,6 +1756,18 @@ def stroke_polylines(
             bounds[3 * k] = start
             bounds[3 * k + 1] = end
             bounds[3 * k + 2] = 1 if (outline or flag) else 0
+        if group_ends is None:
+            ends[0] = count
+        else:
+            start = 0
+            for k in range(groups):
+                end = group_ends[k]
+                if end < start or end > count:
+                    raise ValueError("groups run past the subpaths")
+                ends[k] = end
+                start = end
+            if groups and start != count:
+                raise ValueError("groups leave subpaths out")
         p.pixels = (
             cython.address(pixels[0, 0, 0]) if pixels.shape[0] and pixels.shape[1] else cython.NULL
         )
@@ -1209,8 +1810,180 @@ def stroke_polylines(
         w.line_cap = line_cap
         w.line_join = line_join
         w.miter_limit_squared = miter_limit * miter_limit
+        w.cover = cython.NULL
         with cython.nogil:
-            walk(cython.address(p), cython.address(w), calls)
+            if once:
+                walk_once(cython.address(p), cython.address(w), calls, ends, groups)
+            else:
+                walk(cython.address(p), cython.address(w), calls)
         flush(cython.address(p), calls)
     finally:
         free(bounds)
+
+
+def stroke_coverage(
+    counts: cython.uchar[:, ::1],
+    left: cython.Py_ssize_t,
+    top: cython.Py_ssize_t,
+    xs: cython.const[cython.double][::1],
+    ys: cython.const[cython.double][::1],
+    spans: list,
+    outline: cython.bint,
+    squares: cython.const[cython.double][::1],
+    crop_x0: cython.double,
+    crop_y1: cython.double,
+    scale: cython.double,
+    matrix: typing.Optional[tuple],
+    line_width: cython.double,
+    line_cap: cython.int,
+    line_join: cython.int,
+    miter_limit: cython.double,
+    exponent: cython.double,
+) -> bool:
+    """Count, in counts, the 4 x 4 samples of each pixel of the window at (left, top) that
+    the stroke of the subpaths covers: its segments, joins and caps, and the square around
+    each point of squares, (x, y, ux, uy) with the path along (ux, uy) there, as a dash of
+    zero length with projecting caps paints. A sample two pieces cover counts once, as a
+    stroke is one shape painted once (ISO 32000-2 8.5.3.2). The points are in stroke space,
+    which matrix, (a, b, c, d) or None for the identity, maps to page space; the line width
+    is a diameter of the pen there. True if any sample is covered."""
+    if xs.shape[0] != ys.shape[0]:
+        raise ValueError("xs and ys differ in length")
+    if squares.shape[0] % 4:
+        raise ValueError("squares hold four numbers each")
+    count: cython.Py_ssize_t = len(spans)
+    height: cython.Py_ssize_t = counts.shape[0]
+    width: cython.Py_ssize_t = counts.shape[1]
+    c = cython.declare(Cover)
+    c.transformed = matrix is not None
+    smallest: cython.double = 1.0
+    determinant: cython.double
+    if c.transformed:
+        c.forward[0] = matrix[0]
+        c.forward[1] = matrix[1]
+        c.forward[2] = matrix[2]
+        c.forward[3] = matrix[3]
+        determinant = c.forward[0] * c.forward[3] - c.forward[1] * c.forward[2]
+        if determinant == 0.0 or isnan(determinant) or isinf(determinant):
+            raise ValueError("the stroke matrix is not invertible")
+        c.inverse[0] = c.forward[3] / determinant
+        c.inverse[1] = -c.forward[1] / determinant
+        c.inverse[2] = -c.forward[2] / determinant
+        c.inverse[3] = c.forward[0] / determinant
+        # The matrix's smaller singular value: the least it shrinks a length by, which a
+        # thin pen is widened to keep a device pixel wide in every direction.
+        total: cython.double = (
+            c.forward[0] * c.forward[0]
+            + c.forward[1] * c.forward[1]
+            + c.forward[2] * c.forward[2]
+            + c.forward[3] * c.forward[3]
+        )
+        largest: cython.double = sqrt(
+            (total + sqrt(py_max(0.0, total * total - 4.0 * determinant * determinant))) * 0.5
+        )
+        smallest = fabs(determinant) / largest
+    c.left = left
+    c.top = top
+    c.width = width
+    c.height = height
+    c.crop_x0 = crop_x0
+    c.crop_y1 = crop_y1
+    c.scale = scale
+    c.masks = cython.NULL
+    if width <= 0 or height <= 0:
+        return False
+    bounds: cython.pointer[cython.longlong] = cython.cast(
+        cython.pointer[cython.longlong], malloc((3 * count + 1) * cython.sizeof(cython.longlong))
+    )
+    if bounds == cython.NULL:
+        raise MemoryError
+    c.masks = cython.cast(cython.p_ushort, calloc(width * height, cython.sizeof(cython.ushort)))
+    if c.masks == cython.NULL:
+        free(bounds)
+        raise MemoryError
+    k: cython.Py_ssize_t
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    found: cython.int = 0
+    covered: cython.bint = False
+    number: cython.uchar
+    p = cython.declare(Paint)
+    w = cython.declare(Walk)
+    no_calls: typing.Optional[Callbacks] = None
+    try:
+        for k in range(count):
+            start, end, flag = spans[k]
+            if start < 0 or end > xs.shape[0] or end < start:
+                raise ValueError("span runs past the points")
+            bounds[3 * k] = start
+            bounds[3 * k + 1] = end
+            bounds[3 * k + 2] = 1 if (outline or flag) else 0
+        p.scale = scale
+        p.exponent = exponent
+        p.painted = False
+        p.error = 0
+        w.xs = cython.address(xs[0]) if xs.shape[0] else cython.NULL
+        w.ys = cython.address(ys[0]) if ys.shape[0] else cython.NULL
+        w.bounds = bounds
+        w.count = count
+        w.line_width = line_width
+        w.half = py_max(0.5 / (scale * smallest), line_width * 0.5)
+        w.native = True
+        w.line_cap = line_cap
+        w.line_join = line_join
+        w.miter_limit_squared = miter_limit * miter_limit
+        w.cover = cython.address(c)
+        with cython.nogil:
+            walk(cython.address(p), cython.address(w), no_calls)
+            for k in range(0, squares.shape[0], 4):
+                found = cover_square(
+                    cython.address(p),
+                    cython.address(c),
+                    squares[k],
+                    squares[k + 1],
+                    squares[k + 2],
+                    squares[k + 3],
+                    w.half,
+                )
+                if found < 0:
+                    break
+        if found < 0:
+            failed(cython.address(p), no_calls)
+        for i in range(height):
+            for j in range(width):
+                number = sample_count(c.masks[i * width + j])
+                counts[i, j] = number
+                if number:
+                    covered = True
+    finally:
+        free(c.masks)
+        free(bounds)
+    return covered
+
+
+def axis_aligned_polylines(
+    xs: cython.const[cython.double][::1],
+    ys: cython.const[cython.double][::1],
+    spans: list,
+    outline: cython.bint,
+) -> bool:
+    """Whether every segment of the subpaths, the one closing a closed subpath included,
+    runs along an axis or has no length."""
+    k: cython.Py_ssize_t
+    index: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    for k in range(len(spans)):
+        start, end, flag = spans[k]
+        if start < 0 or end > xs.shape[0] or end > ys.shape[0] or end < start:
+            raise ValueError("span runs past the points")
+        if end - start < 2:
+            continue
+        for index in range(start, end - 1):
+            if xs[index] != xs[index + 1] and ys[index] != ys[index + 1]:
+                return False
+        if (outline or flag) and xs[start] != xs[end - 1] and ys[start] != ys[end - 1]:
+            return False
+    return True

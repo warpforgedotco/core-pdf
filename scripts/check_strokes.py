@@ -12,13 +12,24 @@ subpath's start joined into one (8.4.3.6); a subpath of one point paints a dot w
 caps and nothing otherwise (8.5.3.2). A gs operator's LW, LC, LJ, ML and D set the same
 parameters as w, J, j, M and d (8.4.5).
 
+A stroke is one shape, painted once (8.5.3.2, 11.7): where its segments, joins, caps and
+dashes overlap or meet, a constant alpha, a soft mask or a blend mode applies once, and no
+seam shows. Its line width is a diameter in user space (8.4.3.2): under a CTM that skews
+or scales unevenly the pen is an ellipse on the page, and joins, caps, the miter limit and
+dashes follow user space.
+
 This writes PDFs that stroke polylines with every join and cap, at acute, right and obtuse
 angles, with miter limits just above and just below a join's ratio, through zero-length
 segments, closed and open, dashed, scaled and rotated by the CTM, under a blend mode, and
-with the parameters set by gs, renders each with core, and works out in Python whether each
-pixel centre lies inside the stroke's outline. Pixels within a device pixel and a half of
-the outline, where coverage blends, are skipped; every other pixel must be the stroke's
-opaque black or untouched.
+with the parameters set by gs; then the same at a constant alpha of 0.5, crossing
+themselves, dashed, under a soft mask and in Multiply over a backdrop; opaque rings of short
+segments and circles of curves; and every join and cap under skewed, stretched and
+stretched and rotated CTMs. It renders each with core and works out in Python, in user
+space, which pixels each stroke's pieces cover: a pixel is inside if any piece holds it, so
+that where pieces meet inside a stroke is no edge. Pixels within a device pixel and a half
+of a stroke's edge, or with any of the points an eighth of a pixel apart within them on
+both sides of it, are skipped; every other pixel must be the stroke painted once over the
+backdrop, within a byte, or the backdrop.
 
 uv run --all-packages python scripts/check_strokes.py
 """
@@ -28,6 +39,7 @@ from __future__ import annotations
 import math
 import sys
 from collections.abc import Sequence
+from typing import cast
 
 import numpy
 
@@ -35,7 +47,8 @@ from core_pdf import PdfDocument
 
 type Point = tuple[float, float]
 type Affine = tuple[float, float, float, float, float, float]
-# A convex polygon, its vertices in order, or a disc: (centre, radius).
+# A convex polygon, its vertices in order; a disc: (centre, radius); or a ring:
+# (centre, (radius, half its width)).
 type Shape = tuple[str, tuple[Point, ...], float]
 
 IDENTITY: Affine = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
@@ -80,6 +93,7 @@ class Stroke:
         miter_limit: float = 10.0,
         dash: tuple[Sequence[float], float] | None = None,
         explicit_close: bool = False,
+        circle: tuple[Point, float] | None = None,
     ) -> None:
         # As the content stream writes them, so that the reference strokes the same path.
         self.points = tuple((float(f"{x:.6g}"), float(f"{y:.6g}")) for x, y in points)
@@ -91,8 +105,22 @@ class Stroke:
         self.dash = dash
         # Repeat the first point before h, as some producers do.
         self.explicit_close = explicit_close
+        # A circle (centre, radius) drawn with four Bezier curves instead of the points.
+        self.circle = circle
 
     def path(self) -> bytes:
+        if self.circle is not None:
+            (cx, cy), r = self.circle
+            k = r * 0.5522847498
+            out = b"%s m " % numbers([cx + r, cy])
+            for (x0, y0), (x1, y1), (x2, y2) in (
+                ((cx + r, cy + k), (cx + k, cy + r), (cx, cy + r)),
+                ((cx - k, cy + r), (cx - r, cy + k), (cx - r, cy)),
+                ((cx - r, cy - k), (cx - k, cy - r), (cx, cy - r)),
+                ((cx + k, cy - r), (cx + r, cy - k), (cx + r, cy)),
+            ):
+                out += b"%s c " % numbers([x0, y0, x1, y1, x2, y2])
+            return out + b"h S"
         first, *rest = self.points
         if self.explicit_close:
             rest = [*rest, first]
@@ -258,16 +286,19 @@ def polar_along(origin: Point, direction: Point, distance: float) -> Point:
     return origin[0] + direction[0] * distance, origin[1] + direction[1] * distance
 
 
-def stroke_shapes(stroke: Stroke, ctm: Affine) -> list[Shape]:
-    """The outline of a stroke in device space, the CTM a uniform scale and rotation."""
-    scale = math.sqrt(abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]))
-    half = stroke.width * scale / 2.0
-    points = [apply(ctm, point) for point in stroke.points]
+def stroke_shapes(stroke: Stroke) -> list[Shape]:
+    """The outline of a stroke in user space, where the pen is a circle a line width
+    across and dashes are measured (8.4.3.2, 8.4.3.6)."""
+    half = stroke.width / 2.0
+    if stroke.circle is not None:
+        # The curves, flattened, stay well within a pixel of the circle.
+        centre, radius = stroke.circle
+        return [("ring", (centre, (radius, half)), 0.0)]
+    points = list(stroke.points)
     if stroke.dash is None:
         return polyline_shapes(points, stroke.closed, stroke, half)
-    pattern = [value * scale for value in stroke.dash[0]]
     shapes: list[Shape] = []
-    for piece, closed, direction in dashes(points, stroke.closed, pattern, stroke.dash[1] * scale):
+    for piece, closed, direction in dashes(points, stroke.closed, *stroke.dash):
         if direction is not None:
             point = piece[0]
             if stroke.cap == ROUND:
@@ -294,6 +325,9 @@ def segment_distance(x: Grid, y: Grid, a: Point, b: Point) -> Grid:
 def signed_distance(shape: Shape, x: Grid, y: Grid) -> Grid:
     """Negative inside the shape, positive outside: the distance to its outline."""
     kind, vertices, radius = shape
+    if kind == "ring":
+        (cx, cy), (middle, half) = vertices
+        return numpy.abs(numpy.hypot(x - cx, y - cy) - middle) - half
     if kind == "disc":
         cx, cy = vertices[0]
         return numpy.hypot(x - cx, y - cy) - radius
@@ -310,13 +344,15 @@ def stream(dictionary: bytes, data: bytes) -> bytes:
     return b"<< " + dictionary + b" /Length %d >>\nstream\n" % len(data) + data + b"\nendstream"
 
 
-def document(content: bytes, resources: bytes) -> bytes:
+def document(content: bytes, resources: bytes, extra: Sequence[bytes] = ()) -> bytes:
+    """A one-page PDF; extra are its objects from number 5 on."""
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R /Resources %s >>"
         % (SIZE, SIZE, resources),
         stream(b"", content),
+        *extra,
     ]
     out = bytearray(b"%PDF-1.7\n")
     offsets = []
@@ -334,9 +370,26 @@ def document(content: bytes, resources: bytes) -> bytes:
     return bytes(out)
 
 
+type Colour = tuple[float, float, float]
+BLACK: Colour = (0.0, 0.0, 0.0)
+# The grey a soft mask's group paints: its luminosity is the mask's value (11.6.5.2).
+MASK_GREY = 0.6
+
+
+def blend(mode: str, backdrop: float, source: float) -> float:
+    if mode == "Multiply":
+        return backdrop * source
+    if mode == "Screen":
+        return backdrop + source - backdrop * source
+    return source
+
+
 class Case:
-    """A page stroking `strokes` in black under `ctm`. With `extgstate`, the page sets the
-    parameters with gs instead of the operators; `blend` strokes under that blend mode."""
+    """A page stroking `strokes` in `colour` under `ctm`. With `extgstate`, the page sets
+    the parameters with gs instead of the operators. A graphics state sets the blend mode
+    `blend`, the constant alpha `alpha` and, with `soft_mask`, a luminosity soft mask of
+    MASK_GREY; `backdrop` fills the page first. Each stroke on a page is apart from the
+    others, so that each pixel is painted by at most one."""
 
     def __init__(
         self,
@@ -346,18 +399,45 @@ class Case:
         ctm: Affine = IDENTITY,
         extgstate: bool = False,
         blend: str | None = None,
+        alpha: float = 1.0,
+        soft_mask: bool = False,
+        backdrop: Colour | None = None,
+        colour: Colour = BLACK,
     ) -> None:
         self.name = name
         self.strokes = tuple(strokes)
         self.ctm = ctm
         self.extgstate = extgstate
         self.blend = blend
+        self.alpha = alpha
+        self.soft_mask = soft_mask
+        self.backdrop = backdrop
+        self.colour = colour
 
     def pdf(self) -> bytes:
         states: list[bytes] = []
-        body = b"0 G q %s cm " % numbers(self.ctm)
+        extra: list[bytes] = []
+        body = b""
+        if self.backdrop is not None:
+            body += b"%s rg 0 0 %d %d re f " % (numbers(self.backdrop), SIZE, SIZE)
+        body += b"%s RG q %s cm " % (numbers(self.colour), numbers(self.ctm))
+        paint: list[bytes] = []
         if self.blend is not None:
-            states.append(b"/BM /%s" % self.blend.encode())
+            paint.append(b"/BM /%s" % self.blend.encode())
+        if self.alpha != 1.0:
+            paint.append(b"/CA %s /ca %s" % (numbers([self.alpha]), numbers([self.alpha])))
+        if self.soft_mask:
+            group = b"%s g 0 0 %d %d re f" % (numbers([MASK_GREY]), SIZE, SIZE)
+            extra.append(
+                stream(
+                    b"/Type /XObject /Subtype /Form /BBox [0 0 %d %d]"
+                    b" /Group << /S /Transparency /CS /DeviceGray >>" % (SIZE, SIZE),
+                    group,
+                )
+            )
+            paint.append(b"/SMask << /Type /Mask /S /Luminosity /G 5 0 R >>")
+        if paint:
+            states.append(b" ".join(paint))
             body += b"/G0 gs "
         for stroke in self.strokes:
             if self.extgstate:
@@ -383,10 +463,29 @@ class Case:
         resources = b"<< /ExtGState << %s >> >>" % b" ".join(
             b"/G%d << /Type /ExtGState %s >>" % (index, state) for index, state in enumerate(states)
         )
-        return document(body, resources)
+        return document(body, resources, extra)
 
     def shapes(self) -> list[Shape]:
-        return [shape for stroke in self.strokes for shape in stroke_shapes(stroke, self.ctm)]
+        return [shape for stroke in self.strokes for shape in stroke_shapes(stroke)]
+
+    def expected(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """The RGBA of a pixel the stroke covers, painted once over the backdrop, and of one
+        it does not: the backdrop (11.3.6)."""
+        source = self.alpha * (MASK_GREY if self.soft_mask else 1.0)
+        mode = self.blend or "Normal"
+        if self.backdrop is None:
+            outside = (0, 0, 0, 0)
+            inside = (*(round(255 * value) for value in self.colour), round(255 * source))
+            return inside, outside
+        outside = (*(round(255 * value) for value in self.backdrop), 255)
+        inside = (
+            *(
+                round(255 * ((1.0 - source) * back + source * blend(mode, back, value)))
+                for back, value in zip(self.backdrop, self.colour, strict=True)
+            ),
+            255,
+        )
+        return inside, outside
 
 
 def zigzag(
@@ -400,6 +499,10 @@ def zigzag(
     return points
 
 
+def scaled(points: Sequence[Point], factor: float, origin: Point = (0.0, 0.0)) -> list[Point]:
+    return [(origin[0] + x * factor, origin[1] + y * factor) for x, y in points]
+
+
 # Turns of 150 and 60 degrees: corners of 30 (acute) and 120 (obtuse) degrees, at headings
 # no axis lines up with.
 ZIGZAG = zigzag((110.0, 50.0), (150.0, -60.0), 100.0, 25.0)
@@ -408,6 +511,33 @@ RIGHT_ANGLE = [(30.0, 250.0), (130.0, 250.0), (130.0, 200.0)]
 NARROW = zigzag((60.0, 80.0), (140.0,), 150.0, 30.0)
 NARROW_RATIO = 1.0 / math.sin(math.radians(20.0))
 TRIANGLE = [(50.0, 50.0), (250.0, 80.0), (120.0, 240.0)]
+# A closed five-pointed star, whose segments cross one another.
+# A ring of many short segments, as a flattened curve is, and a circle of curves.
+POLYGON_RING = [polar((150.0, 150.0), 100.0, 3.0 + 5.0 * index) for index in range(72)]
+CIRCLE = ((150.0, 150.0), 90.0)
+STAR = [polar((150.0, 150.0), 110.0, 90.0 + 144.0 * index) for index in range(5)]
+# An open path that loops back over itself.
+LOOP = [(40.0, 60.0), (230.0, 60.0), (230.0, 200.0), (120.0, 200.0), (120.0, 20.0)]
+# A stroke's joins and caps under a CTM, small enough for the page under each CTM below.
+SMALL_ZIGZAG = zigzag((-60.0, -40.0), (150.0, -60.0), 60.0, 25.0)
+SMALL_RIGHT_ANGLE = [(-70.0, 60.0), (-10.0, 60.0), (-10.0, 30.0)]
+SKEW: Affine = (1.0, 0.0, 0.6, 1.0, 140.0, 150.0)
+STRETCH: Affine = (1.7, 0.0, 0.0, 0.6, 150.0, 150.0)
+
+
+def rotated_stretch(degrees: float, x_scale: float, y_scale: float) -> Affine:
+    """A stretch along the axes, then a rotation, about the page's centre."""
+    c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    return (c * x_scale, s * x_scale, -s * y_scale, c * y_scale, 150.0, 150.0)
+
+
+UNEVEN: dict[str, Affine] = {
+    "skewed": SKEW,
+    "stretched": STRETCH,
+    "stretched and rotated": rotated_stretch(35.0, 1.5, 0.65),
+}
+ORANGE: Colour = (0.8, 0.6, 0.2)
+BLUE: Colour = (0.2, 0.4, 0.9)
 
 
 def cases() -> list[Case]:
@@ -486,7 +616,263 @@ def cases() -> list[Case]:
             extgstate=True,
         ),
     ]
+    # A stroke is one shape painted once (8.5.3.2, 11.7): where its pieces overlap or meet,
+    # a constant alpha, a soft mask or a blend mode applies once.
+    found += [
+        Case(
+            f"alpha 0.5, join {join}, cap {cap}",
+            [Stroke(ZIGZAG, join=join, cap=cap), Stroke(RIGHT_ANGLE, join=join, cap=cap)],
+            alpha=0.5,
+        )
+        for join in (MITER, ROUND_JOIN, BEVEL)
+        for cap in (BUTT, ROUND, SQUARE)
+    ]
+    found += [
+        Case(
+            "alpha 0.5, a star crossing itself",
+            [Stroke(STAR, closed=True, width=12.0, join=ROUND_JOIN)],
+            alpha=0.5,
+            backdrop=ORANGE,
+            colour=BLUE,
+        ),
+        Case(
+            "alpha 0.5, a loop crossing itself",
+            [Stroke(LOOP, width=20.0, cap=SQUARE, join=BEVEL)],
+            alpha=0.5,
+        ),
+        Case(
+            "alpha 0.5, dashes",
+            [
+                Stroke(ZIGZAG, cap=SQUARE, join=ROUND_JOIN, dash=([30.0, 22.0], 9.0)),
+                Stroke(RIGHT_ANGLE, cap=ROUND, dash=([0.0, 25.0], 0.0)),
+            ],
+            alpha=0.5,
+            backdrop=ORANGE,
+        ),
+        Case(
+            "alpha 0.5, dashes around a closed triangle's corners",
+            [Stroke(TRIANGLE, closed=True, dash=([140.0, 30.0], 40.0))],
+            alpha=0.5,
+        ),
+        Case(
+            "soft mask",
+            [Stroke(ZIGZAG, cap=ROUND, join=MITER), Stroke(RIGHT_ANGLE, cap=SQUARE)],
+            soft_mask=True,
+            backdrop=ORANGE,
+        ),
+        Case(
+            "soft mask and alpha 0.5, dashes",
+            [Stroke(STAR, closed=True, width=10.0, dash=([50.0, 10.0], 0.0))],
+            soft_mask=True,
+            alpha=0.5,
+        ),
+        Case(
+            "Multiply over a backdrop",
+            [Stroke(ZIGZAG, cap=SQUARE), Stroke(RIGHT_ANGLE, join=ROUND_JOIN, cap=ROUND)],
+            blend="Multiply",
+            backdrop=ORANGE,
+            colour=BLUE,
+        ),
+        Case(
+            "Multiply and alpha 0.5, a star crossing itself",
+            [Stroke(STAR, closed=True, width=12.0, join=MITER)],
+            blend="Multiply",
+            alpha=0.5,
+            backdrop=ORANGE,
+            colour=BLUE,
+        ),
+    ]
+    # Where a stroke's pieces meet along an edge, partial coverages painted in turn would
+    # leave a lighter seam, even for an opaque stroke.
+    found += [
+        Case(
+            f"opaque ring of segments, join {join}",
+            [Stroke(POLYGON_RING, closed=True, join=join, width=14.0)],
+            backdrop=ORANGE,
+            colour=BLUE,
+        )
+        for join in (MITER, ROUND_JOIN, BEVEL)
+    ]
+    found += [
+        Case("opaque circle of curves", [Stroke((), circle=CIRCLE, width=3.0)]),
+        Case("opaque thick circle of curves", [Stroke((), circle=CIRCLE, width=20.0, join=BEVEL)]),
+        Case(
+            "alpha 0.5, circle of curves",
+            [Stroke((), circle=CIRCLE, width=6.0)],
+            alpha=0.5,
+            backdrop=ORANGE,
+        ),
+        Case(
+            "skewed circle of curves", [Stroke((), circle=((0.0, 0.0), 60.0), width=10.0)], ctm=SKEW
+        ),
+    ]
+    # The line width is a diameter in user space (8.4.3.2): under a CTM that skews or
+    # scales unevenly, the pen is an ellipse on the page, and the joins, caps, miter limit
+    # and dashes follow user space.
+    found += [
+        Case(
+            f"{name}, join {join}, cap {cap}",
+            [
+                Stroke(SMALL_ZIGZAG, join=join, cap=cap, width=12.0),
+                Stroke(SMALL_RIGHT_ANGLE, join=join, cap=cap, width=10.0),
+            ],
+            ctm=ctm,
+        )
+        for name, ctm in UNEVEN.items()
+        for join in (MITER, ROUND_JOIN, BEVEL)
+        for cap in (BUTT, ROUND, SQUARE)
+    ]
+    found += [
+        Case(
+            "skewed, miter limit just above the ratio",
+            [Stroke(scaled(NARROW, 0.6, (-90.0, -60.0)), miter_limit=NARROW_RATIO + 0.05)],
+            ctm=SKEW,
+        ),
+        Case(
+            "stretched, miter limit just below the ratio",
+            [Stroke(scaled(NARROW, 0.6, (-60.0, -60.0)), miter_limit=NARROW_RATIO - 0.05)],
+            ctm=STRETCH,
+        ),
+        Case(
+            "stretched, dashes",
+            [Stroke(SMALL_ZIGZAG, cap=SQUARE, width=10.0, dash=([18.0, 12.0], 4.0))],
+            ctm=STRETCH,
+        ),
+        Case(
+            "skewed, alpha 0.5 and zero-length dashes",
+            [
+                Stroke(SMALL_ZIGZAG, cap=ROUND, join=ROUND_JOIN, width=12.0),
+                Stroke(SMALL_RIGHT_ANGLE, cap=SQUARE, width=8.0, dash=([0.0, 15.0], 0.0)),
+            ],
+            ctm=SKEW,
+            alpha=0.5,
+        ),
+    ]
     return found
+
+
+def contains(
+    shape: Shape, x: Grid, y: Grid
+) -> numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]]:
+    """Whether each point lies inside the shape."""
+    kind, vertices, radius = shape
+    if kind == "disc":
+        cx, cy = vertices[0]
+        return (x - cx) ** 2 + (y - cy) ** 2 < radius * radius
+    if kind == "ring":
+        (cx, cy), (middle, half) = vertices
+        return numpy.abs(numpy.hypot(x - cx, y - cy) - middle) < half
+    edges = list(zip(vertices, (*vertices[1:], vertices[0])))
+    signs = [(b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) for a, b in edges]
+    return numpy.logical_and.reduce([sign > 0 for sign in signs]) | numpy.logical_and.reduce(
+        [sign < 0 for sign in signs]
+    )
+
+
+def shape_box(shape: Shape) -> tuple[float, float, float, float]:
+    kind, vertices, radius = shape
+    if kind == "disc":
+        (cx, cy), reach = vertices[0], radius
+    elif kind == "ring":
+        (cx, cy), (middle, half) = vertices
+        reach = middle + half
+    else:
+        xs = [point[0] for point in vertices]
+        ys = [point[1] for point in vertices]
+        return min(xs), min(ys), max(xs), max(ys)
+    return cx - reach, cy - reach, cx + reach, cy + reach
+
+
+# The points of the page the reference samples, every STEP of a pixel; pixel centres are
+# among them.
+STEP = 0.5
+
+
+def user_grid(ctm: Affine, step: float, count: int) -> tuple[Grid, Grid]:
+    """The user-space points of a grid of count by count page points, step apart, from the
+    page's top left corner."""
+    a, b, c, d, e, f = ctm
+    determinant = a * d - b * c
+    page = numpy.arange(count) * step
+    page_x = page[None, :] - e
+    page_y = SIZE - page[:, None] - f
+    x = (d * page_x - c * page_y) / determinant
+    y = (a * page_y - b * page_x) / determinant
+    return cast("Grid", x), cast("Grid", y)
+
+
+# Core samples each pixel at 4 x 4 points, an eighth of a pixel and then a quarter apart;
+# the reference samples every eighth, so that it sees any gap core does.
+FINE = 8
+
+
+def outline_pixels(
+    case: Case, height: int, width: int
+) -> tuple[numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]], ...]:
+    """Which pixels the strokes cover, and which lie MARGIN or more from the edge of each
+    stroke, the union of its pieces, where coverage does not blend. A point is inside a
+    stroke if any of its pieces holds it, so that where pieces meet inside the stroke is no
+    edge: the stroke must be painted once there too. Each union is sampled every STEP on
+    the page, its points mapped to user space, where the pieces are, to find the pixels
+    MARGIN from its edge; and every eighth of a pixel within each pixel, which must lie all
+    inside or all outside for the pixel to be checked."""
+    count = round(SIZE / STEP) + 1
+    x, y = user_grid(case.ctm, STEP, count)
+    fine_x, fine_y = user_grid(case.ctm, 1.0 / FINE, SIZE * FINE)
+    centres = (slice(1, 2 * height, 2), slice(1, 2 * width, 2))
+    covered = numpy.zeros((height, width), dtype=bool)
+    clear = numpy.ones((height, width), dtype=bool)
+    for stroke in case.strokes:
+        all_inside, all_outside = eroded(stroke_union(stroke, case.ctm, x, y, STEP))
+        fine = stroke_union(stroke, case.ctm, fine_x, fine_y, 1.0 / FINE)
+        blocks = fine.reshape(SIZE, FINE, SIZE, FINE)[:height, :, :width, :]
+        whole = blocks.all(axis=(1, 3))
+        none = ~blocks.any(axis=(1, 3))
+        covered |= whole
+        clear &= (all_inside[centres] & whole) | (all_outside[centres] & none)
+    return covered, clear
+
+
+def stroke_union(
+    stroke: Stroke, ctm: Affine, x: Grid, y: Grid, step: float
+) -> numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]]:
+    """Which of the sampled points, step apart on the page and at x and y in user space,
+    the stroke holds."""
+    a, b, c, d, e, f = ctm
+    count = x.shape[0]
+    union = numpy.zeros((count, count), dtype=bool)
+    for shape in stroke_shapes(stroke):
+        x0, y0, x1, y1 = shape_box(shape)
+        corners = [(a * u + c * v + e, b * u + d * v + f) for u in (x0, x1) for v in (y0, y1)]
+        column0 = max(0, math.floor(min(p[0] for p in corners) / step))
+        column1 = min(count, math.ceil(max(p[0] for p in corners) / step) + 1)
+        row0 = max(0, math.floor((SIZE - max(p[1] for p in corners)) / step))
+        row1 = min(count, math.ceil((SIZE - min(p[1] for p in corners)) / step) + 1)
+        if column1 <= column0 or row1 <= row0:
+            continue
+        window = (slice(row0, row1), slice(column0, column1))
+        union[window] |= contains(shape, x[window], y[window])
+    return union
+
+
+def eroded(
+    union: numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]],
+) -> tuple[numpy.ndarray[tuple[int, int], numpy.dtype[numpy.bool]], ...]:
+    """The sampled points MARGIN or more inside the union, and those as far outside it."""
+    count = union.shape[0]
+    # MARGIN, and a STEP for the sampling, in steps.
+    reach = math.ceil((MARGIN + STEP) / STEP)
+    padded = numpy.pad(union, reach)
+    all_inside = union.copy()
+    all_outside = ~union
+    for dy in range(-reach, reach + 1):
+        for dx in range(-reach, reach + 1):
+            if dx * dx + dy * dy > reach * reach:
+                continue
+            shifted = padded[reach + dy : reach + dy + count, reach + dx : reach + dx + count]
+            all_inside &= shifted
+            all_outside &= ~shifted
+    return all_inside, all_outside
 
 
 def check(case: Case) -> tuple[int, int]:
@@ -495,18 +881,17 @@ def check(case: Case) -> tuple[int, int]:
     pixels = numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(
         image.height, image.width, 4
     )
-    # Pixel centres in page space.
-    rows, columns = numpy.mgrid[0 : image.height, 0 : image.width]
-    x = columns + 0.5
-    y = SIZE - (rows + 0.5)
-    distance = numpy.minimum.reduce([signed_distance(shape, x, y) for shape in case.shapes()])
-    checked = numpy.abs(distance) >= MARGIN
-    inside = distance < 0
-    painted = (pixels[..., 3] == 255) & ~pixels[..., :3].any(axis=2)
-    ok = numpy.where(inside, painted, pixels[..., 3] == 0)
-    wrong = numpy.argwhere(checked & ~ok)
+    inside, checked = outline_pixels(case, image.height, image.width)
+    painted, untouched = case.expected()
+    difference = numpy.abs(pixels.astype(int) - numpy.array(painted)).max(axis=2)
+    # A pixel nothing paints is transparent, whatever its colour.
+    outside = numpy.abs(pixels.astype(int) - numpy.array(untouched))
+    outside_error = outside[..., 3] if untouched[3] == 0 else outside.max(axis=2)
+    error = numpy.where(inside, difference, outside_error)
+    # Blending rounds each channel once: a byte either way.
+    wrong = numpy.argwhere(checked & (error > 2))
     for row, column in wrong[:3]:
-        expected = "stroke" if inside[row, column] else "nothing"
+        expected = painted if inside[row, column] else untouched
         pixel = tuple(int(value) for value in pixels[row, column])
         print(f"  {case.name}: pixel {column},{row}: {pixel}, not {expected}")
     return int(checked.sum()), len(wrong)

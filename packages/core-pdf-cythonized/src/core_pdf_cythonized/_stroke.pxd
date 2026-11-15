@@ -20,3 +20,8 @@ cdef enum:
     JOIN_MITER = 0
     JOIN_ROUND = 1
     JOIN_BEVEL = 2
+
+# The shapes stroke_coverage covers the samples of.
+cdef enum:
+    COVER_POLYGON = 0
+    COVER_DISC = 1

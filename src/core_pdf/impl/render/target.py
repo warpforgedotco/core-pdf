@@ -51,7 +51,6 @@ class RasterTarget:
         "resources",
         "elementary_scratch",
         "group_member_boxes",
-        "stroke_scratch",
         "space_mode",
         "space_profile",
         "space_colors",
@@ -83,7 +82,6 @@ class RasterTarget:
     resources: RenderResources
     elementary_scratch: dict[int, ElementaryScratch]
     group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None
-    stroke_scratch: bytearray | None
     fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None
     # What the colour components hold (raster_spaces): sRGB unless inside a group that
     # blends in DeviceGray or DeviceCMYK.
@@ -128,7 +126,6 @@ class RasterTarget:
         self.elementary_scratch = {}
         self.fill_memo = None
         self.group_member_boxes = None
-        self.stroke_scratch = None
         self.space_mode = SpaceMode.RGB
         self.space_profile = None
         self.space_colors = {}

@@ -302,7 +302,7 @@ class DisplayList:
         # are stroked with the default miter limit.
         self.items.append(
             PATH_PAINT_LAYOUT.build(
-                (paint_kind, seqno, bbox, path, *fields, edge_array, DEFAULT_MITER_LIMIT)
+                (paint_kind, seqno, bbox, path, *fields, edge_array, DEFAULT_MITER_LIMIT, None)
             )
         )
 
@@ -373,6 +373,7 @@ class DisplayList:
                         if is_pdf_number(limit := data.get("miter_limit"))
                         else DEFAULT_MITER_LIMIT
                     ),
+                    stroke_matrix=data.get("stroke_matrix"),
                     dash_pattern=data.get("dash_pattern"),
                     fill_rule=data.get("fill_rule") or "nonzero",
                     blend_mode=data.get("blend_mode"),
@@ -430,6 +431,15 @@ class DisplayList:
                 and previous.blend_mode == drawing.blend_mode
                 and previous.soft_mask_alpha == drawing.soft_mask_alpha
                 and previous.alpha_is_shape == drawing.alpha_is_shape
+                # One stroke is one shape painted once, and two strokes are two: the kernel
+                # paints each of a coalesced path's in turn, so only strokes it paints, opaque
+                # and blending Normal without a stroke matrix, are joined. The previous one
+                # matches this one's opacity and blend mode.
+                and drawing.stroke_matrix is None
+                and previous.stroke_matrix is None
+                and (drawing.stroke_opacity is None or drawing.stroke_opacity == 1.0)
+                and (drawing.soft_mask_alpha is None or drawing.soft_mask_alpha == 1.0)
+                and (drawing.blend_mode is None or drawing.blend_mode == "Normal")
             ):
                 previous_box = rect_tuple(previous.bbox)
                 drawing_box = rect_tuple(drawing.rect)

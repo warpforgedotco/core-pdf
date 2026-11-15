@@ -70,7 +70,11 @@ lazy from core_pdf_cythonized._segments import merge_collinear_rows
 lazy from core_pdf_cythonized._serialize import ObjectWriter, collect_references
 lazy from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 lazy from core_pdf_cythonized._source_plane import accumulate_source_plane
-lazy from core_pdf_cythonized._stroke import stroke_polylines
+lazy from core_pdf_cythonized._stroke import (
+    axis_aligned_polylines,
+    stroke_coverage,
+    stroke_polylines,
+)
 lazy from core_pdf_cythonized._stroke_segment import stroke_segment_samples
 lazy from core_pdf_cythonized._supersample import supersampled_coverage_plane
 lazy from core_pdf_cythonized._text_array import (
@@ -162,6 +166,8 @@ __all__ = (
     "shading_t",
     "shading_values",
     "signed_area_coverage",
+    "axis_aligned_polylines",
+    "stroke_coverage",
     "stroke_polylines",
     "stroke_segment_samples",
     "supersampled_coverage_plane",

@@ -42,7 +42,6 @@ from core_pdf.impl.render.model import (
     GroupBeginItem,
     ImagePaintItem,
     PathPaintItem,
-    PixelWindow,
     RasterGroup,
     ScopeBeginItem,
     SoftMaskPlane,
@@ -382,68 +381,6 @@ def subpath_columns(
             ys.append(y)
         spans.append((start, len(xs), bool(subpath.closed)))
     return (numpy.asarray(xs, dtype=numpy.float64), numpy.asarray(ys, dtype=numpy.float64), spans)
-
-
-def paint_stroke_once(
-    target: RasterTarget,
-    path: CapturedPath,
-    line_width: float,
-    rgba: tuple[int, int, int, int],
-    dash_pattern: tuple[list[float], float] | None,
-    blend_mode: str | None,
-    line_cap: int,
-    line_join: int,
-    miter_limit: float,
-) -> None:
-    size = len(target.pixels)
-    coverage_buffer = target.stroke_scratch
-    if coverage_buffer is None or len(coverage_buffer) != size:
-        coverage_buffer = bytearray(size)
-    target.stroke_scratch = None
-    window = PixelWindow()
-    scratch = target.pixel_view(coverage_buffer)
-    try:
-        with target.detached_buffer(coverage_buffer, window):
-            target.stroke_path(
-                path,
-                line_width,
-                (0, 0, 0, 255),
-                dash_pattern,
-                None,
-                line_cap,
-                line_join,
-                miter_limit,
-            )
-        if window.empty:
-            return
-        y0, y1, x0, x1 = window.y0, window.y1, window.x0, window.x1
-        coverage = scratch[y0:y1, x0:x1, 3]
-        covered_rows = numpy.flatnonzero(coverage.any(axis=1))
-        if covered_rows.size == 0:
-            return
-        covered_columns = numpy.flatnonzero(coverage.any(axis=0))
-        rows = slice(y0 + int(covered_rows[0]), y0 + int(covered_rows[-1]) + 1)
-        columns = slice(x0 + int(covered_columns[0]), x0 + int(covered_columns[-1]) + 1)
-        coverage = scratch[rows, columns, 3].copy()
-    finally:
-        if not window.empty:
-            scratch[window.y0 : window.y1, window.x0 : window.x1] = 0
-        target.stroke_scratch = coverage_buffer
-    alpha = numpy.rint(coverage.astype(numpy.float64) * (rgba[3] / 255.0)).astype(numpy.uint8)
-    target.record_source_coverage(rows, columns, alpha, shape=coverage)
-    visible = alpha > 0
-    if not numpy.any(visible):
-        return
-    blend_visible_pixels(
-        target.pixel_array[rows, columns],
-        visible,
-        rgba[0] / 255.0,
-        rgba[1] / 255.0,
-        rgba[2] / 255.0,
-        alpha[visible].astype(numpy.float64) / 255.0,
-        target.resolved_blend(blend_mode),
-        semantic_context=target.semantic_context,
-    )
 
 
 def prepared_image_bytes(prepared: PreparedImage | None) -> int:
