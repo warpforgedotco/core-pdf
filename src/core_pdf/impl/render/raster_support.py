@@ -485,13 +485,19 @@ def sample_image_bilinear(
     y1 = numpy.clip(row + 1, 0, height - 1)
     channel = (None,) if plane.ndim == 3 else ()
     if u.shape[0] == 1 and v.ndim == 2 and v.shape[1] == 1:
-        # Separable coordinates (u by column, v by row): blend rows, then columns.
+        # Separable coordinates (u by column, v by row): gather the four neighbours of each
+        # pixel, no more than the pixels' own count, then blend rows, then columns.
+        top_rows = y0[:, 0]
+        bottom_rows = y1[:, 0]
+        left_columns = x0[0]
+        right_columns = x1[0]
         weight_y = fy[:, 0][(slice(None), None, *channel)]
-        top = plane[y0[:, 0]].astype(numpy.float32)
-        rows = top + (plane[y1[:, 0]] - top) * weight_y
+        top_left = plane[numpy.ix_(top_rows, left_columns)].astype(numpy.float32)
+        top_right = plane[numpy.ix_(top_rows, right_columns)].astype(numpy.float32)
+        left = top_left + (plane[numpy.ix_(bottom_rows, left_columns)] - top_left) * weight_y
+        right = top_right + (plane[numpy.ix_(bottom_rows, right_columns)] - top_right) * weight_y
         weight_x = fx[0][(None, slice(None), *channel)]
-        left = rows[:, x0[0]]
-        return left + (rows[:, x1[0]] - left) * weight_x
+        return left + (right - left) * weight_x
     weight_x = fx[(..., *channel)]
     weight_y = fy[(..., *channel)]
     p00 = plane[y0, x0].astype(numpy.float32)
