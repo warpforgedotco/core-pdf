@@ -36,6 +36,7 @@ from core_pdf.impl.render.model import (
     SpaceMode,
 )
 from core_pdf.impl.render.paths import intersect_box
+from core_pdf.impl.render.raster_fills import ANTIALIASED_FILL_PIXELS
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
     shading_rgba,
@@ -815,36 +816,88 @@ def tiling_offsets(
     return offsets
 
 
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="f with a pattern as its colour paints the pattern through the path's outline",
+)
 def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str | None) -> bool:
-    clip_state = self.clip
+    """Paint a fill whose colour is a pattern: the path's coverage, the same a plain colour
+    fill of the path has, antialiased, is the mask of a group the pattern fills over the
+    path's box (8.7.1, 8.7.3.1). The current clip stays as hard as it is for a plain fill."""
     pattern = data.fill_pattern
     if not isinstance(pattern, (ShadingPattern, TilingPattern)):
         return False
+    clip_state = self.clip
     path = data.path
-    pushed_clip = False
-    if type(path) is CapturedPath and path.has_segments():
+    box = data.bbox or clip_state.path_bbox(path)
+    if type(path) is not CapturedPath or not path.has_segments() or box is None:
+        self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
+        return True
+    clipped = clip_state.clipped_pixel_box(box)
+    if clipped is None:
+        return True
+    ix0, iy0, ix1, iy1 = clipped[1]
+    if (ix1 - ix0) * (iy1 - iy0) >= ANTIALIASED_FILL_PIXELS and path.axis_aligned_rect() is None:
+        # A fill this large, other than a rectangle's, covers each pixel whole or not at all,
+        # which the path as a clip gives without drawing its coverage.
         clip_state.push(path, data.fill_rule or "nonzero")
-        pushed_clip = True
-    try:
-        if isinstance(pattern, ShadingPattern):
-            dictionary = pattern.dictionary
-            shading_data = {
-                "dictionary": dictionary,
-                "bbox": data.bbox or clip_state.path_bbox(path),
-                "fill_opacity": data.fill_opacity,
-                "soft_mask_alpha": data.soft_mask_alpha,
-                "color_rendering": pattern.color_rendering,
-                # A shading pattern paints Background where the shading does not (8.7.4.3).
-                "background": True,
-            }
-            if pattern.matrix is not None:
-                shading_data["matrix"] = pattern.matrix
-            self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), blend_mode)
-            return True
-        return self.paint_tiling_pattern(pattern, data, blend_mode)
-    finally:
-        if pushed_clip:
+        try:
+            self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
+        finally:
             clip_state.pop()
+        return True
+    # The fill's coverage, drawn opaque on a blank page of its own under the same clip and
+    # in the same blend mode, which choose how a plain fill antialiases.
+    coverage, view = self.blank_sibling(clip_state)
+    coverage.fill_path(
+        path,
+        (255, 255, 255, 255),
+        blend_mode,
+        data.fill_rule or "nonzero",
+        bbox=data.bbox if data.edge_array is not None else None,
+        edge_array=data.edge_array,
+    )
+    # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
+    isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
+    self.paint_pattern_through(pattern, data, box, data.fill_opacity, blend_mode, view, isolated)
+    return True
+
+
+def paint_pattern_through(
+    self: RasterTarget,
+    pattern: ShadingPattern | TilingPattern,
+    data: PathPaintItem,
+    box: tuple[float, float, float, float],
+    opacity: float | None,
+    blend_mode: str | None,
+    coverage: UInt8Array,
+    isolated: bool,
+) -> None:
+    """Paint pattern over box at opacity in a group masked by coverage's alpha, which blends
+    in blend_mode."""
+    mask = SoftMaskPlane(coverage[..., 3], None)
+    self.push_group(
+        bytearray(len(self.pixels)),
+        None,
+        blend_mode,
+        isolated=isolated,
+        alpha_is_shape=data.alpha_is_shape,
+        mask_alpha=mask,
+    )
+    try:
+        group = self.buffer_stack[-1]
+        self.paint_pattern_over(pattern, data, box, opacity)
+        shape = group.source_shape
+        window = group.paint_window.slices()
+        if shape is not None and window is not None and not group.alpha_is_shape:
+            # The coverage is the paint's shape, not only its opacity: in a knockout group,
+            # such as text's, the pixels it misses keep what earlier members painted (11.4.6).
+            rows, columns = window
+            shape[rows, columns] *= mask[rows, columns]
+    finally:
+        self.composite_group(self.pop_group())
 
 
 @cites(
@@ -879,27 +932,7 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.miter_limit,
         data.stroke_matrix,
     )
-    mask = SoftMaskPlane(view[..., 3], None)
-    self.push_group(
-        bytearray(len(self.pixels)),
-        None,
-        blend_mode,
-        isolated=True,
-        alpha_is_shape=data.alpha_is_shape,
-        mask_alpha=mask,
-    )
-    try:
-        group = self.buffer_stack[-1]
-        self.paint_pattern_over(pattern, data, box, data.stroke_opacity)
-        shape = group.source_shape
-        window = group.paint_window.slices()
-        if shape is not None and window is not None and not group.alpha_is_shape:
-            # The stroke's coverage is its shape, not only its opacity: in a knockout group,
-            # such as text's, the pixels it misses keep what earlier members painted (11.4.6).
-            rows, columns = window
-            shape[rows, columns] *= mask[rows, columns]
-    finally:
-        self.composite_group(self.pop_group())
+    self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, view, True)
     return True
 
 
@@ -907,10 +940,12 @@ def paint_pattern_over(
     self: RasterTarget,
     pattern: ShadingPattern | TilingPattern,
     data: PathPaintItem,
-    box: tuple[float, float, float, float],
+    box: tuple[float, float, float, float] | None,
     opacity: float | None,
+    blend_mode: str | None = None,
 ) -> None:
-    """Paint pattern over box, in the Normal blend mode, at opacity and data's soft mask alpha."""
+    """Paint pattern over box (or the page), in blend_mode, at opacity and data's soft mask
+    alpha."""
     if isinstance(pattern, ShadingPattern):
         shading_data: dict[str, Any] = {
             "dictionary": pattern.dictionary,
@@ -922,18 +957,21 @@ def paint_pattern_over(
         }
         if pattern.matrix is not None:
             shading_data["matrix"] = pattern.matrix
-        self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), None)
+        self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), blend_mode)
         return
-    self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), None)
+    self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), blend_mode)
 
 
-def blank_sibling(self: RasterTarget) -> tuple[RasterTarget, UInt8Array]:
+def blank_sibling(
+    self: RasterTarget, clip: ClipState | None = None
+) -> tuple[RasterTarget, UInt8Array]:
+    """A blank target of the same page, unclipped or sharing clip, which it must not change."""
     pixels = bytearray(self.width * self.height * 4)
     view = uint8_image_view(pixels, (self.height, self.width, 4))
     sibling = type(self)(
         pixels,
         None,
-        clip=ClipState(self.grid),
+        clip=ClipState(self.grid) if clip is None else clip,
         page_view=view,
         semantic_context=self.semantic_context,
         resources=self.resources,
