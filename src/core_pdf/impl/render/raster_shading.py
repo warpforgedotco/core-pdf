@@ -8,7 +8,9 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from copy import replace
+from typing import TYPE_CHECKING, Any
 
 lazy import numpy
 
@@ -18,7 +20,14 @@ from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPa
 from core_pdf.impl.graphics.shading import PreparedShading, SpaceEvaluator
 from core_pdf.impl.render.blend import kernel_blend_code
 from core_pdf.impl.render.clipping import ClipState
-from core_pdf.impl.render.model import PathPaintItem, ShadingItem, SpaceMode
+from core_pdf.impl.render.model import (
+    DisplayItem,
+    PathPaintItem,
+    PathPaintKind,
+    ShadingItem,
+    SoftMaskPlane,
+    SpaceMode,
+)
 from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
@@ -32,10 +41,15 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
 from core_pdf.impl.spec.s_08_graphics.matrix import invert_affine
-lazy from core_pdf_cythonized import shading_blend, shading_values
+lazy from core_pdf_cythonized import composite_normal_group, shading_blend, shading_values
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
+
+# Cells one pattern paints at most, so a tiny cell over a large area stays bounded.
+MAX_TILING_CELLS = 10000
+# Cells from which a pattern paints one cell and copies its pixels to the rest.
+MIN_STAMPED_CELLS = 16
 
 
 def shading_box(
@@ -199,14 +213,16 @@ def paint_tiling_pattern(
         if clipped is None:
             return True
         x0, y0, x1, y1 = clipped
-    start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
-    start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
-    cells = 0
-    y = start_y
     opacity = target_data.fill_opacity
     alpha = clamp01(opacity) if is_pdf_number(opacity) else 1.0
     if is_pdf_number(target_data.soft_mask_alpha):
         alpha *= clamp01(target_data.soft_mask_alpha)
+    matrix = pattern.matrix
+    offsets = None
+    if matrix is not None:
+        offsets = tiling_offsets(pattern, matrix, cell_clip, (x0, y0, x1, y1))
+        if offsets is None:
+            return True
     self.push_group(
         bytearray(len(self.pixels)),
         alpha,
@@ -215,9 +231,25 @@ def paint_tiling_pattern(
         alpha_is_shape=target_data.alpha_is_shape,
     )
     try:
-        while y < y1 + y_step and cells < 10000:
+        if offsets is not None:
+            if len(offsets) < MIN_STAMPED_CELLS or not self.stamp_tiling_cells(
+                display.items, cell_clip, offsets
+            ):
+                for translation in offsets:
+                    self.paint_items(
+                        display.items,
+                        translation=translation,
+                        parent_blend_mode=None,
+                        clip_path=cell_clip,
+                    )
+            return True
+        start_x = cell_x0 + math.floor((x0 - cell_x0) / x_step) * x_step
+        start_y = cell_y0 + math.floor((y0 - cell_y0) / y_step) * y_step
+        cells = 0
+        y = start_y
+        while y < y1 + y_step and cells < MAX_TILING_CELLS:
             x = start_x
-            while x < x1 + x_step and cells < 10000:
+            while x < x1 + x_step and cells < MAX_TILING_CELLS:
                 tx = x - cell_x0
                 ty = y - cell_y0
                 if x + (cell_x1 - cell_x0) >= x0 and y + (cell_y1 - cell_y0) >= y0:
@@ -233,6 +265,137 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow",
+)
+def stamp_tiling_cells(
+    self: RasterTarget,
+    items: Sequence[DisplayItem],
+    cell_clip: CapturedPath,
+    offsets: list[tuple[float, float]],
+) -> bool:
+    """Paint one cell, then copy its pixels to every other cell, each moved by a whole number
+    of device pixels: no cell is distorted, and no spacing is off by more than a pixel, which
+    every TilingType allows (8.7.3.1, Table 74). False, having painted nothing, when a cell
+    cannot be copied: one cell must fit the page whole, and the target must composite in RGB
+    with Normal and without tracking shape or alpha."""
+    if (
+        self.space_mode is not SpaceMode.RGB
+        or self.group_source_shape is not None
+        or self.group_source_alpha is not None
+    ):
+        return False
+    clip_box = cell_clip.bbox()
+    if clip_box is None:
+        return False
+    scale = self.scale
+    crop_x0 = self.crop_x0
+    crop_y1 = self.crop_y1
+    width = self.width
+    height = self.height
+    left, bottom, right, top = clip_box
+    reference = None
+    for tx, ty in offsets:
+        # The cell's pixels, with one to spare for antialiasing.
+        ix0 = math.floor((left + tx - crop_x0) * scale) - 1
+        ix1 = math.ceil((right + tx - crop_x0) * scale) + 1
+        iy0 = math.floor((crop_y1 - top - ty) * scale) - 1
+        iy1 = math.ceil((crop_y1 - bottom - ty) * scale) + 1
+        if ix0 >= 0 and iy0 >= 0 and ix1 <= width and iy1 <= height:
+            reference = (tx, ty, ix0, iy0, ix1, iy1)
+            break
+    if reference is None:
+        return False
+    ref_x, ref_y, ix0, iy0, ix1, iy1 = reference
+    cell, view = self.blank_sibling()
+    cell.paint_items(items, translation=(ref_x, ref_y), parent_blend_mode=None, clip_path=cell_clip)
+    tile = view[iy0:iy1, ix0:ix1]
+    region = self.clip.current_region()
+    if region is not None and region.empty:
+        return True
+    bounds = (0, 0, width, height) if region is None else region.pixel_box
+    if bounds is None:
+        return True
+    bx0, by0, bx1, by1 = bounds
+    shaped = region is not None and not region.rectangular
+    destination = self.pixel_array
+    for tx, ty in offsets:
+        dx = round((tx - ref_x) * scale)
+        dy = round((ref_y - ty) * scale)
+        x0 = max(ix0 + dx, bx0)
+        y0 = max(iy0 + dy, by0)
+        x1 = min(ix1 + dx, bx1)
+        y1 = min(iy1 + dy, by1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        source = tile[y0 - iy0 - dy : y1 - iy0 - dy, x0 - ix0 - dx : x1 - ix0 - dx]
+        if shaped:
+            allowed = numpy.frombuffer(self.clip_pixel_mask(x0, y0, x1, y1), dtype=numpy.uint8)
+            source = source.copy()
+            source[..., 3] *= allowed.reshape(y1 - y0, x1 - x0)
+        composite_normal_group(destination[y0:y1, x0:x1], source, 1.0)
+        self.extend_paint_window(slice(y0, y1), slice(x0, x1))
+    return True
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there",
+)
+def tiling_offsets(
+    pattern: TilingPattern,
+    matrix: tuple[float, float, float, float, float, float],
+    cell_clip: CapturedPath,
+    box: tuple[float, float, float, float],
+) -> list[tuple[float, float]] | None:
+    """The page offsets of the cells of a pattern under matrix that reach box, or None when
+    the matrix is singular. Cell (i, j) is the key cell moved by (i XStep, j YStep) in pattern
+    space, which on the page is the same move through the matrix's linear part."""
+    inverse = invert_affine(matrix)
+    clip_box = cell_clip.bbox()
+    if inverse is None or clip_box is None:
+        return None
+    a, b, c, d, _, _ = matrix
+    x_step = abs(pattern.x_step)
+    y_step = abs(pattern.y_step)
+    bx0, by0, bx1, by1 = pattern.bbox
+    cell_x0, cell_x1 = min(bx0, bx1), max(bx0, bx1)
+    cell_y0, cell_y1 = min(by0, by1), max(by0, by1)
+    # The box in pattern space bounds the steps whose cell can reach it.
+    px0, py0, px1, py1 = transform_bbox(box, inverse)
+    if not all(math.isfinite(value) for value in (px0, py0, px1, py1)):
+        return None
+    first_i = math.ceil((px0 - cell_x1) / x_step)
+    last_i = math.floor((px1 - cell_x0) / x_step)
+    first_j = math.ceil((py0 - cell_y1) / y_step)
+    last_j = math.floor((py1 - cell_y0) / y_step)
+    x0, y0, x1, y1 = box
+    left, bottom, right, top = clip_box
+    offsets: list[tuple[float, float]] = []
+    visited = 0
+    for j in range(first_j, last_j + 1):
+        u = j * y_step
+        for i in range(first_i, last_i + 1):
+            visited += 1
+            if visited > 4 * MAX_TILING_CELLS:
+                return offsets
+            v = i * x_step
+            tx = a * v + c * u
+            ty = b * v + d * u
+            # A parallelogram cell whose page box misses the box paints nothing there.
+            if left + tx > x1 or right + tx < x0 or bottom + ty > y1 or top + ty < y0:
+                continue
+            offsets.append((tx, ty))
+            if len(offsets) >= MAX_TILING_CELLS:
+                return offsets
+    return offsets
 
 
 def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str | None) -> bool:
@@ -263,6 +426,74 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     finally:
         if pushed_clip:
             clip_state.pop()
+
+
+@cites(
+    "ISO 32000-2",
+    "8.7.3.1",
+    introduced="1.2",
+    rule="S with a pattern as its colour paints the pattern through the stroke's outline",
+)
+def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str | None) -> bool:
+    """Paint a stroke whose colour is a pattern: the stroke's coverage is the mask of an
+    isolated group the pattern fills over the stroke's box (8.7.1, 8.7.3.1)."""
+    pattern = data.stroke_pattern
+    path = data.path
+    if not isinstance(pattern, (ShadingPattern, TilingPattern)) or type(path) is not CapturedPath:
+        return False
+    box = replace(data, paint_kind=PathPaintKind.STROKE).page_box(self.scale)
+    if box is None:
+        return True
+    clip_box = self.clip.current_clip()
+    if clip_box is not None and intersect_box(box, clip_box) is None:
+        return True
+    # The stroke's coverage, drawn opaque on a blank page of its own.
+    coverage, view = self.blank_sibling()
+    coverage.stroke_path(
+        path,
+        data.line_width,
+        (255, 255, 255, 255),
+        data.dash_pattern,
+        None,
+        data.line_cap,
+        data.line_join,
+    )
+    self.push_group(
+        bytearray(len(self.pixels)),
+        None,
+        blend_mode,
+        isolated=True,
+        alpha_is_shape=data.alpha_is_shape,
+        mask_alpha=SoftMaskPlane(view[..., 3], None),
+    )
+    try:
+        self.paint_pattern_over(pattern, data, box, data.stroke_opacity)
+    finally:
+        self.composite_group(self.pop_group())
+    return True
+
+
+def paint_pattern_over(
+    self: RasterTarget,
+    pattern: ShadingPattern | TilingPattern,
+    data: PathPaintItem,
+    box: tuple[float, float, float, float],
+    opacity: float | None,
+) -> None:
+    """Paint pattern over box, in the Normal blend mode, at opacity and data's soft mask alpha."""
+    if isinstance(pattern, ShadingPattern):
+        shading_data: dict[str, Any] = {
+            "dictionary": pattern.dictionary,
+            "bbox": box,
+            "fill_opacity": opacity,
+            "soft_mask_alpha": data.soft_mask_alpha,
+            "color_rendering": pattern.color_rendering,
+        }
+        if pattern.matrix is not None:
+            shading_data["matrix"] = pattern.matrix
+        self.paint_shading(ShadingItem.from_data(data.seqno, shading_data), None)
+        return
+    self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), None)
 
 
 def blank_sibling(self: RasterTarget) -> tuple[RasterTarget, UInt8Array]:

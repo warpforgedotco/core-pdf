@@ -1245,9 +1245,9 @@ class ContentInterpreter:
 
     @cites(
         "ISO 32000-2",
-        "8.7.3.1",
-        introduced="1.3",
-        rule="a shading pattern's space: its Matrix on the parent content stream's default space",
+        "8.7.2",
+        introduced="1.2",
+        rule="a pattern's space: its Matrix on the parent content stream's default space",
     )
     def resolve_pattern_color(
         self, pattern_name: object, *, space: ColorSpace, base_components: tuple[float, ...]
@@ -1303,7 +1303,7 @@ class ContentInterpreter:
             y_step=float(y_step),
             stream=pattern,
             resources=resources,
-            matrix=matrix,
+            matrix=matrix.multiply(self.stream_ctm),
             paint_type=paint_type,
             base_color=base_color,
             base_color_spec=base_spec,

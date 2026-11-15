@@ -89,7 +89,7 @@ type PreparedImageCache = ByteBudgetCache[int, tuple[ImageSource, PreparedImage 
 type PreparedShadingCache = IdentityCache[PreparedShading | None]
 
 
-type TilingCellCache = IdentityCache[tuple[DisplayList, CapturedPath]]
+type TilingCellCache = IdentityCache[DisplayList]
 
 
 class RenderResources:
@@ -119,17 +119,33 @@ def tiling_cell(
     *,
     preserve_object_boundaries: bool,
 ) -> tuple[DisplayList, CapturedPath]:
+    # Keyed by the program, which a pattern moved with an outer cell shares.
     cache = resources.tiling_cells
-    key = (id(pattern), preserve_object_boundaries)
-    cached = cache.get_key(pattern, key)
-    if cached is not None:
-        return cached
+    program = pattern.program
+    key = (id(program), preserve_object_boundaries)
+    display = cache.get_key(program, key)
+    if display is None:
+        display = DisplayList(width, height, preserve_object_boundaries=preserve_object_boundaries)
+        append_captured_program(display, program, include_text=True)
+        cache.put_key(program, key, display)
     cell_x0, cell_y0, cell_x1, cell_y1 = pattern.bbox
-    display = DisplayList(width, height, preserve_object_boundaries=preserve_object_boundaries)
     cell_clip = CapturedPath()
-    cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
-    append_captured_program(display, pattern.program, include_text=True)
-    return cache.put_key(pattern, key, (display, cell_clip))
+    matrix = pattern.matrix
+    if matrix is None:
+        cell_clip.rect(cell_x0, cell_y0, cell_x1 - cell_x0, cell_y1 - cell_y0)
+        return display, cell_clip
+    # The BBox clips in pattern space (8.7.3.1): on the page it is a parallelogram.
+    a, b, c, d, e, f = matrix
+    corners = ((cell_x0, cell_y0), (cell_x1, cell_y0), (cell_x1, cell_y1), (cell_x0, cell_y1))
+    for index, (x, y) in enumerate(corners):
+        px = a * x + c * y + e
+        py = b * x + d * y + f
+        if index:
+            cell_clip.line_to(px, py)
+        else:
+            cell_clip.move_to(px, py)
+    cell_clip.close()
+    return display, cell_clip
 
 
 def path_cell_extent(item: PathPaintItem) -> tuple[object, float]:
