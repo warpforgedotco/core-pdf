@@ -63,6 +63,8 @@ lazy from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_command
 lazy from core_pdf_cythonized._rect import fill_rect_coverage
 lazy from core_pdf_cythonized._sample_blit import (
     alpha_channel,
+    bilinear_opaque_pixels,
+    bilinear_samples,
     interleave_soft_mask,
     sample_opaque_pixels,
 )
@@ -128,6 +130,8 @@ __all__ = (
     "patch_triangles",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
+    "bilinear_opaque_pixels",
+    "bilinear_samples",
     "blend_visible_rgba",
     "code_presence",
     "box_downsample_blocks",

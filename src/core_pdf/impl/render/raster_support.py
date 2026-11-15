@@ -54,6 +54,8 @@ from core_pdf.impl.spec.s_11_transparency.blend import revised_blending
 from core_pdf.impl.spec.standards import SemanticContext
 lazy from core_pdf_cythonized import (
     alpha_channel,
+    bilinear_opaque_pixels,
+    bilinear_samples,
     box_downsample_blocks,
     composite_elementary_normal,
     composite_masked_normal,
@@ -460,6 +462,106 @@ def sample_image_plane(
     source_x = numpy.clip((u * width).astype(numpy.intp), 0, width - 1)
     source_y = numpy.clip(((1.0 - v) * height).astype(numpy.intp), 0, height - 1)
     return plane[source_y, source_x]
+
+
+def sample_image_bilinear(
+    plane: numpy.ndarray[Any, Any], u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
+) -> numpy.ndarray[Any, Any]:
+    """The samples of plane (rows by columns, with or without a last axis of channels) at
+    image-space u and v, interpolated bilinearly between the four nearest sample centres,
+    clamped at the image's edges, as float32 in the plane's units."""
+    height, width = plane.shape[:2]
+    x = u * width - 0.5
+    y = (1.0 - v) * height - 0.5
+    x_floor = numpy.floor(x)
+    y_floor = numpy.floor(y)
+    fx = (x - x_floor).astype(numpy.float32)
+    fy = (y - y_floor).astype(numpy.float32)
+    column = x_floor.astype(numpy.intp)
+    row = y_floor.astype(numpy.intp)
+    x0 = numpy.clip(column, 0, width - 1)
+    x1 = numpy.clip(column + 1, 0, width - 1)
+    y0 = numpy.clip(row, 0, height - 1)
+    y1 = numpy.clip(row + 1, 0, height - 1)
+    channel = (None,) if plane.ndim == 3 else ()
+    if u.shape[0] == 1 and v.ndim == 2 and v.shape[1] == 1:
+        # Separable coordinates (u by column, v by row): blend rows, then columns.
+        weight_y = fy[:, 0][(slice(None), None, *channel)]
+        top = plane[y0[:, 0]].astype(numpy.float32)
+        rows = top + (plane[y1[:, 0]] - top) * weight_y
+        weight_x = fx[0][(None, slice(None), *channel)]
+        left = rows[:, x0[0]]
+        return left + (rows[:, x1[0]] - left) * weight_x
+    weight_x = fx[(..., *channel)]
+    weight_y = fy[(..., *channel)]
+    p00 = plane[y0, x0].astype(numpy.float32)
+    p01 = plane[y0, x1].astype(numpy.float32)
+    p10 = plane[y1, x0].astype(numpy.float32)
+    p11 = plane[y1, x1].astype(numpy.float32)
+    top = p00 + (p01 - p00) * weight_x
+    bottom = p10 + (p11 - p10) * weight_x
+    return top + (bottom - top) * weight_y
+
+
+type BilinearAxes = tuple[
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+    numpy.ndarray[Any, Any],
+]
+
+
+def bilinear_axes(
+    u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any], width: int, height: int
+) -> BilinearAxes:
+    """For each row's v and each column's u, the two nearest sample rows and the weight of
+    the second, then the same of the columns, for an image width by height samples."""
+    x = u * width - 0.5
+    y = (1.0 - v) * height - 0.5
+    x_floor = numpy.floor(x)
+    y_floor = numpy.floor(y)
+    column = x_floor.astype(numpy.intp)
+    row = y_floor.astype(numpy.intp)
+    return (
+        numpy.clip(row, 0, height - 1),
+        numpy.clip(row + 1, 0, height - 1),
+        numpy.ascontiguousarray(y - y_floor, dtype=numpy.float64),
+        numpy.clip(column, 0, width - 1),
+        numpy.clip(column + 1, 0, width - 1),
+        numpy.ascontiguousarray(x - x_floor, dtype=numpy.float64),
+    )
+
+
+def bilinear_uint8(
+    plane: numpy.ndarray[Any, Any], u: numpy.ndarray[Any, Any], v: numpy.ndarray[Any, Any]
+) -> UInt8Array:
+    """sample_image_bilinear of a uint8 plane, rounded half up to uint8."""
+    if u.shape[0] == 1 and v.ndim == 2 and v.shape[1] == 1:
+        # Separable coordinates: each column's and each row's pair of samples and weight.
+        height, width = plane.shape[:2]
+        sampled = bilinear_samples(
+            numpy.ascontiguousarray(plane if plane.ndim == 3 else plane[:, :, None]),
+            *bilinear_axes(u[0], v[:, 0], width, height),
+        )
+        return sampled if plane.ndim == 3 else sampled[:, :, 0]
+    found = sample_image_bilinear(plane, u, v) + 0.5
+    return numpy.clip(found, 0, 255, out=found).astype(numpy.uint8)
+
+
+def bilinear_opaque_blit(
+    target: UInt8Array,
+    source: numpy.ndarray[Any, Any],
+    u: numpy.ndarray[Any, Any],
+    v: numpy.ndarray[Any, Any],
+) -> None:
+    """Write source (grey or RGB samples) into the RGBA target, opaque, interpolated at
+    each column's u and each row's v."""
+    height, width = source.shape[:2]
+    bilinear_opaque_pixels(
+        target, numpy.ascontiguousarray(source), *bilinear_axes(u, v, width, height)
+    )
 
 
 def shading_rgba(
