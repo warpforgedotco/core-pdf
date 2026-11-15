@@ -351,6 +351,7 @@ jobs:
           $run/check_mesh_shading.py
           $run/check_pdf_functions.py
           $run/check_soft_masks.py
+          $run/check_char_gaps.py
           $run/check_pdfminer_chars.py
           uv run --locked --all-packages --group test --with "pypdf[full]==7.0.0" python scripts/check_encrypt_readers.py
           # core reads font programs itself, matching fontTools 4.63.0, which it replaced.

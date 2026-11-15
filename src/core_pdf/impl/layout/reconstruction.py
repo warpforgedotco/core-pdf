@@ -13,6 +13,7 @@ from core_pdf.impl.base.runs import (
 from core_pdf.impl.base.text import WORD_GAP_SIZE_FACTOR, word_gap_threshold
 from core_pdf.impl.base.types import RecordType, ReplaceFields, ReprFields
 from core_pdf.impl.layout import text_rules
+lazy from core_pdf_cythonized import CharGapRules
 
 SUPERSCRIPT_HEIGHT_RATIO = 0.9
 SUPERSCRIPT_BASELINE_MIN = 0.45
@@ -210,6 +211,7 @@ class GlyphLineBuilder:
         "estimated_char_width",
         "column_gap_threshold",
         "text_runs_sorted_by_x0",
+        "closing_bracket_runs_sorted_by_x0",
     )
 
     def __init__(
@@ -226,6 +228,7 @@ class GlyphLineBuilder:
     ) -> None:
         self.runs = runs
         self.text_runs_sorted_by_x0: list[TextRun] | None = None
+        self.closing_bracket_runs_sorted_by_x0: list[TextRun] | None = None
         self.page_label_indexes = text_rules.trailing_tiny_page_label_run_indexes(runs)
         self.is_table_like_line = is_table_like_line
         self.is_all_caps_line = is_all_caps_line
@@ -266,11 +269,32 @@ class GlyphLineBuilder:
         segments: list[LayoutLineTextSegment] = []
         append_part = parts.append
         append_segment = segments.append
+        # Pairs of one-character atoms take CharGapRules, atom_separator's rules for them in
+        # C, except on a formula-like line, whose formula rules stay in atom_separator.
+        char_gap_separator = (
+            None
+            if self.is_formula_like_line
+            else CharGapRules(
+                self.estimated_char_width,
+                self.column_gap_threshold,
+                self.is_table_like_line,
+                self.has_explicit_spaces,
+                self.is_all_caps_line,
+                self.is_tracked_glyph_line,
+                self.tracked_word_gap,
+                self.explicit_spaces_control_glyph_gaps,
+            ).separator
+        )
 
         prev_run: TextRun | None = None
         prev_run_text = ""
         prev_last_char = ""
-        prev_atom: LayoutLineTextAtom | None = None
+        # The previous atom, held as its fields: an atom is built only for atom_separator.
+        atom_text = ""
+        atom_run: TextRun | None = None
+        atom_box: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        atom_baseline: tuple[float, float, float, float] | None = None
+        atom_glyph = False
         recent_emitted_runs: list[tuple[tuple[float, float, float, float], str, float]] = []
 
         for index, run in enumerate(self.runs):
@@ -288,20 +312,50 @@ class GlyphLineBuilder:
             ):
                 continue
 
-            for atom in self.text_atoms(run, text):
-                atom_text = atom.text
-                separator_before = ""
-                if prev_atom is not None:
-                    separator_before = self.atom_separator(prev_atom, atom)
-                    if separator_before:
-                        append_part(separator_before)
-                append_part(atom_text)
-                append_segment(
-                    LayoutLineTextSegment(
-                        atom_text, separator_before, atom.advance_bbox, run.rotation_angle
+            angle = run.rotation_angle
+            for piece, box, baseline, glyph in self.text_atom_pieces(run, text):
+                separator = ""
+                if atom_run is not None:
+                    char_gap = None
+                    # A run's clusters are never whitespace: only a whole-run atom of one
+                    # character needs the check.
+                    if (
+                        char_gap_separator is not None
+                        and len(atom_text) == 1
+                        and len(piece) == 1
+                        and not atom_text.isspace()
+                        and not piece.isspace()
+                    ):
+                        char_gap = char_gap_separator(
+                            atom_run,
+                            run,
+                            atom_text,
+                            piece,
+                            atom_box,
+                            box,
+                            atom_baseline,
+                            baseline,
+                            atom_glyph and glyph,
+                        )
+                    separator = (
+                        char_gap
+                        if char_gap is not None
+                        else self.atom_separator(
+                            LayoutLineTextAtom(
+                                atom_text, atom_run, atom_box, atom_baseline, atom_glyph
+                            ),
+                            LayoutLineTextAtom(piece, run, box, baseline, glyph),
+                        )
                     )
-                )
-                prev_atom = atom
+                    if separator:
+                        append_part(separator)
+                append_part(piece)
+                append_segment(LayoutLineTextSegment(piece, separator, box, angle))
+                atom_text = piece
+                atom_run = run
+                atom_box = box
+                atom_baseline = baseline
+                atom_glyph = glyph
             prev_run = run
             prev_run_text = text
             prev_last_char = text[-1:]
@@ -325,7 +379,17 @@ class GlyphLineBuilder:
             return EMPTY_LAYOUT_LINE_TEXT
         return LayoutLineText(text, tuple(segments))
 
-    def text_atoms(self, run: TextRun, text: str) -> tuple[LayoutLineTextAtom, ...]:
+    @staticmethod
+    def text_atom_pieces(
+        run: TextRun, text: str
+    ) -> list[
+        tuple[
+            str, tuple[float, float, float, float], tuple[float, float, float, float] | None, bool
+        ]
+    ]:
+        """The atoms of a run, as (text, advance_bbox, baseline, has_glyph_geometry): one per
+        glyph cluster with text when the clusters spell text exactly and it has no
+        whitespace, else the whole run as one atom."""
         clusters = run.glyph_clusters
         if (
             clusters
@@ -333,14 +397,14 @@ class GlyphLineBuilder:
             and not any(map(str.isspace, text))
             and "".join([cluster.text for cluster in clusters]) == text
         ):
-            atoms = tuple(
-                LayoutLineTextAtom(cluster.text, run, cluster.advance_bbox, cluster.baseline, True)
+            pieces = [
+                (cluster.text, cluster.advance_bbox, cluster.baseline, True)
                 for cluster in clusters
                 if cluster.text
-            )
-            if atoms:
-                return atoms
-        return (LayoutLineTextAtom(text, run, run.advance_bbox, run.baseline, False),)
+            ]
+            if pieces:
+                return pieces
+        return [(text, run.advance_bbox, run.baseline, False)]
 
     def prepare_explicit_space_context(self) -> None:
         runs = self.runs
@@ -515,22 +579,33 @@ class GlyphLineBuilder:
             self.text_runs_sorted_by_x0 = ordered
         return ordered
 
+    def closing_bracket_runs_by_x0(self) -> list[TextRun]:
+        """The text runs starting with a closing bracket, by x0: most lines have none, so a
+        unit exponent's search for its bracket ends at once rather than scanning the line."""
+        ordered = self.closing_bracket_runs_sorted_by_x0
+        if ordered is None:
+            ordered = [
+                candidate
+                for candidate in self.text_runs_by_x0()
+                if candidate.stripped_text.lstrip().startswith(CLOSING_BRACKETS)
+            ]
+            self.closing_bracket_runs_sorted_by_x0 = ordered
+        return ordered
+
     def is_unit_exponent_run(self, run: TextRun) -> bool:
         if not is_short_digit_run(run, max_length=2, require_baseline=False):
             return False
-        ordered = self.text_runs_by_x0()
         following = next(
             (
                 candidate
-                for candidate in ordered
-                if candidate is not run
-                and candidate.x0 >= run.x1 - 0.01
-                and candidate.stripped_text.lstrip().startswith(CLOSING_BRACKETS)
+                for candidate in self.closing_bracket_runs_by_x0()
+                if candidate is not run and candidate.x0 >= run.x1 - 0.01
             ),
             None,
         )
         if following is None:
             return False
+        ordered = self.text_runs_by_x0()
 
         left_candidates = [
             candidate
