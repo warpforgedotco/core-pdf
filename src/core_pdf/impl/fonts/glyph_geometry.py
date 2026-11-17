@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 lazy import numpy
 
-from core_pdf.impl.base.caches import BoundedDict
 from core_pdf.impl.base.types import Rectangle
 from core_pdf.impl.fonts.encoding import FontEncoding
 from core_pdf.impl.fonts.fallback import fallback_glyph_outline
@@ -21,7 +20,10 @@ if TYPE_CHECKING:
 
 
 class GlyphOutlineArrays:
-    __slots__ = ("linear", "spans", "xs", "ys")
+    """A glyph outline's point columns and each contour's span in them, which
+    core_pdf_cythonized.glyph_outline_edges places under a glyph's matrix."""
+
+    __slots__ = ("spans", "xs", "ys")
 
     def __init__(
         self,
@@ -32,24 +34,6 @@ class GlyphOutlineArrays:
         self.xs = xs
         self.ys = ys
         self.spans = spans
-        self.linear: BoundedDict[
-            tuple[float, float, float, float],
-            tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]],
-        ] = BoundedDict(LINEAR_CACHE_LIMIT)
-
-    def linear_columns(
-        self, a: float, b: float, c: float, d: float
-    ) -> tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any]]:
-        key = (a, b, c, d)
-        columns = self.linear.get(key)
-        if columns is None:
-            xs = self.xs
-            ys = self.ys
-            columns = self.linear.put(key, (xs * a + ys * c, xs * b + ys * d))
-        return columns
-
-
-LINEAR_CACHE_LIMIT = 256
 
 
 def outline_arrays(

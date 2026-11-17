@@ -144,7 +144,9 @@ class RasterTarget:
     record_source_shape = coverage.record_source_shape
     accumulate_coverage = coverage.accumulate_coverage
     record_plane = coverage.record_plane
+    glyph_fill_rgba = coverage.glyph_fill_rgba
     knockout_glyph_fill = coverage.knockout_glyph_fill
+    paint_glyph_fill = coverage.paint_glyph_fill
     knockout_group_region = coverage.knockout_group_region
     record_knockout_paint = coverage.record_knockout_paint
 

@@ -16,9 +16,14 @@ from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import declared_blend
-from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind
+from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind, RasterGroup
+from core_pdf.impl.render.raster_fills import ANTIALIASED_FILL_PIXELS
 from core_pdf.impl.render.raster_support import EMPTY_PIXEL_BOX, PixelBox
-lazy from core_pdf_cythonized import accumulate_source_plane, fill_glyph_knockout_at
+lazy from core_pdf_cythonized import (
+    accumulate_source_plane,
+    fill_glyph_coverage_at,
+    fill_glyph_knockout_at,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
@@ -158,6 +163,25 @@ def record_plane(
     plane[rows, columns] = updated if visible is None else numpy.where(visible, updated, previous)
 
 
+def glyph_fill_rgba(self: RasterTarget, item: PathPaintItem) -> tuple[int, int, int, int]:
+    """item_fill_rgba, kept for the next item: consecutive glyphs of one style share the
+    objects fill_rgba reads."""
+    fill = item.fill
+    fill_opacity = item.fill_opacity
+    soft_mask_alpha = item.soft_mask_alpha
+    memo = self.fill_memo
+    if (
+        memo is not None
+        and memo[0] is fill
+        and memo[1] is fill_opacity
+        and memo[2] is soft_mask_alpha
+    ):
+        return memo[3]
+    rgba = self.item_fill_rgba(item)
+    self.fill_memo = (fill, fill_opacity, soft_mask_alpha, rgba)
+    return rgba
+
+
 def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
     if type(item) is not PathPaintItem or item.paint_kind is not PathPaintKind.FILL:
         return False
@@ -173,35 +197,55 @@ def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
     ):
         return False
     parent = self.buffer_stack[-1]
-    if parent.backdrop is None or parent.source_alpha is None or parent.source_shape is None:
+    backdrop = parent.backdrop
+    source_alpha = parent.source_alpha
+    source_shape = parent.source_shape
+    if backdrop is None or source_alpha is None or source_shape is None:
         return False
     if item.path.axis_aligned_rect() is not None:
         return False
-    # Consecutive glyphs of one style share these objects; fill_rgba reads only them.
-    fill = item.fill
-    fill_opacity = item.fill_opacity
-    soft_mask_alpha = item.soft_mask_alpha
-    memo = self.fill_memo
-    if (
-        memo is not None
-        and memo[0] is fill
-        and memo[1] is fill_opacity
-        and memo[2] is soft_mask_alpha
-    ):
-        rgba = memo[3]
-    else:
-        rgba = self.item_fill_rgba(item)
-        self.fill_memo = (fill, fill_opacity, soft_mask_alpha, rgba)
+    rgba = self.glyph_fill_rgba(item)
     if len(edge_array) == 0:
         return True
     clipped = self.clip.clipped_pixel_box(bbox)
     if clipped is None:
         return True
-    ix0, iy0, ix1, iy1 = clipped[1]
-    if not ((ix1 - ix0) * (iy1 - iy0) < 10_000 and self.clip.clip_paths_are_axis_aligned_rects()):
+    pixel_box = clipped[1]
+    ix0, iy0, ix1, iy1 = pixel_box
+    if not (
+        (ix1 - ix0) * (iy1 - iy0) < ANTIALIASED_FILL_PIXELS
+        and self.clip.clip_paths_are_axis_aligned_rects()
+    ):
         return False
     self.shape_alpha = clamp01(rgba[3] / 255.0) if self.paint_alpha_is_shape else 1.0
-    backdrop = parent.backdrop
+    knockout_glyph_paint(
+        self,
+        parent,
+        backdrop,
+        source_alpha,
+        source_shape,
+        edge_array,
+        rgba,
+        pixel_box,
+        self.shape_alpha,
+    )
+    return True
+
+
+def knockout_glyph_paint(
+    self: RasterTarget,
+    parent: RasterGroup,
+    backdrop: bytearray,
+    source_alpha: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    source_shape: numpy.ndarray[Any, numpy.dtype[numpy.float32]],
+    edge_array: numpy.ndarray[Any, Any],
+    rgba: tuple[int, int, int, int],
+    pixel_box: PixelBox,
+    shape_alpha: float,
+) -> None:
+    """A glyph's fill as an elementary group of the knockout group parent, whose
+    backdrop and source planes these are, in one pass."""
+    ix0, iy0, ix1, iy1 = pixel_box
     drawn = fill_glyph_knockout_at(
         edge_array,
         self.crop_x0,
@@ -214,12 +258,12 @@ def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
         rgba,
         parent.view,
         self.page_pixels if backdrop is self.page_buffer else self.pixel_view(backdrop),
-        parent.source_alpha,
-        parent.source_shape,
-        self.shape_alpha,
+        source_alpha,
+        source_shape,
+        shape_alpha,
     )
     if drawn is None:
-        return True
+        return
     boxes = parent.painted_boxes
     if boxes is not None:
         # record_knockout_paint, inlined; a drawn window is never empty.
@@ -227,8 +271,103 @@ def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
             boxes.clear()
             boxes.append((0, 0, self.width, self.height))
         else:
-            boxes.append((ix0, iy0, ix1, iy1))
+            boxes.append(pixel_box)
     self.extend_paint_box(iy0, iy1, ix0, ix1)
+
+
+def paint_glyph_fill(self: RasterTarget, item: PathPaintItem) -> bool:
+    """paint_item for a glyph outline filled with a plain colour, which is most of a text
+    page's items, in one call; False, having painted nothing, when the item takes any
+    other route, which paint_item then follows.
+
+    It paints as paint_item would: in a knockout group, an elementary group by
+    knockout_glyph_paint unless the glyph's pixels are clear of every earlier member's,
+    and otherwise fill_path's small-coverage kernel, its shape alpha that set_shape_alpha
+    would set for the item. Neither reads paint_alpha_is_shape or shape_alpha, so the
+    state paint_item saves and restores is left alone.
+    """
+    if (
+        item.paint_kind is not PathPaintKind.FILL
+        or item.graphics_soft_mask is not None
+        or item.fill_pattern is not None
+        or item.fill_rule != "nonzero"
+        or declared_blend(item.blend_mode) is not None
+    ):
+        return False
+    bbox = item.bbox
+    path = item.path
+    edge_array = item.edge_array
+    if (
+        bbox is None
+        or type(path) is not CapturedPath
+        or len(edge_array) == 0
+        or path.axis_aligned_rect() is not None
+    ):
+        return False
+    clip = self.clip
+    clipped = clip.clipped_pixel_box(bbox)
+    if clipped is None:
+        return False
+    pixel_box = clipped[1]
+    ix0, iy0, ix1, iy1 = pixel_box
+    area = (ix1 - ix0) * (iy1 - iy0)
+    if area >= ANTIALIASED_FILL_PIXELS or not clip.clip_paths_are_axis_aligned_rects():
+        return False
+    group = self.buffer_stack[-1]
+    boxes = group.painted_boxes
+    elementary = group.knockout
+    if elementary and boxes is not None:
+        # A fill painting pixels no earlier member touched needs no elementary group.
+        elementary = False
+        for bx0, by0, bx1, by1 in boxes:
+            if ix0 < bx1 and bx0 < ix1 and iy0 < by1 and by0 < iy1:
+                elementary = True
+                break
+    if elementary:
+        backdrop = group.backdrop
+        source_alpha = group.source_alpha
+        source_shape = group.source_shape
+        if backdrop is None or source_alpha is None or source_shape is None:
+            return False
+        rgba = self.glyph_fill_rgba(item)
+        shape_alpha = clamp01(rgba[3] / 255.0) if item.alpha_is_shape else 1.0
+        knockout_glyph_paint(
+            self,
+            group,
+            backdrop,
+            source_alpha,
+            source_shape,
+            edge_array,
+            rgba,
+            pixel_box,
+            shape_alpha,
+        )
+        return True
+    rgba = self.glyph_fill_rgba(item)
+    shape = self.group_source_shape
+    if shape is None and rgba == (0, 0, 0, 255):
+        # fill_path tries its aliased scanline fill first.
+        return False
+    shape_alpha = clamp01(rgba[3] / 255.0) if item.alpha_is_shape else 1.0
+    drawn = fill_glyph_coverage_at(
+        edge_array,
+        self.crop_x0,
+        self.crop_y1,
+        self.scale,
+        ix0,
+        iy0,
+        ix1 - ix0,
+        iy1 - iy0,
+        rgba,
+        self.pixel_array,
+        self.group_source_alpha,
+        shape,
+        shape_alpha,
+    )
+    if drawn is not None:
+        self.extend_paint_box(iy0, iy1, ix0, ix1)
+    if group.knockout and boxes is not None:
+        self.record_knockout_paint(pixel_box)
     return True
 
 

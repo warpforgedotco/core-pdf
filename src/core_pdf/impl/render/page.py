@@ -21,6 +21,8 @@ from core_pdf.impl.render.model import (
     DisplayItem,
     DisplayListItem,
     GroupBeginItem,
+    PathPaintItem,
+    PathPaintKind,
     RasterImage,
     RenderOptions,
 )
@@ -78,7 +80,15 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         for item in self.display_list.items:
             if type(item) is DisplayListItem and item.kind == "text":
                 continue
-            box = item.page_box(scale)
+            if (
+                type(item) is PathPaintItem
+                and item.paint_kind is PathPaintKind.FILL
+                and item.bbox is not None
+            ):
+                # PathPaintItem.page_box of a fill with a box: the box, unpadded.
+                box = rect_tuple(item.bbox)
+            else:
+                box = item.page_box(scale)
             always_render = box is None
             outside_crop = box is not None and (
                 box[2] <= crop[0] or box[0] >= crop[2] or box[3] <= crop[1] or box[1] >= crop[3]

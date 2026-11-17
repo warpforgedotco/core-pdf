@@ -55,9 +55,9 @@ lazy from core_pdf_cythonized._luminosity import luminosity_channel
 lazy from core_pdf_cythonized._mesh_shading import function_values, mesh_values, patch_triangles
 lazy from core_pdf_cythonized._nonisolated import composite_nonisolated_blend
 lazy from core_pdf_cythonized._outline import (
+    glyph_outline_edges,
     outline_coordinate_arrays,
     outline_edges,
-    translated_outline_edges,
 )
 lazy from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 lazy from core_pdf_cythonized._rect import fill_rect_coverage
@@ -158,6 +158,7 @@ __all__ = (
     "gather_uint8_rows",
     "glyph_bitmap_rows",
     "glyph_coverage_plane",
+    "glyph_outline_edges",
     "horizontal_glyph_geometry",
     "interleave_soft_mask",
     "object_headers_match",
@@ -175,7 +176,6 @@ __all__ = (
     "stroke_polylines",
     "stroke_segment_samples",
     "supersampled_coverage_plane",
-    "translated_outline_edges",
     "truetype_contours",
     "type2_glyph_geometry",
 )

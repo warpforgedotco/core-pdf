@@ -7,9 +7,13 @@ import numpy
 def outline_edges(
     xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: Any
 ) -> tuple[numpy.ndarray[Any, Any] | None, list[tuple[int, int, bool]], bool]: ...
-def translated_outline_edges(
-    linear_x: numpy.ndarray[Any, Any],
-    linear_y: numpy.ndarray[Any, Any],
+def glyph_outline_edges(
+    xs: numpy.ndarray[Any, Any],
+    ys: numpy.ndarray[Any, Any],
+    a: float,
+    b: float,
+    c: float,
+    d: float,
     e: float,
     f: float,
     spans: Any,
