@@ -1100,6 +1100,41 @@ def cover_disc(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
+def cover_nearest(
+    p: cython.pointer[Paint], c: cython.pointer[Cover], x: cython.double, y: cython.double
+) -> cython.int:
+    """Cover the sample nearest the stroke-space point (x, y). A dot, a subpath or dash of
+    no length, covers it as well as the samples inside it: a disc or square thinner than
+    the samples' spacing can fall between them all, and a stroke of non-zero width never
+    disappears (ISO 32000-2 10.7.4)."""
+    page_x: cython.double = x
+    page_y: cython.double = y
+    if c.transformed:
+        page_x = c.forward[0] * x + c.forward[2] * y
+        page_y = c.forward[1] * x + c.forward[3] * y
+    # The samples sit an eighth of a pixel in, then a quarter of a pixel apart.
+    column: cython.double = floor(((page_x - c.crop_x0) * c.scale - 0.125) * 4.0 + 0.5)
+    row: cython.double = floor(((c.crop_y1 - page_y) * c.scale - 0.125) * 4.0 + 0.5)
+    if not checked(p, column) or not checked(p, row):
+        return -1
+    pixel_x: cython.double = floor(column * 0.25)
+    pixel_y: cython.double = floor(row * 0.25)
+    j: cython.double = pixel_x - c.left
+    i: cython.double = pixel_y - c.top
+    if j < 0.0 or i < 0.0 or j >= c.width or i >= c.height:
+        return 0
+    sx: cython.int = cython.cast(cython.int, column - pixel_x * 4.0)
+    sy: cython.int = cython.cast(cython.int, row - pixel_y * 4.0)
+    index: cython.Py_ssize_t = cython.cast(cython.Py_ssize_t, i) * c.width + cython.cast(
+        cython.Py_ssize_t, j
+    )
+    c.masks[index] |= cython.cast(cython.ushort, cython.cast(cython.uint, 1) << (4 * sy + sx))
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
 def cover_segment(
     p: cython.pointer[Paint],
     c: cython.pointer[Cover],
@@ -1459,7 +1494,10 @@ def walk_range(
             # A subpath of one point: a dot with round caps, and nothing otherwise, as its
             # caps have no direction (ISO 32000-2 8.5.3.2).
             if w.line_cap == CAP_ROUND and w.cover != cython.NULL:
-                if cover_disc(p, w.cover, x0, y0, w.half) < 0:
+                if (
+                    cover_disc(p, w.cover, x0, y0, w.half) < 0
+                    or cover_nearest(p, w.cover, x0, y0) < 0
+                ):
                     with cython.gil:
                         failed(p, calls)
             elif w.line_cap == CAP_ROUND:
@@ -1868,7 +1906,8 @@ def stroke_coverage(
     """Count, in counts, the 4 x 4 samples of each pixel of the window at (left, top) that
     the stroke of the subpaths covers: its segments, joins and caps, and the square around
     each point of squares, (x, y, ux, uy) with the path along (ux, uy) there, as a dash of
-    zero length with projecting caps paints. A sample two pieces cover counts once, as a
+    zero length with projecting caps paints, each such square, and each dot of round caps,
+    covering at least the sample nearest its centre. A sample two pieces cover counts once, as a
     stroke is one shape painted once (ISO 32000-2 8.5.3.2). The points are in stroke space,
     which matrix, (a, b, c, d) or None for the identity, maps to page space; the line width
     is a diameter of the pen there. True if any sample is covered."""
@@ -1972,6 +2011,10 @@ def stroke_coverage(
                     squares[k + 3],
                     w.half,
                 )
+                if found >= 0:
+                    found = cover_nearest(
+                        cython.address(p), cython.address(c), squares[k], squares[k + 1]
+                    )
                 if found < 0:
                     break
         if found < 0:

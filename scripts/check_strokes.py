@@ -38,7 +38,11 @@ a constant alpha of 0.5, in Multiply, in a knockout group, dashed, and under CTM
 stretch, skew and scale down, and checks the area they cover, the sum of the pixels'
 alpha, against the lines' length times their width: a line width of 0 one device pixel,
 any other its own, but no thinner than a quarter of a pixel, the thinnest band core's
-samples always meet.
+samples always meet. And it writes dotted hairlines, dashes of no length with round and
+projecting square caps along lines at 0 and 45 degrees, and subpaths of one point with
+round caps, widths 0.05 to 0.2, centred on whole pixels, half pixels and in between, opaque,
+at alpha 0.5, in Multiply and under a stretching CTM: each dot must cover between 0.03 and
+0.3 of a pixel, never disappearing between the samples.
 
 uv run --all-packages python scripts/check_strokes.py
 """
@@ -926,7 +930,7 @@ def eroded(
 type Pixels = numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]
 
 
-def rendered(case: Case | Hairline) -> Pixels:
+def rendered(case: Case | Hairline | Dots) -> Pixels:
     with PdfDocument(case.pdf()) as pdf:
         image = pdf.pages[0].render().rasterize()
     return numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(image.height, image.width, 4)
@@ -1111,6 +1115,185 @@ def check_hairline(hairline: Hairline) -> bool:
     return False
 
 
+DOT_ROWS = 12
+DOT_SPACING = 8.0
+# A dot thinner than the samples' spacing covers at least the sample nearest its centre,
+# 1/16 of a pixel, or its area, filled; at most the 4 samples around it on its edge.
+DOT_LEAST = 0.03
+DOT_MOST = 0.3
+
+
+class Dots:
+    """DOT_ROWS rows of dots DOT_SPACING apart in user space, from `origin`: the dashes of no
+    length of a dash pattern [0 DOT_SPACING] along lines `degrees` from the x axis, or, with
+    `points`, subpaths of one point; a line width of `width`, caps `cap`, under `ctm`, at a
+    constant alpha `alpha` or in the blend mode `blend`. A dot of round caps is a disc, of
+    projecting square caps a square along the path; one of non-zero width never disappears
+    (ISO 32000-2 8.4.3.6, 8.5.3.2, 10.7.4), wherever it lies on the pixel grid."""
+
+    def __init__(
+        self,
+        name: str,
+        width: float,
+        cap: int,
+        *,
+        degrees: float = 0.0,
+        points: bool = False,
+        origin: Point = (40.0, 40.0),
+        ctm: Affine = IDENTITY,
+        alpha: float = 1.0,
+        blend: str | None = None,
+    ) -> None:
+        self.name = name
+        self.width = width
+        self.cap = cap
+        self.degrees = degrees
+        self.points = points
+        self.origin = origin
+        self.ctm = ctm
+        self.alpha = alpha
+        self.blend = blend
+
+    def centres(self) -> list[Point]:
+        """Each dot's centre in user space."""
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
+        x0, y0 = self.origin
+        return [
+            (x0 + column * DOT_SPACING * ux, y0 + row * DOT_SPACING + column * DOT_SPACING * uy)
+            for row in range(DOT_ROWS)
+            for column in range(DOT_ROWS)
+        ]
+
+    def pdf(self) -> bytes:
+        paint = []
+        if self.alpha != 1.0:
+            paint.append(b"/CA %s" % numbers([self.alpha]))
+        if self.blend is not None:
+            paint.append(b"/BM /%s" % self.blend.encode())
+        body = b"q %s cm %s w %d J " % (numbers(self.ctm), numbers([self.width]), self.cap)
+        if paint:
+            body += b"/G0 gs "
+        if self.points:
+            body += b"".join(b"%s m %s l " % (numbers(c), numbers(c)) for c in self.centres())
+        else:
+            radians = math.radians(self.degrees)
+            ux, uy = math.cos(radians), math.sin(radians)
+            # The last dash falls half a spacing before each line's end.
+            length = (DOT_ROWS - 0.5) * DOT_SPACING
+            body += b"[0 %s] 0 d " % numbers([DOT_SPACING])
+            x0, y0 = self.origin
+            for row in range(DOT_ROWS):
+                start = (x0, y0 + row * DOT_SPACING)
+                end = (start[0] + ux * length, start[1] + uy * length)
+                body += b"%s m %s l " % (numbers(start), numbers(end))
+        body += b"S Q"
+        resources = b"<< /ExtGState << /G0 << %s >> >> >>" % b" ".join(paint)
+        return document(body, resources)
+
+
+def dots() -> list[Dots]:
+    found = []
+    for width in (0.05, 0.12, 0.2):
+        for paint, alpha, blend in (
+            ("opaque", 1.0, None),
+            ("alpha 0.5", 0.5, None),
+            ("Multiply", 1.0, "Multiply"),
+        ):
+            for origin in ((40.0, 40.0), (40.5, 40.5), (40.37, 40.81)):
+                where = f"at {origin[0]:g}, {origin[1]:g}"
+                found += [
+                    Dots(
+                        f"round dashes, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"round dashes at 45 degrees, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        degrees=45.0,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"square dashes, {paint}, width {width}, {where}",
+                        width,
+                        SQUARE,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"square dashes at 45 degrees, {paint}, width {width}, {where}",
+                        width,
+                        SQUARE,
+                        degrees=45.0,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"round points, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        points=True,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                ]
+    # Under a stroke matrix, where the dot is an ellipse on the page.
+    stretch: Affine = (1.0, 0.0, 0.0, 0.5, 0.0, 0.0)
+    found += [
+        Dots(
+            f"stretched, round {kind}, width 0.1",
+            0.1,
+            ROUND,
+            points=points,
+            origin=(40.0, 80.0),
+            ctm=stretch,
+            alpha=0.5,
+        )
+        for kind, points in (("dashes", False), ("points", True))
+    ]
+    found.append(
+        Dots(
+            "stretched, square dashes, width 0.1",
+            0.1,
+            SQUARE,
+            origin=(40.0, 80.0),
+            ctm=stretch,
+            blend="Multiply",
+        )
+    )
+    return found
+
+
+def check_dots(case: Dots) -> bool:
+    """Each dot's coverage, the alpha in the 3 x 3 pixels around its centre, must be at
+    least DOT_LEAST and at most DOT_MOST of a pixel."""
+    pixels = rendered(case)
+    alpha = pixels[..., 3].astype(numpy.float64) / 255.0 / case.alpha
+    height = alpha.shape[0]
+    wrong = []
+    for centre in case.centres():
+        x, y = apply(case.ctm, centre)
+        column, row = math.floor(x), math.floor(height - y)
+        ink = float(alpha[row - 1 : row + 2, column - 1 : column + 2].sum())
+        if not DOT_LEAST <= ink <= DOT_MOST:
+            wrong.append((centre, ink))
+    for centre, ink in wrong[:2]:
+        print(f"  {case.name}: the dot at {centre[0]:g}, {centre[1]:g} covers {ink:.3f} of a pixel")
+    if wrong:
+        print(f"{case.name}: {len(wrong)} of {DOT_ROWS * DOT_ROWS} dots wrong")
+    return not wrong
+
+
 def once(case: Case) -> Case:
     """The case with each stroke's subpath held once."""
     twin = copy.copy(case)
@@ -1165,7 +1348,10 @@ def main() -> int:
     thin = hairlines()
     thin_failures = sum(not check_hairline(hairline) for hairline in thin)
     print(f"{len(thin)} hairline pages: {thin_failures} failures")
-    return 1 if failures or thin_failures else 0
+    dotted = dots()
+    dot_failures = sum(not check_dots(case) for case in dotted)
+    print(f"{len(dotted)} dotted hairline pages: {dot_failures} failures")
+    return 1 if failures or thin_failures or dot_failures else 0
 
 
 if __name__ == "__main__":
