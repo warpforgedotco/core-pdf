@@ -283,7 +283,7 @@ def stroke_path(
         self.fill_terminal(x, y, line_width, rgba, True, blend_mode)
 
     def dot(x: float, y: float) -> None:
-        radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
+        radius = stroke_half_width(scale, float(line_width))
         self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
 
     stroke_polylines(

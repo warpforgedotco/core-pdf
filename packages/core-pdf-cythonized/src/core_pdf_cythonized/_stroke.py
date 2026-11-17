@@ -87,6 +87,21 @@ def extend(
 @cython.inline
 @cython.nogil
 @cython.exceptval(check=False)
+def pen_half(scale: cython.double, line_width: cython.double) -> cython.double:
+    """Half the width of the pen that strokes a line width, where a unit is scale device
+    pixels long, as render.paths.stroke_half_width works it out: a line width of 0 one
+    device pixel (ISO 32000-2 8.4.3.2), any other its own, but no thinner than a quarter of
+    a pixel, the thinnest band the samples always meet, so that a hairline covers its pixels
+    in part and never drops out (10.7.4)."""
+    if line_width == 0.0:
+        return 0.5 / scale
+    return py_max(0.125 / scale, line_width * 0.5)
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
 def checked(p: cython.pointer[Paint], value: cython.double) -> cython.bint:
     if isnan(value):
         p.error = FAILED_NAN
@@ -484,7 +499,7 @@ def line_raster(
     if segment_length_squared <= 1e-12:
         return 0
     segment_length: cython.double = pow(segment_length_squared, p.exponent)
-    half: cython.double = py_max(0.5 / p.scale, line_width * 0.5)
+    half: cython.double = pen_half(p.scale, line_width)
     cap_extension: cython.double = 0.0
     width: cython.Py_ssize_t = ix1 - ix0
     height: cython.Py_ssize_t = iy1 - iy0
@@ -616,12 +631,12 @@ def fill_line(
     dy: cython.double = y1 - y0
     half: cython.double
     if fabs(dx) <= 1e-12 or fabs(dy) <= 1e-12:
-        half = py_max(0.5 / p.scale, line_width * 0.5)
+        half = pen_half(p.scale, line_width)
         if fabs(dy) <= 1e-12:
             return fill_rect(p, py_min(x0, x1) - 0.0, y0 - half, py_max(x0, x1) + 0.0, y0 + half)
         return fill_rect(p, x0 - half, py_min(y0, y1) - 0.0, x0 + half, py_max(y0, y1) + 0.0)
     seg_len2: cython.double = dx * dx + dy * dy
-    half = py_max(0.5 / p.scale, line_width * 0.5)
+    half = pen_half(p.scale, line_width)
     if seg_len2 <= 1e-12:
         return fill_rect(p, x0 - half, y0 - half, x0 + half, y0 + half)
     seg_len: cython.double = pow(seg_len2, p.exponent)
@@ -704,7 +719,7 @@ def fill_terminal(
     line_width: cython.double,
     round_shape: cython.bint,
 ) -> cython.int:
-    radius: cython.double = py_max(0.5 / p.scale, line_width * 0.5)
+    radius: cython.double = pen_half(p.scale, line_width)
     if round_shape:
         return fill_circle(p, x, y, radius)
     return fill_rect(p, x - radius, y - radius, x + radius, y + radius)
@@ -1806,7 +1821,7 @@ def stroke_polylines(
         w.bounds = bounds
         w.count = count
         w.line_width = line_width
-        w.half = py_max(0.5 / scale, line_width * 0.5)
+        w.half = pen_half(scale, line_width)
         w.native = native
         w.line_cap = line_cap
         w.line_join = line_join
@@ -1880,8 +1895,8 @@ def stroke_coverage(
         c.inverse[1] = -c.forward[1] / determinant
         c.inverse[2] = -c.forward[2] / determinant
         c.inverse[3] = c.forward[0] / determinant
-        # The matrix's smaller singular value: the least it shrinks a length by, which a
-        # thin pen is widened to keep a device pixel wide in every direction.
+        # The matrix's smaller singular value: the least it shrinks a length by, which
+        # pen_half widens a thin pen by to keep it as wide on the page in every direction.
         total: cython.double = (
             c.forward[0] * c.forward[0]
             + c.forward[1] * c.forward[1]
@@ -1939,7 +1954,7 @@ def stroke_coverage(
         w.bounds = bounds
         w.count = count
         w.line_width = line_width
-        w.half = py_max(0.5 / (scale * smallest), line_width * 0.5)
+        w.half = pen_half(scale * smallest, line_width)
         w.native = True
         w.line_cap = line_cap
         w.line_join = line_join
