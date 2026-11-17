@@ -7,6 +7,7 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 lazy import numpy
@@ -25,7 +26,12 @@ from core_pdf.impl.render.paths import (
 )
 from core_pdf.impl.render.raster_support import subpath_columns
 from core_pdf.impl.spec.citations import cites
-lazy from core_pdf_cythonized import stroke_coverage, stroke_polylines, stroke_segment_samples
+lazy from core_pdf_cythonized import (
+    short_subpaths,
+    stroke_coverage,
+    stroke_polylines,
+    stroke_segment_samples,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
@@ -223,7 +229,7 @@ def stroke_path(
             and self.group_source_shape is None
             and seamless_in_pieces(path, line_join, miter_limit)
         )
-        if not pieces and (
+        if (not pieces or has_short_subpath(path, scale)) and (
             matrix is not None or not single_segment(self, path, dash_pattern, line_cap)
         ):
             for part in path.split_parts():
@@ -283,7 +289,7 @@ def stroke_path(
         self.fill_terminal(x, y, line_width, rgba, True, blend_mode)
 
     def dot(x: float, y: float) -> None:
-        radius = line_width * 0.5 if line_width > 0.0 else 0.5 / scale
+        radius = stroke_half_width(scale, float(line_width))
         self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
 
     stroke_polylines(
@@ -325,19 +331,39 @@ def single_segment(
     dash_pattern: tuple[list[float], float] | None,
     line_cap: int,
 ) -> bool:
-    """Whether the stroke is one open segment with butt caps: a single piece, which
-    painting on its own paints once."""
+    """Whether the stroke is one open segment with butt caps, a device pixel long or more:
+    a single piece, which painting on its own paints once."""
     if (dash_pattern and dash_pattern[0]) or line_cap != LineCap.BUTT:
         return False
     if self.group_source_shape is not None or path.subpath_count() != 1:
         return False
     deferred = path.deferred_columns()
     if deferred is not None:
-        _, _, spans, outline = deferred
+        xs, ys, spans, outline = deferred
         start, end, closed = spans[0]
-        return not outline and not closed and end - start == 2
-    subpath = path.subpaths[0]
-    return not subpath.closed and len(subpath.points) == 2
+        if outline or closed or end - start != 2:
+            return False
+        x0, y0, x1, y1 = float(xs[start]), float(ys[start]), float(xs[end - 1]), float(ys[end - 1])
+    else:
+        subpath = path.subpaths[0]
+        if subpath.closed or len(subpath.points) != 2:
+            return False
+        (x0, y0), (x1, y1) = subpath.points
+    # One shorter than a device pixel is left to stroke_once, which keeps it from
+    # disappearing between the samples.
+    return math.hypot(x1 - x0, y1 - y0) * self.scale >= 1.0
+
+
+def has_short_subpath(path: CapturedPath, scale: float) -> bool:
+    """Whether a subpath of the path is shorter than a device pixel but not of no length:
+    one that may fall between the samples, which stroke_once keeps from disappearing."""
+    deferred = path.deferred_columns()
+    if deferred is not None:
+        xs, ys, spans, outline = deferred
+    else:
+        xs, ys, spans = subpath_columns(path.subpaths)
+        outline = False
+    return bool(short_subpaths(xs, ys, spans, outline, scale))
 
 
 @cites(
@@ -382,10 +408,16 @@ def stroke_once(
         return
     ix0, iy0, ix1, iy1 = clipped[1]
     dashed = bool(dash_pattern and dash_pattern[0])
-    deferred = path.deferred_columns() if matrix is None and not dashed else None
+    deferred = path.deferred_columns() if not dashed else None
     squares: list[float] = []
     if deferred is not None:
         xs, ys, spans, outline = deferred
+        if matrix is not None:
+            # The columns in stroke space, as CapturedSubpath.transformed maps each point.
+            a, b, c, d = matrix
+            determinant = a * d - b * c
+            ia, ib, ic, id_ = d / determinant, -b / determinant, -c / determinant, a / determinant
+            xs, ys = xs * ia + ys * ic + 0.0, xs * ib + ys * id_ + 0.0
     else:
         subpaths = path.subpaths
         if matrix is not None:

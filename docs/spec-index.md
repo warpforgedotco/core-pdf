@@ -36,11 +36,14 @@ Features a version introduced, which core reads whatever version a document decl
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
 | PDF 1.0 | Interpolate asks for an image drawn larger than its samples to be smoothed | ISO 32000-2 8.9.5.3 (Image interpolation) | `core_pdf.impl.render.raster_images.image_interpolates` |
+| PDF 1.0 | a line width of 0 is the thinnest line the device renders: 1 device pixel wide | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.paths.stroke_half_width` |
 | PDF 1.0 | a miter past the miter limit is a bevel | ISO 32000-2 8.4.3.5 (Miter limit) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | a stroke is one shape: its segments, joins, caps and dashes are painted once | ISO 32000-2 8.5.3.2 (Stroking) | `core_pdf.impl.render.raster_strokes.stroke_once` |
+| PDF 1.0 | a stroke of non-zero width never disappears, whatever its place on the pixel grid | ISO 32000-2 10.7.4 (Scan conversion rules) | `core_pdf.impl.render.paths.stroke_half_width` |
 | PDF 1.0 | an interpolated stencil mask smooths the mask's edges, not the painted colour | ISO 32000-2 8.9.6.2 (Stencil masking) | `core_pdf.impl.render.raster_images.image_interpolates` |
 | PDF 1.0 | butt, round and projecting square caps | ISO 32000-2 8.4.3.3 (Line cap style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
+| PDF 1.0 | stroked text takes the line width and the other stroke parameters in user space | ISO 32000-2 9.3.6 (Text rendering mode) | `core_pdf.impl.capture.text_painting.glyph_paint` |
 | PDF 1.0 | the line width and dashes are measured in user space, where the pen is a circle | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.raster_strokes.stroke_once` |
 | PDF 1.0 | the line width is measured in user space, so the pen is an ellipse on the page | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.capture.path_painting.stroke_space` |
 | PDF 1.0 | where colour is set elsewhere, only image masks of the images are painted | ISO 32000-2 8.6.8 (Colour operators) | `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask` |
@@ -251,6 +254,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream`: the embedded file streams of EF
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.4.3.2 (Line width) `core_pdf.impl.capture.path_painting.stroke_space`: the line width is measured in user space, so the pen is an ellipse on the page
+- 8.4.3.2 (Line width) `core_pdf.impl.render.paths.stroke_half_width`: a line width of 0 is the thinnest line the device renders: 1 device pixel wide
 - 8.4.3.2 (Line width) `core_pdf.impl.render.raster_strokes.stroke_once`: the line width and dashes are measured in user space, where the pen is a circle
 - 8.4.3.3 (Line cap style) `core_pdf.impl.render.raster_strokes.stroke_path`: butt, round and projecting square caps
 - 8.4.3.4 (Line join style) `core_pdf.impl.render.raster_strokes.stroke_path`: miter, round and bevel joins
@@ -289,6 +293,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points`: a Coons patch's inner control points follow from its boundary curves
 - 8.9.5.3 (Image interpolation) `core_pdf.impl.render.raster_images.image_interpolates`: Interpolate asks for an image drawn larger than its samples to be smoothed
 - 8.9.6.2 (Stencil masking) `core_pdf.impl.render.raster_images.image_interpolates`: an interpolated stencil mask smooths the mask's edges, not the painted colour
+- 9.3.6 (Text rendering mode) `core_pdf.impl.capture.text_painting.glyph_paint`: stroked text takes the line width and the other stroke parameters in user space
 - 9.3.6 (Text rendering mode) `core_pdf.impl.capture.text_painting.glyph_paint`: text painted with a pattern colour shows the pattern through the glyphs
 - 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)
@@ -299,6 +304,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.read_descriptor_style`: Flags is an unsigned 32-bit integer whose bits Table 121 defines
 - 10.4.2.2 (Conversion between DeviceGray and DeviceRGB) `core_pdf.impl.spec.s_11_transparency.blending_space.gray_from_rgb`: the gray level of an RGB colour
 - 10.4.2.3 (Conversion between DeviceGray and DeviceCMYK) `core_pdf.impl.spec.s_11_transparency.blending_space.cmyk_from_gray`: the CMYK colour of a gray level
+- 10.7.4 (Scan conversion rules) `core_pdf.impl.render.paths.stroke_half_width`: a stroke of non-zero width never disappears, whatever its place on the pixel grid
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space`: blend a subtractive space's complements
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blending_space_family`: the colour spaces that blend
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn

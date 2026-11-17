@@ -31,6 +31,20 @@ of a stroke's edge, or with any of the points an eighth of a pixel apart within 
 both sides of it, are skipped; every other pixel must be the stroke painted once over the
 backdrop, within a byte, or the backdrop.
 
+A thin stroke covers its pixels in part, by its width, and never disappears (8.4.3.2,
+10.7.4); a line width of 0 is 1 device pixel wide (8.4.3.2). This also writes pages of a
+dozen parallel lines of widths from 0 to 0.8 device pixels, at several angles, opaque, at
+a constant alpha of 0.5, in Multiply, in a knockout group, dashed, and under CTMs that
+stretch, skew and scale down, and checks the area they cover, the sum of the pixels'
+alpha, against the lines' length times their width: a line width of 0 one device pixel,
+any other its own, but no thinner than a quarter of a pixel, the thinnest band core's
+samples always meet. And it writes dotted hairlines, dashes of no length with round and
+projecting square caps along lines at 0 and 45 degrees, and subpaths of one point with
+round caps, widths 0.05 to 0.2, centred on whole pixels, half pixels and in between, opaque,
+at alpha 0.5, in Multiply and under a stretching CTM, and the same with segments a tenth of
+a pixel long, subpaths and dashes, with each cap: each dot must cover between 0.03 and 0.3
+of a pixel, never disappearing between the samples.
+
 uv run --all-packages python scripts/check_strokes.py
 """
 
@@ -914,10 +928,405 @@ def eroded(
     return all_inside, all_outside
 
 
-def rendered(case: Case) -> numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]:
+type Pixels = numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]
+
+
+def rendered(case: Case | Hairline | Dots) -> Pixels:
     with PdfDocument(case.pdf()) as pdf:
         image = pdf.pages[0].render().rasterize()
     return numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(image.height, image.width, 4)
+
+
+# The thinnest band, in device pixels, that core's samples, a quarter of a pixel apart, always
+# meet: a thinner stroke of non-zero width is widened to it, never to a whole pixel.
+HAIRLINE_FLOOR = 0.25
+HAIRLINE_LENGTH = 200.0
+HAIRLINE_COUNT = 12
+# Apart by more than a pixel and by no multiple of the samples' spacing, so that the lines
+# fall at every phase of the sample grid between them.
+HAIRLINE_SPACING = 7.37
+
+
+class Hairline:
+    """HAIRLINE_COUNT parallel lines `degrees` from the x axis in user space, about the
+    origin, HAIRLINE_LENGTH long and HAIRLINE_SPACING apart on the page, a line width of
+    `width`, under `ctm` (by default, centred on the page): at a constant alpha `alpha`, in
+    the blend mode `blend`, with caps `cap`, dashed by `dash`, or in a knockout group. A
+    stroke covers the points within half the line width of its path in user space (ISO
+    32000-2 8.4.3.2): a thin one covers its pixels in part, by its width, and never
+    disappears (10.7.4); a line width of 0 is 1 device pixel wide (8.4.3.2)."""
+
+    def __init__(
+        self,
+        name: str,
+        width: float,
+        degrees: float,
+        *,
+        ctm: Affine = (1.0, 0.0, 0.0, 1.0, SIZE / 2.0, SIZE / 2.0),
+        alpha: float = 1.0,
+        blend: str | None = None,
+        cap: int = BUTT,
+        dash: tuple[Sequence[float], float] | None = None,
+        knockout: bool = False,
+    ) -> None:
+        self.name = name
+        self.width = width
+        self.degrees = degrees
+        self.ctm = ctm
+        self.alpha = alpha
+        self.blend = blend
+        self.cap = cap
+        self.dash = dash
+        self.knockout = knockout
+
+    def scale(self) -> float:
+        """The factor the CTM scales the line width and dashes by: the mean of its scales
+        along the axes."""
+        a, b, c, d = self.ctm[:4]
+        return (math.hypot(a, b) + math.hypot(c, d)) / 2.0
+
+    def lines(self) -> list[tuple[Point, Point]]:
+        """Each line's ends in user space."""
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
+        unit = 1.0 / self.scale()
+        found = []
+        for index in range(HAIRLINE_COUNT):
+            offset = (index - (HAIRLINE_COUNT - 1) / 2.0) * HAIRLINE_SPACING * unit
+            cx, cy = -uy * offset, ux * offset
+            half = HAIRLINE_LENGTH / 2.0 * unit
+            found.append(((cx - ux * half, cy - uy * half), (cx + ux * half, cy + uy * half)))
+        return found
+
+    def pdf(self) -> bytes:
+        paint = []
+        if self.alpha != 1.0:
+            paint.append(b"/CA %s" % numbers([self.alpha]))
+        if self.blend is not None:
+            paint.append(b"/BM /%s" % self.blend.encode())
+        dash = b"[] 0 d"
+        if self.dash is not None:
+            dash = b"[%s] %s d" % (numbers(self.dash[0]), numbers([self.dash[1]]))
+        body = b"%s w %d J %s " % (numbers([self.width]), self.cap, dash)
+        if paint:
+            body += b"/G0 gs "
+        body += b"".join(b"%s m %s l S " % (numbers(a), numbers(b)) for a, b in self.lines())
+        resources = b"<< /ExtGState << /G0 << %s >> >> >>" % b" ".join(paint)
+        if not self.knockout:
+            content = b"q %s cm %sQ" % (numbers(self.ctm), body)
+            return document(content, resources)
+        form = stream(
+            b"/Type /XObject /Subtype /Form /BBox [0 0 %d %d] /Resources %s"
+            b" /Group << /S /Transparency /K true >>" % (SIZE, SIZE, resources),
+            b"q %s cm %sQ" % (numbers(self.ctm), body),
+        )
+        return document(b"/X Do", b"<< /XObject << /X 5 0 R >> >>", [form])
+
+    def expected_area(self) -> float:
+        """The page area, in square device pixels, the lines cover: each line's length on
+        the page, dashes and caps included, times the width of its pen across it there. The
+        pen is a circle a line width across in stroke space, user space scaled by the mean
+        of the CTM's scales along the axes, widened to HAIRLINE_FLOOR on the page across
+        the CTM's least stretch, or to one device pixel for a line width of 0."""
+        a, b, c, d = self.ctm[:4]
+        scale = self.scale()
+        forward = (a / scale, b / scale, c / scale, d / scale)
+        smallest, _ = matrix_stretches(forward)
+        determinant = abs(forward[0] * forward[3] - forward[1] * forward[2])
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
+        # The line's direction on the page, and how much the stroke matrix stretches it.
+        along = math.hypot(forward[0] * ux + forward[2] * uy, forward[1] * ux + forward[3] * uy)
+        width = self.width * scale
+        floor = 1.0 if width == 0.0 else HAIRLINE_FLOOR
+        half = max(floor / 2.0 / smallest, width / 2.0)
+        across = 2.0 * half * determinant / along
+        length = HAIRLINE_LENGTH * along
+        if self.dash is not None:
+            pattern = list(self.dash[0])
+            length *= pattern[0] / sum(pattern)
+        caps = 0.0
+        if self.cap == ROUND:
+            dashes = HAIRLINE_LENGTH / scale / sum(self.dash[0]) if self.dash else 1.0
+            caps = math.pi * (across / 2.0) ** 2 * dashes
+        return HAIRLINE_COUNT * (length * across + caps)
+
+
+def matrix_stretches(matrix: tuple[float, float, float, float]) -> tuple[float, float]:
+    """The least and the most the linear map (a, b, c, d) stretches a length by."""
+    a, b, c, d = matrix
+    total = a * a + b * b + c * c + d * d
+    determinant = a * d - b * c
+    root = math.sqrt(max(0.0, total * total - 4.0 * determinant * determinant))
+    largest = math.sqrt((total + root) / 2.0)
+    return abs(determinant) / largest, largest
+
+
+def hairlines() -> list[Hairline]:
+    widths = (0.0, 0.05, 0.12, 0.2, 0.3, 0.5, 0.8)
+    found = [
+        Hairline(f"opaque, width {width}, {degrees} degrees", width, degrees)
+        for width in widths
+        for degrees in (0.0, 7.0, 30.0, 45.0, 90.0)
+    ]
+    found += [
+        Hairline(f"alpha 0.5, round caps, width {width}", width, 20.0, alpha=0.5, cap=ROUND)
+        for width in widths
+    ]
+    found += [
+        Hairline(f"Multiply, width {width}", width, 33.0, blend="Multiply") for width in widths
+    ]
+    found += [
+        Hairline(f"Multiply, round caps, width {width}", width, 61.0, blend="Multiply", cap=ROUND)
+        for width in widths
+    ]
+    found += [
+        Hairline(f"knockout group, width {width}", width, 12.0, knockout=True) for width in widths
+    ]
+    found += [
+        Hairline(f"dashed, width {width}", width, 25.0, dash=([6.0, 4.0], 0.0)) for width in widths
+    ]
+    # Under a CTM that scales unevenly the pen is an ellipse, widened to the floor across
+    # its narrower axis.
+    found += [
+        Hairline(f"{name}, width {width}", width, 15.0, ctm=ctm)
+        for name, ctm in (("stretched", (1.0, 0.0, 0.0, 0.4, 150.0, 150.0)), ("skewed", SKEW))
+        for width in widths
+    ]
+    # Scaled down by the CTM: the line width is in user space.
+    found += [
+        Hairline(f"scaled by 0.1, width {width}", width, 40.0, ctm=(0.1, 0.0, 0.0, 0.1, 150, 150))
+        for width in (0.0, 0.5, 1.2, 3.0, 8.0)
+    ]
+    return found
+
+
+# Sampling a quarter of a pixel apart, the samples a band meets vary with where it lies: the
+# ink of a dozen lines at as many phases is within this fraction of the band's area.
+HAIRLINE_TOLERANCE = 0.1
+
+
+def check_hairline(hairline: Hairline) -> bool:
+    pixels = rendered(hairline)
+    ink = float(pixels[..., 3].astype(numpy.float64).sum()) / 255.0 / hairline.alpha
+    expected = hairline.expected_area()
+    if abs(ink - expected) <= HAIRLINE_TOLERANCE * expected:
+        return True
+    print(f"  {hairline.name}: covers {ink:.1f} square pixels, not {expected:.1f}")
+    return False
+
+
+DOT_ROWS = 12
+DOT_SPACING = 8.0
+# A dot thinner than the samples' spacing covers at least the sample nearest its centre,
+# 1/16 of a pixel, or its area, filled; at most the 4 samples around it on its edge.
+DOT_LEAST = 0.03
+DOT_MOST = 0.3
+
+
+class Dots:
+    """DOT_ROWS rows of dots DOT_SPACING apart in user space, from `origin`: the dashes of no
+    length of a dash pattern [0 DOT_SPACING] along lines `degrees` from the x axis, or, with
+    `points`, subpaths of one point; a line width of `width`, caps `cap`, under `ctm`, at a
+    constant alpha `alpha` or in the blend mode `blend`. A dot of round caps is a disc, of
+    projecting square caps a square along the path; one of non-zero width never disappears
+    (ISO 32000-2 8.4.3.6, 8.5.3.2, 10.7.4), wherever it lies on the pixel grid. With
+    `length`, each dot is instead a segment that long, a subpath or a dash of [length,
+    DOT_SPACING - length], shorter than a pixel: nor does it."""
+
+    def __init__(
+        self,
+        name: str,
+        width: float,
+        cap: int,
+        *,
+        degrees: float = 0.0,
+        points: bool = False,
+        length: float = 0.0,
+        origin: Point = (40.0, 40.0),
+        ctm: Affine = IDENTITY,
+        alpha: float = 1.0,
+        blend: str | None = None,
+    ) -> None:
+        self.name = name
+        self.width = width
+        self.cap = cap
+        self.degrees = degrees
+        self.points = points
+        self.length = length
+        self.origin = origin
+        self.ctm = ctm
+        self.alpha = alpha
+        self.blend = blend
+
+    def centres(self) -> list[Point]:
+        """Each dot's centre in user space."""
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
+        x0, y0 = self.origin
+        return [
+            (x0 + column * DOT_SPACING * ux, y0 + row * DOT_SPACING + column * DOT_SPACING * uy)
+            for row in range(DOT_ROWS)
+            for column in range(DOT_ROWS)
+        ]
+
+    def pdf(self) -> bytes:
+        paint = []
+        if self.alpha != 1.0:
+            paint.append(b"/CA %s" % numbers([self.alpha]))
+        if self.blend is not None:
+            paint.append(b"/BM /%s" % self.blend.encode())
+        body = b"q %s cm %s w %d J " % (numbers(self.ctm), numbers([self.width]), self.cap)
+        if paint:
+            body += b"/G0 gs "
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
+        if self.points:
+            body += b"".join(
+                b"%s m %s l "
+                % (numbers(c), numbers((c[0] + ux * self.length, c[1] + uy * self.length)))
+                for c in self.centres()
+            )
+        else:
+            # The last dash falls half a spacing before each line's end.
+            length = (DOT_ROWS - 0.5) * DOT_SPACING
+            body += b"[%s] 0 d " % numbers([self.length, DOT_SPACING - self.length])
+            x0, y0 = self.origin
+            for row in range(DOT_ROWS):
+                start = (x0, y0 + row * DOT_SPACING)
+                end = (start[0] + ux * length, start[1] + uy * length)
+                body += b"%s m %s l " % (numbers(start), numbers(end))
+        body += b"S Q"
+        resources = b"<< /ExtGState << /G0 << %s >> >> >>" % b" ".join(paint)
+        return document(body, resources)
+
+
+def dots() -> list[Dots]:
+    found = []
+    for width in (0.05, 0.12, 0.2):
+        for paint, alpha, blend in (
+            ("opaque", 1.0, None),
+            ("alpha 0.5", 0.5, None),
+            ("Multiply", 1.0, "Multiply"),
+        ):
+            for origin in ((40.0, 40.0), (40.5, 40.5), (40.37, 40.81)):
+                where = f"at {origin[0]:g}, {origin[1]:g}"
+                found += [
+                    Dots(
+                        f"round dashes, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"round dashes at 45 degrees, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        degrees=45.0,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"square dashes, {paint}, width {width}, {where}",
+                        width,
+                        SQUARE,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"square dashes at 45 degrees, {paint}, width {width}, {where}",
+                        width,
+                        SQUARE,
+                        degrees=45.0,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                    Dots(
+                        f"round points, {paint}, width {width}, {where}",
+                        width,
+                        ROUND,
+                        points=True,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    ),
+                ]
+    # Segments a tenth of a pixel long: subpaths and dashes, with each cap.
+    for width in (0.05, 0.12, 0.2):
+        for paint, alpha, blend in (
+            ("opaque", 1.0, None),
+            ("alpha 0.5", 0.5, None),
+            ("Multiply", 1.0, "Multiply"),
+        ):
+            for origin in ((40.0, 40.0), (40.5, 40.5), (40.37, 40.81)):
+                where = f"at {origin[0]:g}, {origin[1]:g}"
+                found += [
+                    Dots(
+                        f"{kind} 0.1 long, cap {cap}, {degrees:g} degrees, {paint}, width {width},"
+                        f" {where}",
+                        width,
+                        cap,
+                        degrees=degrees,
+                        points=points,
+                        length=0.1,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    )
+                    for kind, points in (("segments", True), ("dashes", False))
+                    for cap in (BUTT, ROUND, SQUARE)
+                    for degrees in (0.0, 45.0)
+                ]
+    # Under a stroke matrix, where the dot is an ellipse on the page.
+    stretch: Affine = (1.0, 0.0, 0.0, 0.5, 0.0, 0.0)
+    found += [
+        Dots(
+            f"stretched, round {kind}, width 0.1",
+            0.1,
+            ROUND,
+            points=points,
+            origin=(40.0, 80.0),
+            ctm=stretch,
+            alpha=0.5,
+        )
+        for kind, points in (("dashes", False), ("points", True))
+    ]
+    found.append(
+        Dots(
+            "stretched, square dashes, width 0.1",
+            0.1,
+            SQUARE,
+            origin=(40.0, 80.0),
+            ctm=stretch,
+            blend="Multiply",
+        )
+    )
+    return found
+
+
+def check_dots(case: Dots) -> bool:
+    """Each dot's coverage, the alpha in the 3 x 3 pixels around its centre, must be at
+    least DOT_LEAST and at most DOT_MOST of a pixel."""
+    pixels = rendered(case)
+    alpha = pixels[..., 3].astype(numpy.float64) / 255.0 / case.alpha
+    height = alpha.shape[0]
+    wrong = []
+    for centre in case.centres():
+        x, y = apply(case.ctm, centre)
+        column, row = math.floor(x), math.floor(height - y)
+        ink = float(alpha[row - 1 : row + 2, column - 1 : column + 2].sum())
+        if not DOT_LEAST <= ink <= DOT_MOST:
+            wrong.append((centre, ink))
+    for centre, ink in wrong[:2]:
+        print(f"  {case.name}: the dot at {centre[0]:g}, {centre[1]:g} covers {ink:.3f} of a pixel")
+    if wrong:
+        print(f"{case.name}: {len(wrong)} of {DOT_ROWS * DOT_ROWS} dots wrong")
+    return not wrong
 
 
 def once(case: Case) -> Case:
@@ -971,7 +1380,13 @@ def main() -> int:
     print(
         f"{len(selected)} stroke pages, {total} pixels: {failures} failures on {failed_pages} pages"
     )
-    return 1 if failures else 0
+    thin = hairlines()
+    thin_failures = sum(not check_hairline(hairline) for hairline in thin)
+    print(f"{len(thin)} hairline pages: {thin_failures} failures")
+    dotted = dots()
+    dot_failures = sum(not check_dots(case) for case in dotted)
+    print(f"{len(dotted)} dotted hairline pages: {dot_failures} failures")
+    return 1 if failures or thin_failures or dot_failures else 0
 
 
 if __name__ == "__main__":

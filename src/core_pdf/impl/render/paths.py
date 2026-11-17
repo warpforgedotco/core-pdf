@@ -10,6 +10,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.base.geometry import intersect_bbox
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
+from core_pdf.impl.spec.citations import cites
 lazy from core_pdf_cythonized import axis_aligned_polylines
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
@@ -107,8 +108,32 @@ def dash_subpath(
     return pieces
 
 
+# The thinnest pen, in device pixels, that core's samples, a quarter of a pixel apart, never
+# miss: a band this wide holds a row or column of them wherever it lies.
+HAIRLINE_PIXELS = 0.25
+
+
+@cites(
+    "ISO 32000-2",
+    "8.4.3.2",
+    introduced="1.0",
+    rule="a line width of 0 is the thinnest line the device renders: 1 device pixel wide",
+)
+@cites(
+    "ISO 32000-2",
+    "10.7.4",
+    introduced="1.0",
+    rule="a stroke of non-zero width never disappears, whatever its place on the pixel grid",
+)
 def stroke_half_width(scale: float, line_width: float) -> float:
-    return max(0.5 / scale, line_width * 0.5)
+    """Half the width of the pen that strokes a line width, where a unit is scale device
+    pixels long: a line width of 0 one device pixel (ISO 32000-2 8.4.3.2), any other its
+    own, but no thinner than HAIRLINE_PIXELS, the thinnest band the samples always meet, so
+    that a hairline covers its pixels in part, by about its width, and never drops out
+    (10.7.4)."""
+    if line_width == 0.0:
+        return 0.5 / scale
+    return max(HAIRLINE_PIXELS * 0.5 / scale, line_width * 0.5)
 
 
 def seamless_in_pieces(path: CapturedPath, line_join: int, miter_limit: float) -> bool:
@@ -155,14 +180,14 @@ def stroke_reach(
     """How far a stroke reaches from its path on the page: half the line width, out to a
     projecting cap's corner (the square root of 2 times that) or a miter's tip (at most the
     miter limit times), stretched by matrix, its map from stroke space, by at most its
-    larger singular value. Under matrix, the pen keeps a device pixel wide as stroke_coverage
-    widens it."""
+    larger singular value. Under matrix, the pen keeps as wide on the page as stroke_coverage
+    widens it to (stroke_half_width)."""
     # A miter join is 0 (ISO 32000-2 8.4.3.4).
     reach = miter_limit if line_join == 0 else 1.0
     if matrix is None:
         return stroke_half_width(scale, line_width) * max(reach, 1.5)
     smallest, largest = singular_values(matrix)
-    half = max(0.5 / (scale * smallest), line_width * 0.5) if smallest else line_width * 0.5
+    half = stroke_half_width(scale * smallest, line_width) if smallest else line_width * 0.5
     return half * largest * max(reach, 1.5)
 
 

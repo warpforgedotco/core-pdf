@@ -63,9 +63,24 @@ def update_pending_run(self: TextState, new_run: TextRun) -> None:
     introduced="1.2",
     rule="text painted with a pattern colour shows the pattern through the glyphs",
 )
+@cites(
+    "ISO 32000-2",
+    "9.3.6",
+    introduced="1.0",
+    rule="stroked text takes the line width and the other stroke parameters in user space",
+)
 def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphPaint:
+    """The paint of glyphs shown in the current state. A stroked glyph is stroked as a path
+    is, with the line width, caps, joins, miter limit and dashes of the graphics state, all
+    in user space, not text space (ISO 32000-2 9.3.6): its pen is a circle in user space,
+    which the CTM alone maps to the page, whatever the text matrix and horizontal scaling
+    do to the glyph."""
     graphics = self.graphics
     render_mode = self.text_paint_mode()
+    # The CTM's scale and its stroke matrix, as paint_path strokes a path with.
+    self.graphics_scale()
+    scale_cache = self.scale_cache
+    assert scale_cache is not None
     # A pattern is captured only for a render, and only for the paint the mode uses.
     fill_pattern = stroke_pattern = None
     if self.options.render_details:
@@ -98,6 +113,8 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
         alpha_is_shape=self.graphics.alpha_is_shape,
         graphics_soft_mask=self.capture_graphics_soft_mask(),
         clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
+        miter_limit=graphics.miter_limit,
+        stroke_matrix=scale_cache[2],
     )
 
 

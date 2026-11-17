@@ -60,6 +60,13 @@ def stroke_coverage(
     miter_limit: float,
     exponent: float,
 ) -> bool: ...
+def short_subpaths(
+    xs: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    ys: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    spans: list[tuple[int, int, bool]],
+    outline: bool,
+    scale: float,
+) -> bool: ...
 def axis_aligned_polylines(
     xs: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     ys: numpy.ndarray[Any, numpy.dtype[numpy.float64]],

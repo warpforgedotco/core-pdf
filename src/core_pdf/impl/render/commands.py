@@ -20,6 +20,7 @@ from core_pdf.impl.render.blend import declared_blend
 from core_pdf.impl.render.display import PATH_PAINT_LAYOUT, DisplayList
 from core_pdf.impl.render.model import DEFAULT_MITER_LIMIT, PathPaintKind
 from core_pdf.impl.spec.s_07_content.model import NON_PAINTING_RENDER_MODES
+from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
 lazy from core_pdf_cythonized import glyph_outline_edges
 
@@ -49,6 +50,8 @@ class GlyphStyleLowering:
         "paint_kind",
         "plain_fill",
         "fields",
+        "miter_limit",
+        "stroke_matrix",
     )
 
     def __init__(self, style: GlyphStyle, display_list: DisplayList, include_text: bool) -> None:
@@ -71,6 +74,14 @@ class GlyphStyleLowering:
             and declared_blend(style.blend_mode) is None
         )
         self.fields = display_list.glyph_paint_fields_of(style)
+        # A stroked glyph is stroked as a path is, with the miter limit and the stroke
+        # matrix of its graphics state (ISO 32000-2 9.3.6); a filled one keeps the defaults.
+        self.miter_limit = DEFAULT_MITER_LIMIT
+        self.stroke_matrix = None
+        if paint_kind is not PathPaintKind.FILL:
+            limit = style.miter_limit
+            self.miter_limit = float(limit) if is_pdf_number(limit) else DEFAULT_MITER_LIMIT
+            self.stroke_matrix = style.stroke_matrix
 
 
 class TextObjectState(ReprFields, metaclass=RecordType, frozen=False):
@@ -287,8 +298,7 @@ class ProgramLowering:
                             text.clipping_subpaths.extend(path.subpaths)
                         if lowering.outline_paints and visible is not False:
                             # PathPaintItem's __init__ only assigns its fields, in this
-                            # order. Glyph outlines are stroked with the default miter limit and
-                            # no stroke matrix.
+                            # order.
                             item = build_item(
                                 (
                                     lowering.paint_kind,
@@ -297,8 +307,8 @@ class ProgramLowering:
                                     path,
                                     *lowering.fields,
                                     edge_array,
-                                    DEFAULT_MITER_LIMIT,
-                                    None,
+                                    lowering.miter_limit,
+                                    lowering.stroke_matrix,
                                 )
                             )
                             if lowering.plain_fill and not dropped and bounds is not None:

@@ -26,7 +26,7 @@ from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rint
 from cython.cimports.libc.stdlib import calloc, free, malloc
 from cython.cimports.libc.string import memcpy, memset
 
-__all__ = ("axis_aligned_polylines", "stroke_coverage", "stroke_polylines")
+__all__ = ("axis_aligned_polylines", "short_subpaths", "stroke_coverage", "stroke_polylines")
 
 
 Paint = cython.struct(
@@ -81,6 +81,21 @@ def extend(
         p.window[2] = x0
     if x1 > p.window[3]:
         p.window[3] = x1
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def pen_half(scale: cython.double, line_width: cython.double) -> cython.double:
+    """Half the width of the pen that strokes a line width, where a unit is scale device
+    pixels long, as render.paths.stroke_half_width works it out: a line width of 0 one
+    device pixel (ISO 32000-2 8.4.3.2), any other its own, but no thinner than a quarter of
+    a pixel, the thinnest band the samples always meet, so that a hairline covers its pixels
+    in part and never drops out (10.7.4)."""
+    if line_width == 0.0:
+        return 0.5 / scale
+    return py_max(0.125 / scale, line_width * 0.5)
 
 
 @cython.cfunc
@@ -484,7 +499,7 @@ def line_raster(
     if segment_length_squared <= 1e-12:
         return 0
     segment_length: cython.double = pow(segment_length_squared, p.exponent)
-    half: cython.double = py_max(0.5 / p.scale, line_width * 0.5)
+    half: cython.double = pen_half(p.scale, line_width)
     cap_extension: cython.double = 0.0
     width: cython.Py_ssize_t = ix1 - ix0
     height: cython.Py_ssize_t = iy1 - iy0
@@ -616,12 +631,12 @@ def fill_line(
     dy: cython.double = y1 - y0
     half: cython.double
     if fabs(dx) <= 1e-12 or fabs(dy) <= 1e-12:
-        half = py_max(0.5 / p.scale, line_width * 0.5)
+        half = pen_half(p.scale, line_width)
         if fabs(dy) <= 1e-12:
             return fill_rect(p, py_min(x0, x1) - 0.0, y0 - half, py_max(x0, x1) + 0.0, y0 + half)
         return fill_rect(p, x0 - half, py_min(y0, y1) - 0.0, x0 + half, py_max(y0, y1) + 0.0)
     seg_len2: cython.double = dx * dx + dy * dy
-    half = py_max(0.5 / p.scale, line_width * 0.5)
+    half = pen_half(p.scale, line_width)
     if seg_len2 <= 1e-12:
         return fill_rect(p, x0 - half, y0 - half, x0 + half, y0 + half)
     seg_len: cython.double = pow(seg_len2, p.exponent)
@@ -704,7 +719,7 @@ def fill_terminal(
     line_width: cython.double,
     round_shape: cython.bint,
 ) -> cython.int:
-    radius: cython.double = py_max(0.5 / p.scale, line_width * 0.5)
+    radius: cython.double = pen_half(p.scale, line_width)
     if round_shape:
         return fill_circle(p, x, y, radius)
     return fill_rect(p, x - radius, y - radius, x + radius, y + radius)
@@ -1085,6 +1100,41 @@ def cover_disc(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
+def cover_nearest(
+    p: cython.pointer[Paint], c: cython.pointer[Cover], x: cython.double, y: cython.double
+) -> cython.int:
+    """Cover the sample nearest the stroke-space point (x, y). A dot, a subpath or dash of
+    no length, covers it as well as the samples inside it: a disc or square thinner than
+    the samples' spacing can fall between them all, and a stroke of non-zero width never
+    disappears (ISO 32000-2 10.7.4)."""
+    page_x: cython.double = x
+    page_y: cython.double = y
+    if c.transformed:
+        page_x = c.forward[0] * x + c.forward[2] * y
+        page_y = c.forward[1] * x + c.forward[3] * y
+    # The samples sit an eighth of a pixel in, then a quarter of a pixel apart.
+    column: cython.double = floor(((page_x - c.crop_x0) * c.scale - 0.125) * 4.0 + 0.5)
+    row: cython.double = floor(((c.crop_y1 - page_y) * c.scale - 0.125) * 4.0 + 0.5)
+    if not checked(p, column) or not checked(p, row):
+        return -1
+    pixel_x: cython.double = floor(column * 0.25)
+    pixel_y: cython.double = floor(row * 0.25)
+    j: cython.double = pixel_x - c.left
+    i: cython.double = pixel_y - c.top
+    if j < 0.0 or i < 0.0 or j >= c.width or i >= c.height:
+        return 0
+    sx: cython.int = cython.cast(cython.int, column - pixel_x * 4.0)
+    sy: cython.int = cython.cast(cython.int, row - pixel_y * 4.0)
+    index: cython.Py_ssize_t = cython.cast(cython.Py_ssize_t, i) * c.width + cython.cast(
+        cython.Py_ssize_t, j
+    )
+    c.masks[index] |= cython.cast(cython.ushort, cython.cast(cython.uint, 1) << (4 * sy + sx))
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
 def cover_segment(
     p: cython.pointer[Paint],
     c: cython.pointer[Cover],
@@ -1383,6 +1433,50 @@ def cap(
     return polygon(p, w, calls, xs, ys, 4)
 
 
+# A subpath shorter than this, in device pixels, may fall between the samples whatever
+# its width: a segment across a thick pen with butt caps is a bar as thin as it is long.
+SHORT_PIXELS = cython.declare(cython.double, 1.0)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def short_span(
+    xs: cython.p_const_double,
+    ys: cython.p_const_double,
+    start: cython.Py_ssize_t,
+    end: cython.Py_ssize_t,
+    closed: cython.bint,
+    scale: cython.double,
+    forward: cython.p_const_double,
+) -> cython.bint:
+    """Whether the subpath of the points start to end, closed or not, has a segment of some
+    length but is shorter, all its segments together and mapped by forward (a, b, c, d) or
+    by nothing to the page, than SHORT_PIXELS device pixels."""
+    index: cython.Py_ssize_t
+    following: cython.Py_ssize_t
+    dx: cython.double
+    dy: cython.double
+    page_x: cython.double
+    page_y: cython.double
+    total: cython.double = 0.0
+    last: cython.Py_ssize_t = end if closed else end - 1
+    limit: cython.double = SHORT_PIXELS / scale
+    for index in range(start, last):
+        following = index + 1 if index + 1 < end else start
+        dx = xs[following] - xs[index]
+        dy = ys[following] - ys[index]
+        if forward != cython.NULL:
+            page_x = forward[0] * dx + forward[2] * dy
+            page_y = forward[1] * dx + forward[3] * dy
+            dx = page_x
+            dy = page_y
+        total += sqrt(dx * dx + dy * dy)
+        if not total < limit:
+            return False
+    return total > 0.0
+
+
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
@@ -1444,7 +1538,10 @@ def walk_range(
             # A subpath of one point: a dot with round caps, and nothing otherwise, as its
             # caps have no direction (ISO 32000-2 8.5.3.2).
             if w.line_cap == CAP_ROUND and w.cover != cython.NULL:
-                if cover_disc(p, w.cover, x0, y0, w.half) < 0:
+                if (
+                    cover_disc(p, w.cover, x0, y0, w.half) < 0
+                    or cover_nearest(p, w.cover, x0, y0) < 0
+                ):
                     with cython.gil:
                         failed(p, calls)
             elif w.line_cap == CAP_ROUND:
@@ -1485,21 +1582,60 @@ def walk_range(
         else:
             cap(p, w, calls, x0, y0, -first_x, -first_y)
             cap(p, w, calls, x1, y1, last_x, last_y)
+        if (
+            w.cover != cython.NULL
+            and short_span(
+                w.xs,
+                w.ys,
+                start,
+                end,
+                closed,
+                p.scale,
+                w.cover.forward if w.cover.transformed else cython.NULL,
+            )
+            # A subpath shorter than a pixel covers, as a dot does, the sample nearest the
+            # middle of its points too, so that it never disappears (10.7.4).
+            and cover_nearest(p, w.cover, middle(w.xs, start, end), middle(w.ys, start, end)) < 0
+        ):
+            with cython.gil:
+                failed(p, calls)
     return 0
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def middle(
+    values: cython.p_const_double, start: cython.Py_ssize_t, end: cython.Py_ssize_t
+) -> cython.double:
+    """The middle of the least and the greatest of values start to end."""
+    low: cython.double = values[start]
+    high: cython.double = values[start]
+    index: cython.Py_ssize_t
+    for index in range(start + 1, end):
+        low = py_min(low, values[index])
+        high = py_max(high, values[index])
+    return (low + high) * 0.5
 
 
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def in_pieces(
-    w: cython.pointer[Walk], first: cython.Py_ssize_t, last: cython.Py_ssize_t, opaque: cython.bint
+    w: cython.pointer[Walk],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+    opaque: cython.bint,
+    scale: cython.double,
 ) -> cython.bint:
     """Whether painting the stroke of subpaths first to last piece by piece paints what
     painting it once would: it is one segment with butt caps, or, opaque, its pieces only
     overlap,
     every segment running along an axis and every corner a disc or the square around it,
     with no miter or bevel polygon meeting a segment's end along an edge, where two partial
-    coverages painted in turn leave a lighter seam."""
+    coverages painted in turn leave a lighter seam; and none of its subpaths is shorter
+    than SHORT_PIXELS, which paint_once keeps from disappearing."""
     k: cython.Py_ssize_t
     index: cython.Py_ssize_t
     start: cython.Py_ssize_t
@@ -1511,6 +1647,9 @@ def in_pieces(
         end = w.bounds[3 * k + 1]
         if end - start < 2:
             continue
+        if short_span(w.xs, w.ys, start, end, w.bounds[3 * k + 2], scale, cython.NULL):
+            # paint_once covers the sample nearest it.
+            return False
         for index in range(start, end - 1):
             if w.xs[index] == w.xs[index + 1] and w.ys[index] == w.ys[index + 1]:
                 continue
@@ -1670,7 +1809,7 @@ def walk_once(
     result: cython.int = 0
     for group in range(groups):
         last = ends[group]
-        if in_pieces(w, first, last, p.alpha >= 255):
+        if in_pieces(w, first, last, p.alpha >= 255, p.scale):
             result = walk_range(p, w, calls, first, last)
         else:
             result = paint_once(p, w, calls, first, last, buffer, capacity)
@@ -1806,7 +1945,7 @@ def stroke_polylines(
         w.bounds = bounds
         w.count = count
         w.line_width = line_width
-        w.half = py_max(0.5 / scale, line_width * 0.5)
+        w.half = pen_half(scale, line_width)
         w.native = native
         w.line_cap = line_cap
         w.line_join = line_join
@@ -1853,7 +1992,8 @@ def stroke_coverage(
     """Count, in counts, the 4 x 4 samples of each pixel of the window at (left, top) that
     the stroke of the subpaths covers: its segments, joins and caps, and the square around
     each point of squares, (x, y, ux, uy) with the path along (ux, uy) there, as a dash of
-    zero length with projecting caps paints. A sample two pieces cover counts once, as a
+    zero length with projecting caps paints, each such square, and each dot of round caps,
+    covering at least the sample nearest its centre. A sample two pieces cover counts once, as a
     stroke is one shape painted once (ISO 32000-2 8.5.3.2). The points are in stroke space,
     which matrix, (a, b, c, d) or None for the identity, maps to page space; the line width
     is a diameter of the pen there. True if any sample is covered."""
@@ -1880,8 +2020,8 @@ def stroke_coverage(
         c.inverse[1] = -c.forward[1] / determinant
         c.inverse[2] = -c.forward[2] / determinant
         c.inverse[3] = c.forward[0] / determinant
-        # The matrix's smaller singular value: the least it shrinks a length by, which a
-        # thin pen is widened to keep a device pixel wide in every direction.
+        # The matrix's smaller singular value: the least it shrinks a length by, which
+        # pen_half widens a thin pen by to keep it as wide on the page in every direction.
         total: cython.double = (
             c.forward[0] * c.forward[0]
             + c.forward[1] * c.forward[1]
@@ -1939,7 +2079,7 @@ def stroke_coverage(
         w.bounds = bounds
         w.count = count
         w.line_width = line_width
-        w.half = py_max(0.5 / (scale * smallest), line_width * 0.5)
+        w.half = pen_half(scale * smallest, line_width)
         w.native = True
         w.line_cap = line_cap
         w.line_join = line_join
@@ -1957,6 +2097,10 @@ def stroke_coverage(
                     squares[k + 3],
                     w.half,
                 )
+                if found >= 0:
+                    found = cover_nearest(
+                        cython.address(p), cython.address(c), squares[k], squares[k + 1]
+                    )
                 if found < 0:
                     break
         if found < 0:
@@ -1971,6 +2115,38 @@ def stroke_coverage(
         free(c.masks)
         free(bounds)
     return covered
+
+
+def short_subpaths(
+    xs: cython.const[cython.double][::1],
+    ys: cython.const[cython.double][::1],
+    spans: list,
+    outline: cython.bint,
+    scale: cython.double,
+) -> bool:
+    """Whether any of the subpaths, in page space, is shorter than a device pixel, scale of
+    them to a unit, but not of no length: one that may fall between the samples, which
+    stroke_coverage keeps from disappearing."""
+    k: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    for k in range(len(spans)):
+        start, end, flag = spans[k]
+        if start < 0 or end > xs.shape[0] or end > ys.shape[0] or end < start:
+            raise ValueError("span runs past the points")
+        if end - start < 2:
+            continue
+        if short_span(
+            cython.address(xs[0]),
+            cython.address(ys[0]),
+            start,
+            end,
+            outline or flag,
+            scale,
+            cython.NULL,
+        ):
+            return True
+    return False
 
 
 def axis_aligned_polylines(
