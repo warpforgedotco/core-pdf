@@ -30,6 +30,7 @@ IMAGE_INPUT_KEYS = STREAM_DECODE_KEYS | {
     "Matte",
     "SMaskInData",
     "Intent",
+    "Interpolate",
 }
 
 

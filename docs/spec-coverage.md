@@ -28,11 +28,11 @@ still passes it through). Deprecated keys are left out. See also the
 | PDF 1.7 | 150 | 62 | 88 |
 | PDF 1.6 | 207 | 109 | 98 |
 | PDF 1.5 | 587 | 277 | 310 |
-| PDF 1.4 | 208 | 137 | 71 |
-| PDF 1.3 | 554 | 393 | 161 |
+| PDF 1.4 | 208 | 138 | 70 |
+| PDF 1.3 | 554 | 394 | 160 |
 | PDF 1.2 | 366 | 252 | 114 |
 | PDF 1.1 | 90 | 75 | 15 |
-| PDF 1.0 | 193 | 157 | 36 |
+| PDF 1.0 | 193 | 158 | 35 |
 | extension AAPL | 9 | 3 | 6 |
 | extension EAPDF_1 | 2 | 0 | 2 |
 | extension ISO_19593 | 4 | 0 | 4 |
@@ -749,7 +749,6 @@ Keys core never reads:
 - `Headers` in StructureAttributesDict
 - `IC` in AnnotCircle, AnnotLine, AnnotSquare
 - `InlineAlign` in StructureAttributesDict
-- `Interpolate` in XObjectImageSoftMask
 - `LE` in AnnotLine
 - `LastModified` in XObjectFormPrinterMark
 - `LineHeight` in StructureAttributesDict
@@ -841,7 +840,6 @@ Keys core never reads:
 - `IF` in AppearanceCharacteristics
 - `Image` in AlternateImage
 - `InkList` in AnnotInk
-- `Interpolate` in XObjectImageMask
 - `JS` in ActionECMAScript
 - `JavaScript` in Name
 - `L` in AnnotLine
@@ -1073,7 +1071,6 @@ Keys core never reads:
 - `EndOfBlock` in FilterCCITTFaxDecode
 - `EndOfLine` in FilterCCITTFaxDecode
 - `FormType` in XObjectFormType1
-- `Interpolate` in XObjectImage
 - `Last` in Outline, OutlineItem
 - `Leading` in FontDescriptorTrueType, FontDescriptorType1, FontDescriptorType3
 - `Length2` in FontFileType1

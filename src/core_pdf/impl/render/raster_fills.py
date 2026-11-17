@@ -37,6 +37,10 @@ lazy from core_pdf_cythonized import (
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
+# A fill whose pixel box is smaller is antialiased; a larger one covers a pixel whole or not
+# at all, by whether its centre is inside the path.
+ANTIALIASED_FILL_PIXELS = 10_000
+
 
 def fill_rect(
     self: RasterTarget,
@@ -551,7 +555,7 @@ def fill_path(
     pixel_area = (ix1 - ix0) * (iy1 - iy0)
     rectangular_clip = clip_paths_are_axis_aligned_rects()
     normal_fast = blend_mode is None
-    if pixel_area < 10_000:
+    if pixel_area < ANTIALIASED_FILL_PIXELS:
         source = (
             edges if isinstance(edges, numpy.ndarray) else numpy.asarray(edges, dtype=numpy.float64)
         )

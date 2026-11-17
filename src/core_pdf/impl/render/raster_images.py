@@ -20,11 +20,15 @@ from core_pdf.impl.render.model import ImagePaintItem
 from core_pdf.impl.render.paths import intersect_box
 from core_pdf.impl.render.raster_support import (
     AFFINE_BLIT_SCRATCH_BYTES,
+    bilinear_opaque_blit,
+    bilinear_uint8,
     box_downsample,
     image_placement,
     prepared_image,
+    sample_image_bilinear,
     sample_image_plane,
 )
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 lazy from core_pdf_cythonized import sample_opaque_pixels
 
@@ -79,7 +83,10 @@ def blit_affine_image(
     source_shape: UInt8Array | None = None,
     soft_mask: UInt8Array | None = None,
     image_clip: tuple[float, float, float, float] | None = None,
+    interpolate: bool = False,
 ) -> bool:
+    """Paint the image whose unit square quad places, sampling the nearest sample to each
+    pixel's centre, or with interpolate, interpolating between the nearest four."""
     clipped_pixel_box = self.clip.clipped_pixel_box
     clip = self.clip
     blend_resolved_mode = self.resolved_blend(blend_mode)
@@ -135,7 +142,8 @@ def blit_affine_image(
     )
     rect_tolerance = max(abs(ux), abs(vy), 1.0) * 1e-6
     if (
-        abs(uy) <= rect_tolerance
+        not interpolate
+        and abs(uy) <= rect_tolerance
         and abs(vx) <= rect_tolerance
         and ux > 0
         and vy > 0
@@ -164,12 +172,43 @@ def blit_affine_image(
             source_pixels, target_region, safe_y, safe_x, valid_y, valid_x, target_origin=(ix0, iy0)
         )
         return True
+    if (
+        interpolate
+        and abs(uy) <= rect_tolerance
+        and abs(vx) <= rect_tolerance
+        and can_write_opaque
+        and (not clip_regions or rectangular_clip)
+    ):
+        # An opaque axis-aligned image: u is a function of the column and v of the row, and
+        # the pixels showing the image are one block, interpolated in one pass.
+        source_u = (x_centers(ix0, ix1) - p00[0]) / ux
+        source_v = (y_centers(iy0, iy1) - p00[1]) / vy
+        columns_shown = numpy.flatnonzero((source_u >= 0.0) & (source_u <= 1.0))
+        rows_shown = numpy.flatnonzero((source_v >= 0.0) & (source_v <= 1.0))
+        if not len(columns_shown) or not len(rows_shown):
+            return True
+        first_column, end_column = int(columns_shown[0]), int(columns_shown[-1]) + 1
+        first_row, end_row = int(rows_shown[0]), int(rows_shown[-1]) + 1
+        source_pixels = uint8_view(converted)[: width_px * height_px * comps].reshape(
+            height_px, width_px, comps
+        )
+        rows = slice(iy0 + first_row, iy0 + end_row)
+        columns = slice(ix0 + first_column, ix0 + end_column)
+        bilinear_opaque_blit(
+            self.pixel_array[rows, columns],
+            source_pixels[:, :, : 1 if comps == 1 else 3],
+            source_u[first_column:end_column],
+            source_v[first_row:end_row],
+        )
+        self.record_source_coverage(rows, columns, 255)
+        return True
     u_from_x = abs(uy) <= rect_tolerance and abs(ux) > rect_tolerance
     u_from_y = abs(ux) <= rect_tolerance and abs(uy) > rect_tolerance
     v_from_x = abs(vy) <= rect_tolerance and abs(vx) > rect_tolerance
     v_from_y = abs(vx) <= rect_tolerance and abs(vy) > rect_tolerance
     if (
-        alpha == 255
+        not interpolate
+        and alpha == 255
         and blend_mode is None
         and can_write_opaque
         and (not clip_regions or rectangular_clip)
@@ -232,6 +271,16 @@ def blit_affine_image(
     # the row: the general expressions subtract an exact zero, so the separable ones give the
     # same doubles up to the sign of a zero, which no comparison, cast or 1 - v can observe.
     separable = uy == 0.0 and vx == 0.0
+    sample_plane = bilinear_uint8 if interpolate else sample_image_plane
+    color_channels = 1 if comps == 1 else 3
+    # Interpolated colours are weighted by the samples' alpha, so that a sample masked out
+    # lends nothing to its neighbours.
+    premultiplied = (
+        source_pixels[:, :, :color_channels].astype(numpy.float32)
+        * source_alpha[:, :, None].astype(numpy.float32)
+        if interpolate and source_alpha is not None and width_px * height_px > 1
+        else None
+    )
     tile_columns = min(ix1 - ix0, max(1, AFFINE_BLIT_SCRATCH_BYTES // 160))
     tile_rows = max(1, AFFINE_BLIT_SCRATCH_BYTES // (160 * tile_columns))
     for row_start in range(iy0, iy1, tile_rows):
@@ -255,15 +304,28 @@ def blit_affine_image(
                 ]
             if not numpy.any(visible):
                 continue
-            sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
-            sample_y = numpy.clip(
-                ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
-            )
-            if separable:
-                channels = source_pixels[:, :, : 1 if comps == 1 else 3]
-                sampled = channels[sample_y[:, 0]][:, sample_x[0]]
+            if interpolate:
+                if premultiplied is None:
+                    sampled = bilinear_uint8(
+                        source_pixels[:, :, :color_channels], source_u, source_v
+                    )
+                else:
+                    assert source_alpha is not None
+                    weights = sample_image_bilinear(source_alpha, source_u, source_v)
+                    colors = sample_image_bilinear(premultiplied, source_u, source_v)
+                    colors /= numpy.maximum(weights, 1e-6)[..., None]
+                    colors += 0.5
+                    sampled = numpy.clip(colors, 0, 255, out=colors).astype(numpy.uint8)
             else:
-                sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
+                sample_x = numpy.clip((source_u * width_px).astype(numpy.intp), 0, width_px - 1)
+                sample_y = numpy.clip(
+                    ((1.0 - source_v) * height_px).astype(numpy.intp), 0, height_px - 1
+                )
+                if separable:
+                    channels = source_pixels[:, :, : 1 if comps == 1 else 3]
+                    sampled = channels[sample_y[:, 0]][:, sample_x[0]]
+                else:
+                    sampled = source_pixels[sample_y, sample_x, : 1 if comps == 1 else 3]
             target = target_pixels[row_start:row_end, column_start:column_end]
             if can_write_opaque:
                 numpy.copyto(target[:, :, :3], sampled, where=visible[:, :, None])
@@ -273,12 +335,12 @@ def blit_affine_image(
                 )
                 continue
             alpha_grid = (
-                sample_image_plane(source_alpha, source_u, source_v)
+                sample_plane(source_alpha, source_u, source_v)
                 if source_alpha is not None
                 else numpy.full(visible.shape, 255, dtype=numpy.uint8)
             )
             if soft_mask is not None:
-                mask_alpha = sample_image_plane(soft_mask, source_u, source_v)
+                mask_alpha = sample_plane(soft_mask, source_u, source_v)
                 alpha_grid = numpy.rint(
                     alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                 ).astype(numpy.uint8)
@@ -286,7 +348,7 @@ def blit_affine_image(
                 shape_grid: int | UInt8Array = (
                     alpha_grid
                     if self.paint_alpha_is_shape
-                    else sample_image_plane(source_shape, source_u, source_v)
+                    else sample_plane(source_shape, source_u, source_v)
                     if source_shape is not None
                     else 255
                 )
@@ -329,6 +391,38 @@ def blit_affine_image(
     return True
 
 
+@cites(
+    "ISO 32000-2",
+    "8.9.5.3",
+    introduced="1.0",
+    rule="Interpolate asks for an image drawn larger than its samples to be smoothed",
+)
+@cites(
+    "ISO 32000-2",
+    "8.9.6.2",
+    introduced="1.0",
+    rule="an interpolated stencil mask smooths the mask's edges, not the painted colour",
+)
+def image_interpolates(
+    item: ImagePaintItem,
+    quad: tuple[tuple[float, float], ...],
+    width: int,
+    height: int,
+    scale: float,
+) -> bool:
+    """Whether to interpolate the samples of item's image, width by height samples placed
+    by quad: when its Interpolate is true and it is drawn larger than its samples along
+    either of its axes, in device pixels. An image mask interpolates its mask (8.9.6.2)."""
+    source = item.source
+    if source is None or source.dictionary.get("Interpolate") is not True or len(quad) < 3:
+        return False
+    (x00, y00), (x10, y10), (x01, y01) = quad[0], quad[1], quad[2]
+    return (
+        math.hypot(x10 - x00, y10 - y00) * scale > width
+        or math.hypot(x01 - x00, y01 - y00) * scale > height
+    )
+
+
 def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
     quad = image_placement(item)
     if quad is None or item.source is None:
@@ -345,6 +439,7 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
         return
     raster = prepared.raster
     width_px, height_px = raster.width, raster.height
+    interpolate = image_interpolates(item, quad, width_px, height_px, self.scale)
     components = 1 if raster.color_model == "gray" else 3
     converted = raster.array[:, :, :components].reshape(-1)
     native_soft_mask = prepared.soft_mask
@@ -392,6 +487,7 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
         source_shape=source_shape,
         soft_mask=soft_mask,
         image_clip=rect_tuple(item.image_clip),
+        interpolate=interpolate,
     )
 
 
@@ -419,4 +515,5 @@ def blit_image_mask(
         source_alpha=raster.array[:, :, raster.channels - 1],
         source_shape=raster.array[:, :, raster.channels - 1],
         image_clip=rect_tuple(item.image_clip),
+        interpolate=image_interpolates(item, quad, raster.width, raster.height, self.scale),
     )
