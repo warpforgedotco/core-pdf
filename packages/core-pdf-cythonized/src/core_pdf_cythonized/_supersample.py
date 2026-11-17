@@ -9,6 +9,8 @@ from cython.cimports.libc.math import ceil
 from cython.cimports.libc.stdlib import qsort
 
 Crossing = cython.struct(x=cython.double, direction=cython.int)
+# An edge waiting to join the active list, by its high y.
+Pending = cython.struct(high=cython.double, index=cython.Py_ssize_t)
 
 
 @cython.cfunc
@@ -21,6 +23,25 @@ def compare_crossings(
     a: cython.double = cython.cast(cython.pointer[cython.const[Crossing]], left).x
     b: cython.double = cython.cast(cython.pointer[cython.const[Crossing]], right).x
     return (a > b) - (a < b)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def compare_pending(
+    left: cython.pointer[cython.const[cython.void]],
+    right: cython.pointer[cython.const[cython.void]],
+) -> cython.int:
+    """Highest first; ties by index, so the order does not depend on qsort."""
+    a: cython.pointer[cython.const[Pending]] = cython.cast(
+        cython.pointer[cython.const[Pending]], left
+    )
+    b: cython.pointer[cython.const[Pending]] = cython.cast(
+        cython.pointer[cython.const[Pending]], right
+    )
+    if a.high != b.high:
+        return -1 if a.high > b.high else 1
+    return (a.index > b.index) - (a.index < b.index)
 
 
 @cython.cfunc
@@ -128,6 +149,12 @@ def supersampled_coverage_plane(
     iy1: cython.Py_ssize_t,
     evenodd: cython.bint,
 ):
+    """Each pixel's count of the 4x4 sample points of it inside the edges' path, over the
+    pixel box (ix0, iy0, ix1, iy1), cut to its rows with any; None when none has any.
+
+    A sample row's crossings are those of the edges active at it: the edges wait in order
+    of their high y, join the active list once the rows fall below it, and leave it once
+    the rows fall below their low y, so a row reads only the edges spanning it."""
     view: cython.const[cython.double][:, ::1] = numpy.ascontiguousarray(edges, dtype=numpy.float64)
     if view.shape[0] and view.shape[1] != 4:
         raise ValueError("edges must have four columns")
@@ -150,12 +177,26 @@ def supersampled_coverage_plane(
     crossings: cython.pointer[Crossing] = cython.cast(
         cython.pointer[Crossing], PyMem_Malloc(kept * cython.sizeof(Crossing))
     )
+    pending: cython.pointer[Pending] = cython.cast(
+        cython.pointer[Pending], PyMem_Malloc(kept * cython.sizeof(Pending))
+    )
+    active: cython.p_Py_ssize_t = cython.cast(
+        cython.p_Py_ssize_t, PyMem_Malloc(kept * cython.sizeof(cython.Py_ssize_t))
+    )
     deltas: cython.p_int = cython.cast(
         cython.p_int, PyMem_Malloc((width + 1) * cython.sizeof(cython.int))
     )
-    if segments == cython.NULL or crossings == cython.NULL or deltas == cython.NULL:
+    if (
+        segments == cython.NULL
+        or crossings == cython.NULL
+        or pending == cython.NULL
+        or active == cython.NULL
+        or deltas == cython.NULL
+    ):
         PyMem_Free(segments)
         PyMem_Free(crossings)
+        PyMem_Free(pending)
+        PyMem_Free(active)
         PyMem_Free(deltas)
         raise MemoryError
 
@@ -164,6 +205,11 @@ def supersampled_coverage_plane(
     sample_row: cython.Py_ssize_t
     column: cython.Py_ssize_t
     crossing_count: cython.Py_ssize_t
+    next_pending: cython.Py_ssize_t = 0
+    pending_count: cython.Py_ssize_t = 0
+    active_count: cython.Py_ssize_t = 0
+    still_active: cython.Py_ssize_t
+    a: cython.Py_ssize_t
     first_row: cython.Py_ssize_t = -1
     last_row: cython.Py_ssize_t = -1
     page_y: cython.double
@@ -172,6 +218,8 @@ def supersampled_coverage_plane(
     segment: cython.p_double
     running: cython.int
     covered: cython.bint
+    spanned: cython.bint
+    falling: cython.bint = scale > 0.0
     try:
         for i in range(total):
             y0 = view[i, 1]
@@ -185,19 +233,38 @@ def supersampled_coverage_plane(
             segment[3] = y1
             segment[4] = y1 if y1 < y0 else y0
             segment[5] = y0 if y0 > y1 else y1
+            # An edge with a NaN y crosses no sample row.
+            if segment[4] == segment[4] and segment[5] == segment[5]:
+                pending[pending_count].high = segment[5]
+                pending[pending_count].index = kept_index
+                pending_count += 1
             kept_index += 1
+        qsort(pending, pending_count, cython.sizeof(Pending), compare_pending)
 
         for row in range(height):
-            for column in range(width + 1):
-                deltas[column] = 0
+            spanned = False
             for sample_row in range(SAMPLES):
                 page_y = (
                     crop_y1
                     - (cython.cast(cython.double, iy0 + row) + (sample_row + 0.5) / SAMPLES) / scale
                 )
+                # The rows fall when the scale is positive: an edge whose high y is above this
+                # row joins the active list, and one whose low y is above it has left it for
+                # good. Otherwise every edge is active and keeps its place.
+                while next_pending < pending_count and (
+                    pending[next_pending].high > page_y or not falling
+                ):
+                    active[active_count] = pending[next_pending].index
+                    active_count += 1
+                    next_pending += 1
                 crossing_count = 0
-                for i in range(kept):
-                    segment = segments + i * 6
+                still_active = 0
+                for a in range(active_count):
+                    segment = segments + active[a] * 6
+                    if falling and segment[4] > page_y:
+                        continue
+                    active[still_active] = active[a]
+                    still_active += 1
                     if not (segment[4] <= page_y < segment[5]):
                         continue
                     crossings[crossing_count].x = segment[0] + (
@@ -207,7 +274,18 @@ def supersampled_coverage_plane(
                     )
                     crossings[crossing_count].direction = 1 if segment[3] > segment[1] else -1
                     crossing_count += 1
+                active_count = still_active
+                if crossing_count == 0:
+                    continue
+                if not spanned:
+                    for column in range(width + 1):
+                        deltas[column] = 0
+                    spanned = True
                 add_sample_row(crossings, crossing_count, evenodd, crop_x0, scale, ix0, ix1, deltas)
+            if not spanned:
+                if falling and next_pending >= pending_count and active_count == 0:
+                    break
+                continue
             running = 0
             covered = False
             for column in range(width):
@@ -222,6 +300,8 @@ def supersampled_coverage_plane(
     finally:
         PyMem_Free(segments)
         PyMem_Free(crossings)
+        PyMem_Free(pending)
+        PyMem_Free(active)
         PyMem_Free(deltas)
 
     if first_row < 0:
