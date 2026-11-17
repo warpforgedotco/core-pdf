@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from copy import copy, replace
+from copy import copy
 from functools import lru_cache
 from math import isfinite
 from typing import TYPE_CHECKING, Any, cast
@@ -34,6 +34,7 @@ from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.recovery.lexer import PdfLexer
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
@@ -641,25 +642,12 @@ class TextState(RecoveringTextState):
         nested.graphics.black_point_compensation = self.graphics.black_point_compensation
         nested.graphics.alpha_is_shape = initial_alpha_is_shape
         nested.graphics.text_knockout = initial_text_knockout
+        if pattern.paint_type == 2:
+            self.uncolored_cell_state(nested, pattern)
         try:
             nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
         except Exception:
             return None
-        if pattern.paint_type == 2:
-            base_color = pattern.base_color
-            if base_color is not None and pattern.base_color_spec is not None:
-                converted = color_operands_to_srgb(
-                    pattern.base_color_spec, base_color, rendering=rendering
-                )
-                if converted is not None:
-                    base_color = converted
-            for drawing in nested.drawings:
-                if drawing.kind in {"fill", "fillstroke"}:
-                    drawing.fill = base_color
-                if drawing.kind in {"stroke", "fillstroke"}:
-                    drawing.stroke_color = base_color
-            for glyph in nested.glyphs:
-                glyph.style = replace(glyph.style, fill=base_color, stroke_color=base_color)
         # The cell ran under its pattern matrix, so the program is in default user space.
         matrix = pattern.matrix
         return TilingPattern(
@@ -675,6 +663,27 @@ class TextState(RecoveringTextState):
             ),
             matrix=None if matrix == IDENTITY_MATRIX else matrix,
         )
+
+    @cites(
+        "ISO 32000-2",
+        "8.7.3.3",
+        introduced="1.2",
+        rule="an uncoloured cell is painted in the scn colour, its colour operators ignored",
+    )
+    def uncolored_cell_state(self, nested: TextState, pattern: model.TilingPattern) -> None:
+        """Start an uncoloured tiling pattern's cell in the colour scn gave with the pattern,
+        in its underlying space, for fills, strokes, text and image masks alike, and with the
+        colour operators ignored there and in every stream the cell invokes (8.6.8), so the
+        cell is a stencil that colour is poured through."""
+        graphics = nested.graphics
+        space = pattern.base_color_spec
+        color = pattern.base_color
+        if space is not None and color is not None:
+            graphics.fill_space = graphics.stroke_space = space
+            graphics.fill_color = graphics.stroke_color = color
+        graphics.fill_pattern = graphics.stroke_pattern = None
+        nested.type3_uncolored = True
+        nested.inherited_uncolored = True
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
         mask = self.graphics.soft_mask

@@ -43,6 +43,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | the line width and dashes are measured in user space, where the pen is a circle | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.raster_strokes.stroke_once` |
 | PDF 1.0 | the line width is measured in user space, so the pen is an ellipse on the page | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.capture.path_painting.stroke_space` |
+| PDF 1.0 | where colour is set elsewhere, only image masks of the images are painted | ISO 32000-2 8.6.8 (Colour operators) | `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask` |
 | PDF 1.1 | a ColorSpace subdictionary's DefaultGray, DefaultRGB and DefaultCMYK entries | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.default_space_values` |
 | PDF 1.1 | a default colour space is not Lab, Indexed or Pattern, with the device's components | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space` |
 | PDF 1.1 | a device space remaps where selected and as an Indexed, Pattern or tint space's base | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.remap_color_space` |
@@ -53,6 +54,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
+| PDF 1.2 | an uncoloured cell is painted in the scn colour, its colour operators ignored | ISO 32000-2 8.7.3.3 (Uncoloured tiling patterns) | `core_pdf.impl.capture.recording.uncolored_cell_state` |
 | PDF 1.2 | f with a pattern as its colour paints the pattern through the path's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_fill_pattern` |
 | PDF 1.2 | text painted with a pattern colour shows the pattern through the glyphs | ISO 32000-2 9.3.6 (Text rendering mode) | `core_pdf.impl.capture.text_painting.glyph_paint` |
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
@@ -264,11 +266,13 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space`: a default colour space is not Lab, Indexed or Pattern, with the device's components
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 8.6.8 (Colour operators) `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask`: where colour is set elsewhere, only image masks of the images are painted
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.paint_fill_pattern`: f with a pattern as its colour paints the pattern through the path's outline
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.paint_stroke_pattern`: S with a pattern as its colour paints the pattern through the stroke's outline
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.stamp_tiling_cells`: a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.tiling_offsets`: tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there
+- 8.7.3.3 (Uncoloured tiling patterns) `core_pdf.impl.capture.recording.uncolored_cell_state`: an uncoloured cell is painted in the scn colour, its colour operators ignored
 - 8.7.4.2 (Shading operator) `core_pdf.impl.capture.image_painting.paint_shading`: sh paints in the current user space
 - 8.7.4.3 (Shading dictionaries) `core_pdf.impl.graphics.shading.background_components`: Background holds one colour's components in the shading's colour space
 - 8.7.4.3 (Shading dictionaries) `core_pdf.impl.render.raster_shading.shading_background`: Background fills the area a shading pattern paints, not one sh paints

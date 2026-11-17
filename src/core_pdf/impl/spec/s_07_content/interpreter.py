@@ -123,7 +123,12 @@ class ContentInterpreter:
         self.xobject_depth = 0
         self.compatibility_depth = 0
         self.marked_content_stack: list[MarkedContentEntry] = []
+        # Whether colour is set elsewhere, so the colour operators are ignored (8.6.8): in a
+        # Type 3 glyph that begins with d1, in the cell of an uncoloured tiling pattern, and
+        # in every stream either invokes. inherited_uncolored is the value a glyph
+        # description starts with, which d0 leaves in place.
         self.type3_uncolored = False
+        self.inherited_uncolored = False
         self.resources: PdfDict = {}
         self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
         self.remapped_space_cache: dict[int, tuple[object, DefaultSpaces, ColorSpace]] = {}
@@ -341,11 +346,25 @@ class ContentInterpreter:
                 PdfParseError("XObject resource is an object stream"), "xobject", None
             )
         if subtype == "Image":
+            if self.type3_uncolored and not self.paints_image_mask(xobj_dict):
+                return None
             self.sink.paint_image(self, xobj)
             return None
         if subtype != "Form":
             return self.reject(PdfParseError("unsupported XObject subtype"), "xobject", None)
         return self.append_form_xobject(xobj, depth, stream_key=stream_key)
+
+    @cites(
+        "ISO 32000-2",
+        "8.6.8",
+        introduced="1.0",
+        rule="where colour is set elsewhere, only image masks of the images are painted",
+    )
+    def paints_image_mask(self, dictionary: object) -> bool:
+        return (
+            isinstance(dictionary, dict)
+            and self.resolver.resolve(dictionary.get("ImageMask")) is True
+        )
 
     def resolve_form_resources(self, value: object) -> PdfDict:
         resources = self.resolve_resources(value)
@@ -526,14 +545,18 @@ class ContentInterpreter:
                     ).multiply(text_space)
                 )
                 previous_type3_uncolored = self.type3_uncolored
+                previous_inherited = self.inherited_uncolored
                 self.sink.text_boundary(self, "type3-glyph-begin")
-                self.type3_uncolored = False
+                # A glyph shown where colour is already set elsewhere keeps the restriction,
+                # whether it begins with d0 or d1 (8.6.8).
+                self.inherited_uncolored = previous_type3_uncolored
                 try:
                     self.stream_executor.consume(
                         char_proc, resources, glyph_ctm, self.xobject_depth + 1
                     )
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
+                    self.inherited_uncolored = previous_inherited
                     self.sink.text_boundary(self, "type3-glyph-end")
 
             advance_x, advance_y = decoder.glyph_advance_vector(
@@ -706,6 +729,10 @@ class ContentInterpreter:
 
     def op_BI(self, operands: ContentOperands, depth: int) -> None:
         if operands and hasattr(operands[0], "dictionary"):
+            if self.type3_uncolored and not self.paints_image_mask(
+                getattr(operands[0], "dictionary", None)  # noqa: B009
+            ):
+                return
             self.sink.paint_inline_image(self, operands[0])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
@@ -1095,7 +1122,7 @@ class ContentInterpreter:
             self.graphics.flatness = max(0.0, min(100.0, values[0]))
 
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
+        if not operands or self.type3_uncolored:
             return
         try:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(operands[0]))
@@ -1148,7 +1175,7 @@ class ContentInterpreter:
         self.compatibility_depth -= 1
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
-        self.type3_uncolored = False
+        self.type3_uncolored = self.inherited_uncolored
 
     def op_d1(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = True
@@ -1187,6 +1214,8 @@ class ContentInterpreter:
         return shading
 
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
+        if self.type3_uncolored:
+            return
         name = self.resource_operand_name(operands)
         if name is None:
             return
@@ -1333,7 +1362,7 @@ class ContentInterpreter:
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
         black_point = self.resolver.resolve(extgstate.get("UseBlackPtComp"))
-        if black_point is not None:
+        if black_point is not None and not self.type3_uncolored:
             self.graphics.black_point_compensation = parse_black_point_compensation(
                 self.named_value(black_point)
             )
