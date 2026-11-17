@@ -105,14 +105,45 @@ def image_quad(data: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
     return None
 
 
+class PlainFillScan:
+    """How far plain_fill_members_box has read an open group's members: up to end, all
+    of them plain fills or text, their boxes' union x0, y0, x1, y1 when found."""
+
+    __slots__ = ("end", "found", "x0", "y0", "x1", "y1")
+
+    def __init__(self, end: int) -> None:
+        self.end = end
+        self.found = False
+        self.x0 = self.y0 = self.x1 = self.y1 = 0.0
+
+    def add_box(self, bx0: float, by0: float, bx1: float, by1: float) -> None:
+        """Take in the next member, a plain fill of this finite box."""
+        self.end += 1
+        if not self.found:
+            self.found = True
+            self.x0, self.y0, self.x1, self.y1 = bx0, by0, bx1, by1
+            return
+        # min() and max() keep the running value on ties, as union_bbox did.
+        if bx0 < self.x0:
+            self.x0 = bx0
+        if by0 < self.y0:
+            self.y0 = by0
+        if bx1 > self.x1:
+            self.x1 = bx1
+        if by1 > self.y1:
+            self.y1 = by1
+
+
 def plain_fill_members_box(
-    items: list[DisplayItem], start: int
+    items: list[DisplayItem], scan: PlainFillScan
 ) -> tuple[bool, tuple[float, float, float, float] | None]:
-    found = False
-    x0 = y0 = x1 = y1 = 0.0
-    for index in range(start, len(items)):
+    """Whether every member of a group, items from the scan's start on, is a plain fill
+    or text, and then the union of the fills' boxes; the scan holds what was already
+    read of them."""
+    for index in range(scan.end, len(items)):
         item = items[index]
         if type(item) is DisplayListItem and item.kind == "text":
+            scan.end += 1
             continue
         if not is_plain_fill(item):
             return False, None
@@ -133,20 +164,8 @@ def plain_fill_members_box(
             if item_box is None:
                 return False, None
             bx0, by0, bx1, by1 = item_box
-        if not found:
-            found = True
-            x0, y0, x1, y1 = bx0, by0, bx1, by1
-        else:
-            # min() and max() keep the running value on ties, as union_bbox did.
-            if bx0 < x0:
-                x0 = bx0
-            if by0 < y0:
-                y0 = by0
-            if bx1 > x1:
-                x1 = bx1
-            if by1 > y1:
-                y1 = by1
-    return True, ((x0, y0, x1, y1) if found else None)
+        scan.add_box(bx0, by0, bx1, by1)
+    return True, ((scan.x0, scan.y0, scan.x1, scan.y1) if scan.found else None)
 
 
 PATH_PAINT_LAYOUT = SlotLayout(PathPaintItem, PathPaintItem.__fields__)
@@ -163,6 +182,7 @@ class DisplayList:
         "open_group_indexes",
         "group_member_boxes",
         "glyph_paint_fields",
+        "open_group_scans",
     )
 
     width: float
@@ -182,6 +202,7 @@ class DisplayList:
         "open_group_indexes",
         "group_member_boxes",
         "glyph_paint_fields",
+        "open_group_scans",
     )
     __match_args__ = ("width", "height", "items")
 
@@ -202,6 +223,8 @@ class DisplayList:
         self.open_group_indexes: list[int] = []
         self.group_member_boxes: dict[int, tuple[float, float, float, float] | None] = {}
         self.glyph_paint_fields: dict[int, tuple[GlyphStyle, tuple[Any, ...]]] = {}
+        # One for each open group: how far its members are known to be plain fills.
+        self.open_group_scans: list[PlainFillScan] = []
 
     def __repr__(self) -> str:
         return (
@@ -254,57 +277,46 @@ class DisplayList:
                     data.get("group_knockout") is True or data.get("group_track_shape") is True
                 )
                 self.open_group_indexes.append(len(self.items))
+                self.open_group_scans.append(PlainFillScan(len(self.items) + 1))
             case "group-end":
                 floor = self.group_scope_floors[-1] if self.group_scope_floors else 0
                 if len(self.shape_tracking_groups) > floor:
                     self.shape_tracking_groups.pop()
                 if self.open_group_indexes:
                     begin = self.open_group_indexes.pop()
-                    plain, box = plain_fill_members_box(self.items, begin + 1)
+                    plain, box = plain_fill_members_box(self.items, self.open_group_scans.pop())
                     if plain and begin < len(self.items):
                         self.group_member_boxes[id(self.items[begin])] = box
 
-    def append_glyph_paint(
-        self,
-        paint_kind: PathPaintKind,
-        seqno: int,
-        bbox: Any,
-        path: Any,
-        edge_array: Any,
-        style: GlyphStyle,
-    ) -> None:
+    def glyph_paint_fields_of(self, style: GlyphStyle) -> tuple[Any, ...]:
+        """The fields of a glyph's PathPaintItem that come from its style, from fill to
+        stroke_pattern in PathPaintItem's order; ProgramLowering.lower_glyphs builds the
+        items."""
         cached = self.glyph_paint_fields.get(id(style))
-        if cached is None or cached[0] is not style:
-            line_width = style.line_width
-            graphics_soft_mask = style.graphics_soft_mask
-            fields: tuple[Any, ...] = (
-                style.fill or None,
-                style.fill_opacity,
-                style.stroke_color,
-                style.stroke_opacity,
-                float(line_width) if is_pdf_number(line_width) else 1.0,
-                int(style.line_cap or 0),
-                int(style.line_join or 0),
-                style.dash_pattern,
-                "nonzero",
-                style.blend_mode,
-                style.soft_mask_alpha,
-                False,
-                style.fill_pattern,
-                style.stroke_pattern,
-                style.alpha_is_shape,
-                graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None,
-            )
-            self.glyph_paint_fields[id(style)] = (style, fields)
-        else:
-            fields = cached[1]
-        # PathPaintItem's __init__ only assigns its fields, in this order. Glyph outlines
-        # are stroked with the default miter limit.
-        self.items.append(
-            PATH_PAINT_LAYOUT.build(
-                (paint_kind, seqno, bbox, path, *fields, edge_array, DEFAULT_MITER_LIMIT, None)
-            )
+        if cached is not None and cached[0] is style:
+            return cached[1]
+        line_width = style.line_width
+        graphics_soft_mask = style.graphics_soft_mask
+        fields: tuple[Any, ...] = (
+            style.fill or None,
+            style.fill_opacity,
+            style.stroke_color,
+            style.stroke_opacity,
+            float(line_width) if is_pdf_number(line_width) else 1.0,
+            int(style.line_cap or 0),
+            int(style.line_join or 0),
+            style.dash_pattern,
+            "nonzero",
+            style.blend_mode,
+            style.soft_mask_alpha,
+            False,
+            style.fill_pattern,
+            style.stroke_pattern,
+            style.alpha_is_shape,
+            graphics_soft_mask if isinstance(graphics_soft_mask, CapturedSoftMask) else None,
         )
+        self.glyph_paint_fields[id(style)] = (style, fields)
+        return fields
 
     def append(self, kind: str, seqno: int, **data: Any) -> None:
         graphics_mask = data.get("graphics_soft_mask")
@@ -387,7 +399,34 @@ class DisplayList:
             )
             return
         self.track_group_boundary(kind, data)
-        self.items.append(display_item(kind, seqno, data))
+        items = self.items
+        if kind == "text":
+            scans = self.open_group_scans
+            if scans and scans[-1].end == len(items):
+                # plain_fill_members_box passes over text.
+                scans[-1].end += 1
+        items.append(display_item(kind, seqno, data))
+
+    def append_text(self, seqno: int, **data: Any) -> None:
+        """append("text", seqno, **data), for data without a graphics_soft_mask."""
+        items = self.items
+        scans = self.open_group_scans
+        if scans and scans[-1].end == len(items):
+            scans[-1].end += 1
+        items.append(DisplayListItem("text", seqno, data))
+
+    def append_plain_fill(
+        self, item: PathPaintItem, bx0: float, by0: float, bx1: float, by1: float
+    ) -> None:
+        """Append item, a plain fill (is_plain_fill) of the finite box bx0, by0, bx1, by1,
+        reading it into the open group's scan when nothing unread comes before it."""
+        items = self.items
+        scans = self.open_group_scans
+        if scans:
+            scan = scans[-1]
+            if scan.end == len(items):
+                scan.add_box(bx0, by0, bx1, by1)
+        items.append(item)
 
     def append_captured_drawing(self, drawing: CapturedDrawing) -> None:
         if not drawing.paints:
@@ -492,4 +531,4 @@ class DisplayList:
         )
 
 
-__all__ = ("DisplayList", "image_quad")
+__all__ = ("PATH_PAINT_LAYOUT", "DisplayList", "image_quad")

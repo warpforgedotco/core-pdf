@@ -128,49 +128,74 @@ def column_extreme(
     return bound
 
 
-def translated_outline_edges(linear_x, linear_y, e: cython.double, f: cython.double, spans):
-    if not (is_float64_vector(linear_x) and is_float64_vector(linear_y)):
-        return translated_outline_edges_view(linear_x, linear_y, e, f, spans)
-    count: cython.Py_ssize_t = vector_length(linear_x)
-    if vector_length(linear_y) != count:
-        raise ValueError("columns differ in length")
-    return _translated_outline_edges(
-        float64_data(linear_x), float64_data(linear_y), count, e, f, spans
-    )
-
-
-def translated_outline_edges_view(
-    linear_x: cython.double[::1],
-    linear_y: cython.double[::1],
+def glyph_outline_edges(
+    xs,
+    ys,
+    a: cython.double,
+    b: cython.double,
+    c: cython.double,
+    d: cython.double,
     e: cython.double,
     f: cython.double,
     spans,
 ):
-    count: cython.Py_ssize_t = linear_x.shape[0]
-    if linear_y.shape[0] != count:
+    """A glyph outline's points under the matrix (a, b, c, d, e, f): its x and y columns,
+    each point x * a + y * c + e, x * b + y * d + f, rounded after each operation as numpy's
+    (xs * a + ys * c) + e rounds; its edges, the spans it kept and whether it dropped one,
+    as outline_edges gives them; and its bounds, None without edges."""
+    if not (is_float64_vector(xs) and is_float64_vector(ys)):
+        return glyph_outline_edges_view(xs, ys, a, b, c, d, e, f, spans)
+    count: cython.Py_ssize_t = vector_length(xs)
+    if vector_length(ys) != count:
         raise ValueError("columns differ in length")
-    return _translated_outline_edges(
-        cython.address(linear_x[0]), cython.address(linear_y[0]), count, e, f, spans
+    return _glyph_outline_edges(float64_data(xs), float64_data(ys), count, a, b, c, d, e, f, spans)
+
+
+def glyph_outline_edges_view(
+    xs: cython.double[::1],
+    ys: cython.double[::1],
+    a: cython.double,
+    b: cython.double,
+    c: cython.double,
+    d: cython.double,
+    e: cython.double,
+    f: cython.double,
+    spans,
+):
+    count: cython.Py_ssize_t = xs.shape[0]
+    if ys.shape[0] != count:
+        raise ValueError("columns differ in length")
+    return _glyph_outline_edges(
+        cython.address(xs[0]), cython.address(ys[0]), count, a, b, c, d, e, f, spans
     )
 
 
 @cython.cfunc
-def _translated_outline_edges(
-    linear_x: cython.p_const_double,
-    linear_y: cython.p_const_double,
+def _glyph_outline_edges(
+    source_x: cython.p_const_double,
+    source_y: cython.p_const_double,
     count: cython.Py_ssize_t,
+    a: cython.double,
+    b: cython.double,
+    c: cython.double,
+    d: cython.double,
     e: cython.double,
     f: cython.double,
     spans,
 ) -> tuple:
     i: cython.Py_ssize_t
+    x: cython.double
+    y: cython.double
     column_x = empty_float64(count)
     column_y = empty_float64(count)
     xs: cython.p_double = float64_data(column_x)
     ys: cython.p_double = float64_data(column_y)
     for i in range(count):
-        xs[i] = linear_x[i] + e
-        ys[i] = linear_y[i] + f
+        x = source_x[i]
+        y = source_y[i]
+        # Built with -ffp-contract=off: no fused multiply-add, as numpy computes it.
+        xs[i] = (x * a + y * c) + e
+        ys[i] = (x * b + y * d) + f
     if not _spans_inside(spans, count):
         raise IndexError("outline span outside the columns")
     edges, kept, dropped = _outline_edges(xs, ys, spans)

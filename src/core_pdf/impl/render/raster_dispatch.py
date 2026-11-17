@@ -65,6 +65,8 @@ def paint_items(
 
 
 def paint_item(self: RasterTarget, item: DisplayItem) -> None:
+    if type(item) is PathPaintItem and item.edge_array is not None and self.paint_glyph_fill(item):
+        return
     if isinstance(item, PaintItemBase):
         previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
         self.paint_alpha_is_shape = item.alpha_is_shape
