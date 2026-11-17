@@ -41,8 +41,9 @@ any other its own, but no thinner than a quarter of a pixel, the thinnest band c
 samples always meet. And it writes dotted hairlines, dashes of no length with round and
 projecting square caps along lines at 0 and 45 degrees, and subpaths of one point with
 round caps, widths 0.05 to 0.2, centred on whole pixels, half pixels and in between, opaque,
-at alpha 0.5, in Multiply and under a stretching CTM: each dot must cover between 0.03 and
-0.3 of a pixel, never disappearing between the samples.
+at alpha 0.5, in Multiply and under a stretching CTM, and the same with segments a tenth of
+a pixel long, subpaths and dashes, with each cap: each dot must cover between 0.03 and 0.3
+of a pixel, never disappearing between the samples.
 
 uv run --all-packages python scripts/check_strokes.py
 """
@@ -1129,7 +1130,9 @@ class Dots:
     `points`, subpaths of one point; a line width of `width`, caps `cap`, under `ctm`, at a
     constant alpha `alpha` or in the blend mode `blend`. A dot of round caps is a disc, of
     projecting square caps a square along the path; one of non-zero width never disappears
-    (ISO 32000-2 8.4.3.6, 8.5.3.2, 10.7.4), wherever it lies on the pixel grid."""
+    (ISO 32000-2 8.4.3.6, 8.5.3.2, 10.7.4), wherever it lies on the pixel grid. With
+    `length`, each dot is instead a segment that long, a subpath or a dash of [length,
+    DOT_SPACING - length], shorter than a pixel: nor does it."""
 
     def __init__(
         self,
@@ -1139,6 +1142,7 @@ class Dots:
         *,
         degrees: float = 0.0,
         points: bool = False,
+        length: float = 0.0,
         origin: Point = (40.0, 40.0),
         ctm: Affine = IDENTITY,
         alpha: float = 1.0,
@@ -1149,6 +1153,7 @@ class Dots:
         self.cap = cap
         self.degrees = degrees
         self.points = points
+        self.length = length
         self.origin = origin
         self.ctm = ctm
         self.alpha = alpha
@@ -1174,14 +1179,18 @@ class Dots:
         body = b"q %s cm %s w %d J " % (numbers(self.ctm), numbers([self.width]), self.cap)
         if paint:
             body += b"/G0 gs "
+        radians = math.radians(self.degrees)
+        ux, uy = math.cos(radians), math.sin(radians)
         if self.points:
-            body += b"".join(b"%s m %s l " % (numbers(c), numbers(c)) for c in self.centres())
+            body += b"".join(
+                b"%s m %s l "
+                % (numbers(c), numbers((c[0] + ux * self.length, c[1] + uy * self.length)))
+                for c in self.centres()
+            )
         else:
-            radians = math.radians(self.degrees)
-            ux, uy = math.cos(radians), math.sin(radians)
             # The last dash falls half a spacing before each line's end.
             length = (DOT_ROWS - 0.5) * DOT_SPACING
-            body += b"[0 %s] 0 d " % numbers([DOT_SPACING])
+            body += b"[%s] 0 d " % numbers([self.length, DOT_SPACING - self.length])
             x0, y0 = self.origin
             for row in range(DOT_ROWS):
                 start = (x0, y0 + row * DOT_SPACING)
@@ -1246,6 +1255,32 @@ def dots() -> list[Dots]:
                         alpha=alpha,
                         blend=blend,
                     ),
+                ]
+    # Segments a tenth of a pixel long: subpaths and dashes, with each cap.
+    for width in (0.05, 0.12, 0.2):
+        for paint, alpha, blend in (
+            ("opaque", 1.0, None),
+            ("alpha 0.5", 0.5, None),
+            ("Multiply", 1.0, "Multiply"),
+        ):
+            for origin in ((40.0, 40.0), (40.5, 40.5), (40.37, 40.81)):
+                where = f"at {origin[0]:g}, {origin[1]:g}"
+                found += [
+                    Dots(
+                        f"{kind} 0.1 long, cap {cap}, {degrees:g} degrees, {paint}, width {width},"
+                        f" {where}",
+                        width,
+                        cap,
+                        degrees=degrees,
+                        points=points,
+                        length=0.1,
+                        origin=origin,
+                        alpha=alpha,
+                        blend=blend,
+                    )
+                    for kind, points in (("segments", True), ("dashes", False))
+                    for cap in (BUTT, ROUND, SQUARE)
+                    for degrees in (0.0, 45.0)
                 ]
     # Under a stroke matrix, where the dot is an ellipse on the page.
     stretch: Affine = (1.0, 0.0, 0.0, 0.5, 0.0, 0.0)

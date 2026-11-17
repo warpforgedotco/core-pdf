@@ -74,6 +74,7 @@ lazy from core_pdf_cythonized._shading import shading_blend, shading_t, shading_
 lazy from core_pdf_cythonized._source_plane import accumulate_source_plane
 lazy from core_pdf_cythonized._stroke import (
     axis_aligned_polylines,
+    short_subpaths,
     stroke_coverage,
     stroke_polylines,
 )
@@ -172,6 +173,7 @@ __all__ = (
     "shading_values",
     "signed_area_coverage",
     "axis_aligned_polylines",
+    "short_subpaths",
     "stroke_coverage",
     "stroke_polylines",
     "stroke_segment_samples",

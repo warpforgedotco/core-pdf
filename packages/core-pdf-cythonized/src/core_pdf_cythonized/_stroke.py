@@ -26,7 +26,7 @@ from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rint
 from cython.cimports.libc.stdlib import calloc, free, malloc
 from cython.cimports.libc.string import memcpy, memset
 
-__all__ = ("axis_aligned_polylines", "stroke_coverage", "stroke_polylines")
+__all__ = ("axis_aligned_polylines", "short_subpaths", "stroke_coverage", "stroke_polylines")
 
 
 Paint = cython.struct(
@@ -1433,6 +1433,50 @@ def cap(
     return polygon(p, w, calls, xs, ys, 4)
 
 
+# A subpath shorter than this, in device pixels, may fall between the samples whatever
+# its width: a segment across a thick pen with butt caps is a bar as thin as it is long.
+SHORT_PIXELS = cython.declare(cython.double, 1.0)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def short_span(
+    xs: cython.p_const_double,
+    ys: cython.p_const_double,
+    start: cython.Py_ssize_t,
+    end: cython.Py_ssize_t,
+    closed: cython.bint,
+    scale: cython.double,
+    forward: cython.p_const_double,
+) -> cython.bint:
+    """Whether the subpath of the points start to end, closed or not, has a segment of some
+    length but is shorter, all its segments together and mapped by forward (a, b, c, d) or
+    by nothing to the page, than SHORT_PIXELS device pixels."""
+    index: cython.Py_ssize_t
+    following: cython.Py_ssize_t
+    dx: cython.double
+    dy: cython.double
+    page_x: cython.double
+    page_y: cython.double
+    total: cython.double = 0.0
+    last: cython.Py_ssize_t = end if closed else end - 1
+    limit: cython.double = SHORT_PIXELS / scale
+    for index in range(start, last):
+        following = index + 1 if index + 1 < end else start
+        dx = xs[following] - xs[index]
+        dy = ys[following] - ys[index]
+        if forward != cython.NULL:
+            page_x = forward[0] * dx + forward[2] * dy
+            page_y = forward[1] * dx + forward[3] * dy
+            dx = page_x
+            dy = page_y
+        total += sqrt(dx * dx + dy * dy)
+        if not total < limit:
+            return False
+    return total > 0.0
+
+
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
@@ -1538,21 +1582,60 @@ def walk_range(
         else:
             cap(p, w, calls, x0, y0, -first_x, -first_y)
             cap(p, w, calls, x1, y1, last_x, last_y)
+        if (
+            w.cover != cython.NULL
+            and short_span(
+                w.xs,
+                w.ys,
+                start,
+                end,
+                closed,
+                p.scale,
+                w.cover.forward if w.cover.transformed else cython.NULL,
+            )
+            # A subpath shorter than a pixel covers, as a dot does, the sample nearest the
+            # middle of its points too, so that it never disappears (10.7.4).
+            and cover_nearest(p, w.cover, middle(w.xs, start, end), middle(w.ys, start, end)) < 0
+        ):
+            with cython.gil:
+                failed(p, calls)
     return 0
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def middle(
+    values: cython.p_const_double, start: cython.Py_ssize_t, end: cython.Py_ssize_t
+) -> cython.double:
+    """The middle of the least and the greatest of values start to end."""
+    low: cython.double = values[start]
+    high: cython.double = values[start]
+    index: cython.Py_ssize_t
+    for index in range(start + 1, end):
+        low = py_min(low, values[index])
+        high = py_max(high, values[index])
+    return (low + high) * 0.5
 
 
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def in_pieces(
-    w: cython.pointer[Walk], first: cython.Py_ssize_t, last: cython.Py_ssize_t, opaque: cython.bint
+    w: cython.pointer[Walk],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+    opaque: cython.bint,
+    scale: cython.double,
 ) -> cython.bint:
     """Whether painting the stroke of subpaths first to last piece by piece paints what
     painting it once would: it is one segment with butt caps, or, opaque, its pieces only
     overlap,
     every segment running along an axis and every corner a disc or the square around it,
     with no miter or bevel polygon meeting a segment's end along an edge, where two partial
-    coverages painted in turn leave a lighter seam."""
+    coverages painted in turn leave a lighter seam; and none of its subpaths is shorter
+    than SHORT_PIXELS, which paint_once keeps from disappearing."""
     k: cython.Py_ssize_t
     index: cython.Py_ssize_t
     start: cython.Py_ssize_t
@@ -1564,6 +1647,9 @@ def in_pieces(
         end = w.bounds[3 * k + 1]
         if end - start < 2:
             continue
+        if short_span(w.xs, w.ys, start, end, w.bounds[3 * k + 2], scale, cython.NULL):
+            # paint_once covers the sample nearest it.
+            return False
         for index in range(start, end - 1):
             if w.xs[index] == w.xs[index + 1] and w.ys[index] == w.ys[index + 1]:
                 continue
@@ -1723,7 +1809,7 @@ def walk_once(
     result: cython.int = 0
     for group in range(groups):
         last = ends[group]
-        if in_pieces(w, first, last, p.alpha >= 255):
+        if in_pieces(w, first, last, p.alpha >= 255, p.scale):
             result = walk_range(p, w, calls, first, last)
         else:
             result = paint_once(p, w, calls, first, last, buffer, capacity)
@@ -2029,6 +2115,38 @@ def stroke_coverage(
         free(c.masks)
         free(bounds)
     return covered
+
+
+def short_subpaths(
+    xs: cython.const[cython.double][::1],
+    ys: cython.const[cython.double][::1],
+    spans: list,
+    outline: cython.bint,
+    scale: cython.double,
+) -> bool:
+    """Whether any of the subpaths, in page space, is shorter than a device pixel, scale of
+    them to a unit, but not of no length: one that may fall between the samples, which
+    stroke_coverage keeps from disappearing."""
+    k: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    for k in range(len(spans)):
+        start, end, flag = spans[k]
+        if start < 0 or end > xs.shape[0] or end > ys.shape[0] or end < start:
+            raise ValueError("span runs past the points")
+        if end - start < 2:
+            continue
+        if short_span(
+            cython.address(xs[0]),
+            cython.address(ys[0]),
+            start,
+            end,
+            outline or flag,
+            scale,
+            cython.NULL,
+        ):
+            return True
+    return False
 
 
 def axis_aligned_polylines(
