@@ -78,6 +78,11 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.3 | sh paints in the current user space | ISO 32000-2 8.7.4.2 (Shading operator) | `core_pdf.impl.capture.image_painting.paint_shading` |
 | PDF 1.3 | shadings of types 4 to 7 are streams, whose data holds their geometry | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_shading` |
 | PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
+| PDF 1.4 | BC defaults to the space's black | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.default_backdrop_color` |
+| PDF 1.4 | a CIE-based group's luminosity is the CIE 1931 Y of its colour | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.graphics.device_profiles.cmyk_bytes_luminance` |
+| PDF 1.4 | a CIE-based group's luminosity is the CIE 1931 Y of its colour | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.render.raster_spaces.colorimetric_luminosity_channel` |
+| PDF 1.4 | a CIE-based space's luminosity is Y | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.spec.s_11_transparency.soft_masks.colorimetric_luminosity` |
+| PDF 1.4 | a colour not in its group's colour space converts to it | ISO 32000-2 11.7.2 (Colour spaces for transparency groups) | `core_pdf.impl.graphics.device_profiles.convert_cmyk_words` |
 | PDF 1.4 | a group's CS naming a device space is remapped through the default spaces | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_07_content.interpreter.group_color_space` |
 | PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a soft-mask image's own Interpolate smooths the mask, not the base image's | ISO 32000-2 11.6.5.2 (Soft-mask images) | `core_pdf.impl.render.raster_images.soft_mask_interpolates` |
@@ -314,13 +319,18 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend`: the standard non-separable blend modes
 - 11.3.5.3 (Non-separable blend modes) `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend`: non-separable blending in gray and CMYK
 - 11.4.7 (Page group) `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space`: the page group's blending colour space
+- 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.graphics.device_profiles.cmyk_bytes_luminance`: a CIE-based group's luminosity is the CIE 1931 Y of its colour
+- 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.render.raster_spaces.colorimetric_luminosity_channel`: a CIE-based group's luminosity is the CIE 1931 Y of its colour
+- 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.colorimetric_luminosity`: a CIE-based space's luminosity is Y
 - 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.device_luminosity`: the luminosity of a device colour
 - 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_color`: the colour a luminosity mask is taken from
 - 11.6.3 (Specifying blending colour space and blend mode) `core_pdf.impl.spec.s_11_transparency.blend.first_recognized_blend_mode`: an array of blend modes selects the first one recognized
+- 11.6.5.1 (Soft-mask dictionaries) `core_pdf.impl.spec.s_11_transparency.soft_masks.default_backdrop_color`: BC defaults to the space's black
 - 11.6.5.1 (Soft-mask dictionaries) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value`: a luminosity mask outside its group
 - 11.6.5.2 (Soft-mask images) `core_pdf.impl.render.raster_images.soft_mask_interpolates`: a soft-mask image's own Interpolate smooths the mask, not the base image's
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_07_content.interpreter.group_color_space`: a group's CS naming a device space is remapped through the default spaces
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
+- 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.graphics.device_profiles.convert_cmyk_words`: a colour not in its group's colour space converts to it
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: AF, an object's associated files

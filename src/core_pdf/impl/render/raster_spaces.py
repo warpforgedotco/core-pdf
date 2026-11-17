@@ -18,9 +18,10 @@ When the group ends, its colour is converted to its parent's space and the group
 as any other.
 
 Colours enter a space as they reach the raster. In a CMYK group a colour that comes down to
-CMYK keeps that CMYK: a DeviceCMYK or ICCBased CMYK colour or image as it is, and a
-Separation, DeviceN or Indexed colour through its tint transform or lookup, which capture
-applies inside a CMYK group instead of converting to sRGB (capture.paint_sources). A gray
+CMYK keeps that CMYK: a DeviceCMYK colour or image as it is, the group's own CMYK (11.7.2),
+an ICCBased CMYK one converted from its profile to the group's unless the two are the same,
+and a Separation, DeviceN or Indexed colour through its tint transform or lookup, which
+capture applies inside a CMYK group instead of converting to sRGB (capture.paint_sources). A gray
 level becomes black (10.4.2.3), and anything else -- the sRGB capture gives every other
 colour, and other decoded images -- goes through the group's CMYK profile. In a gray group
 every colour becomes the gray level of its sRGB (10.4.2.2). A CMYK group's colour converts
@@ -32,6 +33,7 @@ bytes inside a DeviceCMYK group as outside one.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -39,6 +41,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.base.geometry import clamp01
 from core_pdf.impl.graphics.device_profiles import (
+    cmyk_bytes_luminance,
     cmyk_bytes_to_srgb,
     component_byte,
     srgb_bytes_to_cmyk,
@@ -53,8 +56,10 @@ from core_pdf.impl.render.model import (
     RasterGroup,
     SpaceMode,
 )
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace, group_blending_space
+lazy from core_pdf.impl.graphics.image_samples import d50_xyz_to_srgb_matrix
 lazy from core_pdf_cythonized import luminosity_channel
 
 if TYPE_CHECKING:
@@ -187,7 +192,7 @@ def space_samples(
     key = (id(source), len(rgb))
     cached = self.space_images.get(key)
     if cached is None or cached[0] is not source:
-        native = decode_cmyk_samples(source)
+        native = decode_cmyk_samples(source, self.space_profile)
         cmyk = (
             native.reshape(-1, 4)
             if native is not None and native.size == len(rgb) * 4
@@ -270,10 +275,14 @@ def luminosity_mask_channel(
     in its blending space over a fully opaque backdrop of the BC colour, a raster of the
     parent's size for each pass of the space, so outside the group's bounding box the BC
     colour stays; and each pixel's colour, C = (1 - ag) C0 + ag Cg, becomes its
-    luminosity."""
+    luminosity. A CIE-based gray or RGB group composites in sRGB, which every colour painted
+    into it converts to colorimetrically, and an ICCBased CMYK one in its profile's CMYK;
+    the luminosity of either is the colour's CIE 1931 Y."""
     space = mask.blending_space
     assert space is not None
     profile = mask.blending_profile if space == "DeviceCMYK" else None
+    if mask.colorimetric and space == "DeviceGray":
+        space = "DeviceRGB"
     views: list[UInt8Array] = []
     for mode in SPACE_PASSES[space]:
         nested, view = self.blank_sibling()
@@ -283,12 +292,57 @@ def luminosity_mask_channel(
         view.reshape(-1).view(numpy.uint32).fill(pixel[0])
         nested.paint_items(items, translation=mask.offset)
         views.append(view)
+    if mask.colorimetric:
+        return colorimetric_luminosity_channel(views, profile, mask.transfer is not None)
     return luminosity_channel(
         views[0],
         views[1] if len(views) > 1 else None,
         LUMINOSITY_SPACES[space],
         mask.transfer is not None,
     )
+
+
+@cache
+def srgb_luminance_tables() -> numpy.ndarray[Any, numpy.dtype[numpy.float64]]:
+    """For each sRGB byte of each of red, green and blue, (3, 256), its share of the Y of
+    the colour under the D50 white of the PCS: the byte linearized, times the Y row of the
+    linear sRGB to D50 XYZ matrix, the inverse of the one sRGB is found through
+    (image_samples.d50_xyz_to_srgb_matrix)."""
+    encoded = numpy.arange(256, dtype=numpy.float64) / 255.0
+    linear = numpy.where(encoded <= 0.04045, encoded / 12.92, ((encoded + 0.055) / 1.055) ** 2.4)
+    row = numpy.linalg.inv(d50_xyz_to_srgb_matrix().astype(numpy.float64))[1]
+    return row[:, None] * linear[None, :]
+
+
+@cites(
+    "ISO 32000-2",
+    "11.5.3",
+    introduced="1.4",
+    rule="a CIE-based group's luminosity is the CIE 1931 Y of its colour",
+)
+def colorimetric_luminosity_channel(
+    views: list[UInt8Array], profile: bytes | None, presence: bool
+) -> tuple[UInt8Array, Any]:
+    """Each pixel's luminosity as a byte, the CIE 1931 Y of its colour relative to white,
+    and with presence, which bytes occur: of an sRGB raster (one view), or of the CMYK of
+    profile that a CMYK group's two passes hold (Y through the profile)."""
+    first = views[0]
+    height, width = first.shape[:2]
+    if len(views) == 1:
+        red, green, blue = srgb_luminance_tables()
+        luminance = red[first[..., 0]]
+        luminance += green[first[..., 1]]
+        luminance += blue[first[..., 2]]
+    else:
+        cmyk = numpy.empty((height, width, 4), dtype=numpy.uint8)
+        numpy.subtract(255, first[..., :3], out=cmyk[..., :3])
+        numpy.subtract(255, views[1][..., 0], out=cmyk[..., 3])
+        luminance = cmyk_bytes_luminance(cmyk.reshape(-1, 4), profile).reshape(height, width)
+    luminance *= 255.0
+    numpy.rint(luminance, out=luminance)
+    channel = numpy.clip(luminance, 0.0, 255.0, out=luminance).astype(numpy.uint8)
+    present = numpy.bincount(channel.reshape(-1), minlength=256) > 0 if presence else None
+    return channel, present
 
 
 def convert_group_space(

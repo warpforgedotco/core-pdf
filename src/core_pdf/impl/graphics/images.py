@@ -42,6 +42,7 @@ from core_pdf.impl.spec.s_08_graphics.image_spec import (
     image_smask_in_data,
 )
 from core_pdf.impl.spec.standards import SemanticContext
+lazy from core_pdf.impl.graphics.device_profiles import convert_cmyk_bytes
 lazy from core_pdf_cythonized import interleave_soft_mask
 
 
@@ -562,11 +563,15 @@ def prepare_image(source: ImageSource) -> PreparedImage | None:
     return PreparedImage(apply_soft_mask(raster, soft_mask), soft_mask=soft_mask)
 
 
-def decode_cmyk_samples(source: ImageSource) -> numpy.ndarray[Any, Any] | None:
-    """An 8-bit CMYK image's samples, (height, width, 4), as its colour space holds them
-    (DeviceCMYK, or an ICCBased space of four components), not converted to sRGB: the colour
-    a CMYK blending space takes them in. None for any other image, and for one whose samples
-    a Decode array, a colour key mask or a matte would change."""
+def decode_cmyk_samples(
+    source: ImageSource, profile: bytes | None = None
+) -> numpy.ndarray[Any, Any] | None:
+    """An 8-bit CMYK image's samples, (height, width, 4), as the CMYK of a CMYK blending
+    space whose profile is profile (None: the built-in DeviceCMYK one) takes them in, not
+    converted to sRGB: a DeviceCMYK image's as they are, and an ICCBased CMYK image's
+    converted from its profile to the space's unless the two are the same (ISO 32000-2
+    11.7.2). None for any other image, and for one whose samples a Decode array, a colour
+    key mask or a matte would change."""
     dictionary = source.dictionary
     if dictionary.get("ImageMask") is True or dictionary.get("Mask") is not None:
         return None
@@ -588,10 +593,20 @@ def decode_cmyk_samples(source: ImageSource) -> numpy.ndarray[Any, Any] | None:
     if isinstance(samples, DecodedImage):
         if samples.array.dtype != numpy.uint8 or samples.array.size != width * height * 4:
             return None
-        return samples.array.reshape(height, width, 4)
-    if samples is None or len(samples) != width * height * 4:
+        native = samples.array.reshape(height, width, 4)
+    elif samples is None or len(samples) != width * height * 4:
         return None
-    return numpy.frombuffer(samples, dtype=numpy.uint8).reshape(height, width, 4)
+    else:
+        native = numpy.frombuffer(samples, dtype=numpy.uint8).reshape(height, width, 4)
+    if space.kind != "ICCBased" or space.icc_profile is None:
+        return native
+    try:
+        rendering = image_color_rendering(dictionary, source.color_rendering)
+    except ValueError:
+        rendering = source.color_rendering
+    return convert_cmyk_bytes(native, space.icc_profile, profile, rendering=rendering).reshape(
+        height, width, 4
+    )
 
 
 def decode_image(source: ImageSource) -> ImageRaster | None:

@@ -25,7 +25,10 @@ from core_pdf.impl.spec.s_07_document.annotation_appearance import (
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
-lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
+lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
+    blending_profile,
+    blending_space_of,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.document.pdf_document import PdfDocument
@@ -194,8 +197,9 @@ def capture_page_program(
         options=options,
     )
     try:
+        page_space = page.resolve_transparency_group_space()
         state.set_capture_cmyk(
-            blending_space_of(page.resolve_transparency_group_space()) == "DeviceCMYK"
+            blending_space_of(page_space) == "DeviceCMYK", blending_profile(page_space)
         )
         page.consume_contents(state)
         state.run_accumulator.flush()

@@ -10,6 +10,7 @@ lazy import numpy
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS, ColorSpace, parse_color_space
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 lazy from core_pdf.impl.base.arrays import ByteBuffer, uint8_view
+lazy from core_pdf.impl.graphics.device_profiles import convert_cmyk_words
 lazy from core_pdf.impl.graphics.image_samples import (
     ImageHeader,
     convert_components,
@@ -45,12 +46,18 @@ def color_operands_to_srgb(
 
 
 def color_operands_to_cmyk(
-    spec: ColorSpace, components: Sequence[float]
+    spec: ColorSpace,
+    components: Sequence[float],
+    profile: bytes | None = None,
+    *,
+    rendering: ColorRendering = DEFAULT_COLOR_RENDERING,
 ) -> tuple[float, float, float, float] | None:
     """A colour's CMYK, for a colour space that comes down to CMYK -- DeviceCMYK, an
     ICCBased CMYK space, and a Separation, DeviceN or Indexed space whose alternate or base
-    does -- or None: the colour a CMYK blending space takes it in, without passing through
-    sRGB."""
+    does -- or None: the colour a CMYK blending space whose profile is profile (None: the
+    built-in DeviceCMYK one) takes it in, without passing through sRGB. DeviceCMYK keeps its
+    components, being the blending space's own CMYK (ISO 32000-2 11.7.2); an ICCBased CMYK
+    colour converts from its profile to the blending space's unless they are the same."""
     values = [float(value) for value in components]
     for _ in range(8):
         kind = spec.kind
@@ -58,6 +65,15 @@ def color_operands_to_cmyk(
             if len(values) != 4:
                 return None
             cyan, magenta, yellow, black = (min(1.0, max(0.0, value)) for value in values)
+            if kind == "ICCBased" and spec.icc_profile is not None:
+                words = numpy.rint(
+                    numpy.array([[cyan, magenta, yellow, black]], dtype=numpy.float64) * 65535.0
+                ).astype(numpy.uint16)
+                converted = convert_cmyk_words(
+                    words, spec.icc_profile, profile, rendering=rendering
+                )
+                if converted is not words:
+                    cyan, magenta, yellow, black = (float(word) / 65535.0 for word in converted[0])
             return cyan, magenta, yellow, black
         if kind in {"Separation", "DeviceN"} and spec.alternate is not None:
             try:

@@ -51,7 +51,7 @@ lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_profile,
     blending_space_of,
 )
-lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
+lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, colorimetric_luminosity
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
 if TYPE_CHECKING:
@@ -327,10 +327,12 @@ class TextState(RecoveringTextState):
     scale_cache: tuple[Matrix, float, StrokeMatrix | None] | None
     shared_glyph_paint: GlyphPaint | None
     # Whether paint lands in a DeviceCMYK blending space (the page group's, or an isolated
-    # group's), where a colour that comes down to CMYK is captured as that CMYK; and the
-    # value to restore when each group that changed it ends.
+    # group's), where a colour that comes down to CMYK is captured as that CMYK, and the
+    # space's ICC profile (None: DeviceCMYK, the built-in profile) the CMYK is of; and the
+    # values to restore when each group that changed them ends.
     capture_cmyk: bool
-    capture_cmyk_frames: dict[int, bool]
+    capture_cmyk_profile: bytes | None
+    capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
@@ -375,6 +377,7 @@ class TextState(RecoveringTextState):
         self.last_fill_color: CaptureColorMemo | None = None
         self.last_stroke_color: CaptureColorMemo | None = None
         self.capture_cmyk = False
+        self.capture_cmyk_profile = None
         self.capture_cmyk_frames = {}
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
@@ -537,8 +540,11 @@ class TextState(RecoveringTextState):
             )
             self.sequence += 1
         if frame.group_alpha is not None and frame.group_color_space is not None:
-            self.capture_cmyk_frames[id(frame)] = self.capture_cmyk
-            self.set_capture_cmyk(blending_space_of(frame.group_color_space) == "DeviceCMYK")
+            self.capture_cmyk_frames[id(frame)] = (self.capture_cmyk, self.capture_cmyk_profile)
+            self.set_capture_cmyk(
+                blending_space_of(frame.group_color_space) == "DeviceCMYK",
+                blending_profile(frame.group_color_space),
+            )
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -612,11 +618,17 @@ class TextState(RecoveringTextState):
             self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
         if id(frame) in self.capture_cmyk_frames:
-            self.set_capture_cmyk(self.capture_cmyk_frames.pop(id(frame)))
+            self.set_capture_cmyk(*self.capture_cmyk_frames.pop(id(frame)))
 
-    def set_capture_cmyk(self, cmyk: bool) -> None:
-        if cmyk is not self.capture_cmyk and self.options.render_details:
+    def set_capture_cmyk(self, cmyk: bool, profile: bytes | None = None) -> None:
+        """Capture paint from now on for a DeviceCMYK blending space (cmyk) whose CMYK is
+        that of profile (None: the built-in DeviceCMYK profile), or else for sRGB."""
+        profile = profile if cmyk else None
+        if (
+            cmyk is not self.capture_cmyk or profile is not self.capture_cmyk_profile
+        ) and self.options.render_details:
             self.capture_cmyk = cmyk
+            self.capture_cmyk_profile = profile
             self.last_fill_color = None
             self.last_stroke_color = None
             self.shared_glyph_paint = None
@@ -718,7 +730,7 @@ class TextState(RecoveringTextState):
             nested = self.nested_capture_state()
             nested.graphics = graphics
             if space is not None:
-                nested.set_capture_cmyk(space == "DeviceCMYK")
+                nested.set_capture_cmyk(space == "DeviceCMYK", blending_profile(mask.color_space))
             scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
             nested.resources = self.resources if isinstance(scope, MissingObject) else scope
             frame = nested.append_form_xobject(mask.group, 0)
@@ -737,6 +749,7 @@ class TextState(RecoveringTextState):
                     blending_space=space,
                     blending_profile=blending_profile(mask.color_space),
                     backdrop=self.soft_mask_backdrop(mask, space),
+                    colorimetric=colorimetric_luminosity(mask.color_space),
                 )
             return caches.capture_soft_masks.put_key(mask, key, captured)
         except PdfParseError, TypeError, ValueError, ArithmeticError:
@@ -755,7 +768,12 @@ class TextState(RecoveringTextState):
             return color
         converted: tuple[float, ...] | None = None
         if space == "DeviceCMYK" and spec.kind not in GRAY_RGB_KINDS:
-            converted = color_operands_to_cmyk(spec, color)
+            converted = color_operands_to_cmyk(
+                spec,
+                color,
+                blending_profile(mask.color_space),
+                rendering=self.graphics.color_rendering,
+            )
         if converted is None:
             converted = color_operands_to_srgb(
                 spec, list(color), rendering=self.graphics.color_rendering
