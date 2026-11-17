@@ -54,7 +54,7 @@ lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
 if TYPE_CHECKING:
-    from core_pdf.impl.capture.records import LayoutFormId
+    from core_pdf.impl.capture.records import LayoutFormId, StrokeMatrix
     from core_pdf.impl.document.pdf_document import PdfDocument
     from core_pdf.impl.recovery.resolver import ObjectResolver
     from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
@@ -290,7 +290,7 @@ class TextState(RecoveringTextState):
     capture_marked_entries: dict[int, MarkedContentEntry]
     capture_frames: dict[int, tuple[Rectangle | None, LayoutFormId, bool]]
     capture_patterns: IdentityCache[PatternPaint | None]
-    scale_cache: tuple[Matrix, float] | None
+    scale_cache: tuple[Matrix, float, StrokeMatrix | None] | None
     shared_glyph_paint: GlyphPaint | None
     # Whether paint lands in a DeviceCMYK blending space (the page group's, or an isolated
     # group's), where a colour that comes down to CMYK is captured as that CMYK; and the

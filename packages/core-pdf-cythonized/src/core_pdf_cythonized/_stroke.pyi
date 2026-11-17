@@ -32,6 +32,8 @@ def stroke_polylines(
     line_join: int,
     miter_limit: float,
     exponent: float,
+    once: bool,
+    group_ends: list[int] | None,
     on_line: Callable[[float, float, float, float], None],
     on_polygon: Callable[[tuple[float, ...]], None],
     on_square: Callable[[float, float], None],
@@ -39,3 +41,28 @@ def stroke_polylines(
     on_dot: Callable[[float, float], None],
     on_extend: Callable[[int, int, int, int], None],
 ) -> None: ...
+def stroke_coverage(
+    counts: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],
+    left: int,
+    top: int,
+    xs: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    ys: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    spans: list[tuple[int, int, bool]],
+    outline: bool,
+    squares: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    crop_x0: float,
+    crop_y1: float,
+    scale: float,
+    matrix: tuple[float, float, float, float] | None,
+    line_width: float,
+    line_cap: int,
+    line_join: int,
+    miter_limit: float,
+    exponent: float,
+) -> bool: ...
+def axis_aligned_polylines(
+    xs: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    ys: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
+    spans: list[tuple[int, int, bool]],
+    outline: bool,
+) -> bool: ...

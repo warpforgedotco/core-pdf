@@ -26,10 +26,11 @@ from core_pdf.impl.capture.records import (
     CapturedSoftMask,
     PatternPaint,
     ShadingPattern,
+    StrokeMatrix,
     TilingPattern,
 )
 from core_pdf.impl.render.blend import color_rgba, declared_blend, scale_rgba_alpha
-from core_pdf.impl.render.paths import stroke_half_width, translate_rect
+from core_pdf.impl.render.paths import stroke_reach, translate_rect
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
@@ -174,6 +175,7 @@ PATH_PAINT_FIELDS = (
     "fill_pattern",
     "stroke_pattern",
     "miter_limit",
+    "stroke_matrix",
 )
 path_paint_values = attrgetter(*PATH_PAINT_FIELDS)
 
@@ -239,6 +241,7 @@ class PathPaintItem(
     graphics_soft_mask: CapturedSoftMask | None = None
     edge_array: Any = None
     miter_limit: float = DEFAULT_MITER_LIMIT
+    stroke_matrix: StrokeMatrix | None = None
 
     @property
     def kind(self) -> str:
@@ -252,10 +255,9 @@ class PathPaintItem(
         if box is None:
             return None
         if self.paint_kind in {PathPaintKind.STROKE, PathPaintKind.FILL_STROKE}:
-            # A projecting cap's corner reaches half the line width times the square root
-            # of 2 from its end, and a miter's tip that times at most the miter limit.
-            reach = self.miter_limit if self.line_join == LineJoin.MITER else 1.0
-            pad = stroke_half_width(scale, self.line_width) * max(reach, 1.5)
+            pad = stroke_reach(
+                scale, self.line_width, self.line_join, self.miter_limit, self.stroke_matrix
+            )
             box = (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad)
         return box
 

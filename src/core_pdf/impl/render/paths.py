@@ -10,6 +10,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.base.geometry import intersect_bbox
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath
+lazy from core_pdf_cythonized import axis_aligned_polylines
 
 RASTER_KERNEL_MIN_PIXEL_AREA = 64
 RASTER_CIRCLE_MIN_PIXEL_AREA = 16
@@ -108,6 +109,61 @@ def dash_subpath(
 
 def stroke_half_width(scale: float, line_width: float) -> float:
     return max(0.5 / scale, line_width * 0.5)
+
+
+def seamless_in_pieces(path: CapturedPath, line_join: int, miter_limit: float) -> bool:
+    """Whether an opaque stroke blending Normal paints, piece by piece, the pixels it
+    would as one shape, and so with other such strokes as one path. Its pieces then only
+    overlap: every segment runs along an axis, and each corner is a disc or the square
+    around it, never a miter or bevel polygon meeting a segment's end along an edge, where
+    two partial coverages painted in turn leave a lighter seam."""
+    # Bevel joins are 2, miter joins 0, and a right angle's miter is a bevel below a miter
+    # limit of the square root of 2 (ISO 32000-2 8.4.3.4, 8.4.3.5).
+    if line_join == 2 or (line_join == 0 and float(miter_limit) ** 2 < 2.0):
+        return False
+    deferred = path.deferred_columns()
+    if deferred is not None:
+        xs, ys, spans, outline = deferred
+        return axis_aligned_polylines(xs, ys, spans, outline)
+    for subpath in path.subpaths:
+        points = subpath.points
+        ends = [*points, points[0]] if subpath.closed and points else points
+        for (x0, y0), (x1, y1) in zip(ends, ends[1:]):
+            if x0 != x1 and y0 != y1:
+                return False
+    return True
+
+
+def singular_values(matrix: tuple[float, float, float, float]) -> tuple[float, float]:
+    """The least and the most the linear map (a, b, c, d) stretches a length by."""
+    a, b, c, d = matrix
+    total = a * a + b * b + c * c + d * d
+    determinant = a * d - b * c
+    largest = (
+        (total + max(0.0, total * total - 4.0 * determinant * determinant) ** 0.5) * 0.5
+    ) ** 0.5
+    return (abs(determinant) / largest if largest else 0.0), largest
+
+
+def stroke_reach(
+    scale: float,
+    line_width: float,
+    line_join: int,
+    miter_limit: float,
+    matrix: tuple[float, float, float, float] | None,
+) -> float:
+    """How far a stroke reaches from its path on the page: half the line width, out to a
+    projecting cap's corner (the square root of 2 times that) or a miter's tip (at most the
+    miter limit times), stretched by matrix, its map from stroke space, by at most its
+    larger singular value. Under matrix, the pen keeps a device pixel wide as stroke_coverage
+    widens it."""
+    # A miter join is 0 (ISO 32000-2 8.4.3.4).
+    reach = miter_limit if line_join == 0 else 1.0
+    if matrix is None:
+        return stroke_half_width(scale, line_width) * max(reach, 1.5)
+    smallest, largest = singular_values(matrix)
+    half = max(0.5 / (scale * smallest), line_width * 0.5) if smallest else line_width * 0.5
+    return half * largest * max(reach, 1.5)
 
 
 def rasterize_unclipped_line_normal(

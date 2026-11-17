@@ -33,8 +33,10 @@ from core_pdf.impl.capture.records import (
     CapturedDrawing,
     CapturedPath,
     PaintedDrawingKind,
+    StrokeMatrix,
     marker_drawing,
 )
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content.model import PdfPath
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
@@ -42,6 +44,7 @@ lazy from core_pdf_cythonized import flatten_path_commands
 
 if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState
+    from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
 
 
 def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_rule: str) -> None:
@@ -71,14 +74,18 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
 
     ctm = graphics.ctm
     line_width = max(0.0, graphics.line_width)
-    if line_width != 0:
-        # graphics_scale, with its cache check inlined.
+    stroke_matrix = None
+    if strokes:
+        # graphics_scale and stroke_space, with their cache check inlined.
         scale_cache = self.scale_cache
-        line_width *= (
-            scale_cache[1]
-            if scale_cache is not None and scale_cache[0] is ctm
-            else self.graphics_scale()
-        )
+        if scale_cache is None or scale_cache[0] is not ctm:
+            self.graphics_scale()
+            scale_cache = self.scale_cache
+            assert scale_cache is not None
+        stroke_matrix = scale_cache[2]
+        line_width = line_width * scale_cache[1] if line_width != 0 else 0.0
+    elif line_width != 0:
+        line_width *= self.graphics_scale()
     else:
         line_width = 0.0
     xs, ys, spans, bbox, has_segments = flatten_path_commands(
@@ -169,6 +176,7 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 DRAWING_GROUP_COLOR_SPACE,
                 DRAWING_SHADING_MATRIX,
                 graphics.miter_limit,
+                stroke_matrix,
             )
         )
     )
@@ -236,8 +244,32 @@ def graphics_scale(self: TextState) -> float:
         scale = x_scale
     else:
         scale = (x_scale + y_scale) * 0.5
-    self.scale_cache = (ctm, scale)
+    self.scale_cache = (ctm, scale, stroke_space(ctm, scale))
     return scale
+
+
+@cites(
+    "ISO 32000-2",
+    "8.4.3.2",
+    introduced="1.0",
+    rule="the line width is measured in user space, so the pen is an ellipse on the page",
+)
+def stroke_space(ctm: Matrix, scale: float) -> StrokeMatrix | None:
+    """The map from stroke space to page space for a stroke under ctm: ctm's linear part
+    over scale, the factor graphics_scale scales the line width and dashes by. Stroke space
+    is user space scaled by scale, so the line width and dashes, scaled, are measured in it
+    and the pen is a circle there. None when ctm keeps circles circles (a rotation,
+    reflection and uniform scale), as stroking on the page is then the same, or when ctm is
+    singular."""
+    a, b, c, d = ctm.a, ctm.b, ctm.c, ctm.d
+    tolerance = (abs(a) + abs(b) + abs(c) + abs(d)) * 1e-9
+    if abs(a - d) <= tolerance and abs(b + c) <= tolerance:
+        return None
+    if abs(a + d) <= tolerance and abs(b - c) <= tolerance:
+        return None
+    if a * d - b * c == 0.0 or not scale:
+        return None
+    return (a / scale, b / scale, c / scale, d / scale)
 
 
 def transformed_line_width(self: TextState) -> float:

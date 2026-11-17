@@ -36,8 +36,11 @@ Features a version introduced, which core reads whatever version a document decl
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
 | PDF 1.0 | a miter past the miter limit is a bevel | ISO 32000-2 8.4.3.5 (Miter limit) | `core_pdf.impl.render.raster_strokes.stroke_path` |
+| PDF 1.0 | a stroke is one shape: its segments, joins, caps and dashes are painted once | ISO 32000-2 8.5.3.2 (Stroking) | `core_pdf.impl.render.raster_strokes.stroke_once` |
 | PDF 1.0 | butt, round and projecting square caps | ISO 32000-2 8.4.3.3 (Line cap style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
+| PDF 1.0 | the line width and dashes are measured in user space, where the pen is a circle | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.raster_strokes.stroke_once` |
+| PDF 1.0 | the line width is measured in user space, so the pen is an ellipse on the page | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.capture.path_painting.stroke_space` |
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
@@ -233,10 +236,13 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters`: an embedded file's Subtype and Params
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream`: the embedded file streams of EF
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
+- 8.4.3.2 (Line width) `core_pdf.impl.capture.path_painting.stroke_space`: the line width is measured in user space, so the pen is an ellipse on the page
+- 8.4.3.2 (Line width) `core_pdf.impl.render.raster_strokes.stroke_once`: the line width and dashes are measured in user space, where the pen is a circle
 - 8.4.3.3 (Line cap style) `core_pdf.impl.render.raster_strokes.stroke_path`: butt, round and projecting square caps
 - 8.4.3.4 (Line join style) `core_pdf.impl.render.raster_strokes.stroke_path`: miter, round and bevel joins
 - 8.4.3.5 (Miter limit) `core_pdf.impl.render.raster_strokes.stroke_path`: a miter past the miter limit is a bevel
 - 8.4.5 (Graphics state parameter dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style`: LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash
+- 8.5.3.2 (Stroking) `core_pdf.impl.render.raster_strokes.stroke_once`: a stroke is one shape: its segments, joins, caps and dashes are painted once
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space

@@ -263,12 +263,62 @@ class CapturedPath:
         path._rect = None
         return path
 
+    def part_ends(self) -> list[int] | None:
+        """For a path coalesced from several, the number of subpaths up to the end of
+        each; None for any other."""
+        parts = self._parts
+        if parts is None or len(parts) < 2:
+            return None
+        ends: list[int] = []
+        total = 0
+        for part in parts:
+            total += len(part[2])
+            ends.append(total)
+        return ends
+
+    def split_parts(self) -> list[CapturedPath]:
+        """The paths a coalesced path was made of, or the path itself."""
+        parts = self._parts
+        if parts is None or len(parts) < 2:
+            return [self]
+        paths: list[CapturedPath] = []
+        for part in parts:
+            path = CapturedPath.__new__(CapturedPath)
+            path._deferred = part
+            path._parts = None
+            path._summary = None
+            path._rect = None
+            paths.append(path)
+        return paths
+
     def flattened_parts(self) -> list[DeferredPoints] | None:
+        """The path as the parts of a coalesced path: each stroke in it its own, so that
+        stroke_path can paint them apart."""
         if self._parts is not None:
             return self._parts
         deferred = self._deferred
-        if deferred is None or deferred[3]:
-            return None
+        if deferred is None:
+            xs: list[float] = []
+            ys: list[float] = []
+            spans: list[tuple[int, int, bool]] = []
+            for subpath in self.subpaths:
+                start = len(xs)
+                for x, y in subpath.points:
+                    xs.append(x)
+                    ys.append(y)
+                spans.append((start, len(xs), bool(subpath.closed)))
+            return [
+                (
+                    numpy.asarray(xs, dtype=numpy.float64),
+                    numpy.asarray(ys, dtype=numpy.float64),
+                    spans,
+                    False,
+                )
+            ]
+        if deferred[3]:
+            # An outline's subpaths are all closed.
+            column_x, column_y, spans, _ = deferred
+            return [(column_x, column_y, [(start, end, True) for start, end, _ in spans], False)]
         return [deferred]
 
     def subpath_count(self) -> int:
@@ -293,7 +343,9 @@ class CapturedPath:
                     for start, end, flag in spans
                 ]
                 self.subpaths = subpaths
+                # Its subpaths, which a caller may change, are the path from now on.
                 self._deferred = None
+                self._parts = None
                 self._summary = None
                 return subpaths
         raise AttributeError(name)
@@ -302,6 +354,15 @@ class CapturedPath:
         return CapturedPath([subpath.transformed(matrix) for subpath in self.subpaths])
 
     def translated(self, tx: float, ty: float) -> CapturedPath:
+        parts = self._parts
+        if parts is not None:
+            # Keeping the paths a coalesced path was made of apart.
+            path = CapturedPath.__new__(CapturedPath)
+            path._deferred = None
+            path._parts = [(x + tx, y + ty, spans, outline) for x, y, spans, outline in parts]
+            path._summary = None
+            path._rect = None
+            return path
         return CapturedPath([subpath.translated(tx, ty) for subpath in self.subpaths])
 
     def clear(self) -> None:
@@ -365,7 +426,7 @@ class CapturedPath:
 
     def deferred_columns(self) -> DeferredPoints | None:
         parts = self._parts
-        if parts is not None:
+        if parts is not None and self._deferred is None:
             spans: list[tuple[int, int, bool]] = []
             offset = 0
             for part_x, _, part_spans, _ in parts:
@@ -379,7 +440,7 @@ class CapturedPath:
                 spans,
                 False,
             )
-            self._parts = None
+            # The parts stay, for part_ends and split_parts.
         return self._deferred
 
     def fill_edge_array(self) -> numpy.ndarray[Any, numpy.dtype[numpy.float64]] | None:
@@ -397,6 +458,8 @@ class CapturedPath:
 
 
 DrawingItem = tuple[str, tuple[tuple[float, float], ...]]
+# The linear part (a, b, c, d) of a map to page space.
+StrokeMatrix = tuple[float, float, float, float]
 EMPTY_DRAWING_ITEMS: tuple[DrawingItem, ...] = ()
 
 
@@ -457,6 +520,10 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     # for the identity.
     shading_matrix: Matrix | None = None
     miter_limit: float = 10.0
+    # A stroke's map from stroke space, where its line width and dashes are measured and
+    # its pen is a circle, to page space (path_painting.stroke_space), or None when that
+    # is the identity: the CTM scales evenly.
+    stroke_matrix: StrokeMatrix | None = None
 
     def __post_init__(self) -> None:
         if not self.items:

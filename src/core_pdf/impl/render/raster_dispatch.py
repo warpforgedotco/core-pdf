@@ -29,11 +29,7 @@ from core_pdf.impl.render.model import (
 )
 from core_pdf.impl.render.raster_images import blit_image
 from core_pdf.impl.render.raster_spaces import group_members
-from core_pdf.impl.render.raster_support import (
-    EMPTY_PIXEL_BOX,
-    paint_stroke_once,
-    resolve_soft_mask,
-)
+from core_pdf.impl.render.raster_support import EMPTY_PIXEL_BOX, resolve_soft_mask
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 
 if TYPE_CHECKING:
@@ -243,19 +239,6 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
         self.set_shape_alpha(stroke_rgba[3] / 255.0)
         if item.stroke_pattern is not None and self.paint_stroke_pattern(item, blend_mode):
             return
-        if self.group_source_shape is not None:
-            paint_stroke_once(
-                self,
-                path,
-                item.line_width,
-                stroke_rgba,
-                item.dash_pattern,
-                blend_mode,
-                item.line_cap,
-                item.line_join,
-                item.miter_limit,
-            )
-            return
         self.stroke_path(
             path,
             item.line_width,
@@ -265,6 +248,7 @@ def paint_typed_path(self: RasterTarget, item: PathPaintItem) -> None:
             item.line_cap,
             item.line_join,
             item.miter_limit,
+            item.stroke_matrix,
         )
 
 
