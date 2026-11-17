@@ -98,6 +98,10 @@ class GlyphStyle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     # The captured patterns text paints with in place of fill and stroke_color (9.3.6).
     fill_pattern: object | None = None
     stroke_pattern: object | None = None
+    # A stroked glyph's miter limit, and its stroke matrix: the map from stroke space to
+    # page space, which the CTM alone sets, as the line width is in user space (9.3.6).
+    miter_limit: float = 10.0
+    stroke_matrix: tuple[float, float, float, float] | None = None
 
 
 STYLE_FIELDS: tuple[str, ...] = GlyphStyle.__fields__

@@ -43,6 +43,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.0 | an interpolated stencil mask smooths the mask's edges, not the painted colour | ISO 32000-2 8.9.6.2 (Stencil masking) | `core_pdf.impl.render.raster_images.image_interpolates` |
 | PDF 1.0 | butt, round and projecting square caps | ISO 32000-2 8.4.3.3 (Line cap style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
+| PDF 1.0 | stroked text takes the line width and the other stroke parameters in user space | ISO 32000-2 9.3.6 (Text rendering mode) | `core_pdf.impl.capture.text_painting.glyph_paint` |
 | PDF 1.0 | the line width and dashes are measured in user space, where the pen is a circle | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.raster_strokes.stroke_once` |
 | PDF 1.0 | the line width is measured in user space, so the pen is an ellipse on the page | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.capture.path_painting.stroke_space` |
 | PDF 1.0 | where colour is set elsewhere, only image masks of the images are painted | ISO 32000-2 8.6.8 (Colour operators) | `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask` |
@@ -292,6 +293,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points`: a Coons patch's inner control points follow from its boundary curves
 - 8.9.5.3 (Image interpolation) `core_pdf.impl.render.raster_images.image_interpolates`: Interpolate asks for an image drawn larger than its samples to be smoothed
 - 8.9.6.2 (Stencil masking) `core_pdf.impl.render.raster_images.image_interpolates`: an interpolated stencil mask smooths the mask's edges, not the painted colour
+- 9.3.6 (Text rendering mode) `core_pdf.impl.capture.text_painting.glyph_paint`: stroked text takes the line width and the other stroke parameters in user space
 - 9.3.6 (Text rendering mode) `core_pdf.impl.capture.text_painting.glyph_paint`: text painted with a pattern colour shows the pattern through the glyphs
 - 9.6.5.1 (General) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.standard_symbolic_font`: Table 112: an unembedded symbolic font defaults to its built-in encoding
 - 9.6.5.4 (Encodings for TrueType fonts) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.mac_os_roman_code`: without a (3,1) cmap, a glyph name maps to a (1,0) code by Mac OS Roman (Table 113)

@@ -257,6 +257,8 @@ class GlyphPaint(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     graphics_soft_mask: object | None
     fill_pattern: object | None = None
     stroke_pattern: object | None = None
+    miter_limit: float = 10.0
+    stroke_matrix: tuple[float, float, float, float] | None = None
 
 
 @dataclass(slots=True)
@@ -302,6 +304,8 @@ def glyph_style(
         paint.graphics_soft_mask,
         paint.fill_pattern,
         paint.stroke_pattern,
+        paint.miter_limit,
+        paint.stroke_matrix,
     )
 
 
