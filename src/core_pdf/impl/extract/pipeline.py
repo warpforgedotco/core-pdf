@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import replace
-from functools import cached_property
+from functools import cache, cached_property
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from core_pdf.impl.base.exceptions import ExtractionScope
@@ -21,6 +21,8 @@ from core_pdf.impl.extract.contracts import PageAnalysis, PageFrame, PageState, 
 from core_pdf.impl.extract.emit import assemble_page
 from core_pdf.impl.extract.table_detection import NATIVE_TABLES, TableDetector
 from core_pdf.impl.output.model import Annotation, Figure, FormField, Link, Page
+lazy from core_pdf.impl.spec.s_07_document.fields import VARIABLE_TEXT_FIELD_TYPES, field_quadding
+lazy from core_pdf.impl.spec.s_07_document.markup_annotations import popup_link, reply_relation
 
 if TYPE_CHECKING:
     from core_pdf.impl.base.raw_records import RawAnnotation, RawFormField
@@ -207,17 +209,29 @@ class PageExtraction:
         resolver = self.page.document.resolver
         raw_annotations = capture.annotations or ()
         resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
-        annotations = collected_records(
-            lambda: raw_annotations,
-            lambda _index, record: Annotation(
+        annotation_indexes = {
+            id(annotation): index for index, annotation in enumerate(resolved_annotation_dicts)
+        }
+
+        def annotation_record(_index: int, record: RawAnnotation) -> Annotation:
+            reply = reply_relation(record.dict, resolver.resolve, resolver.resolve_name)
+            linked = popup_link(record.dict, record.subtype, resolver.resolve)
+            linked_index = None if linked is None else annotation_indexes.get(id(linked))
+            is_popup = record.subtype == "Popup"
+            return Annotation(
                 subtype=record.subtype,
                 bbox=record.rect,
                 contents=record.contents,
                 destination=plain_pdf_value(
                     resolve_destination_references(resolver, record.dest or record.action)
                 ),
-            ),
-        )
+                in_reply_to=None if reply is None else annotation_indexes.get(id(reply[0])),
+                reply_type=None if reply is None else reply[1],
+                popup=None if is_popup else linked_index,
+                popup_parent=linked_index if is_popup else None,
+            )
+
+        annotations = collected_records(lambda: raw_annotations, annotation_record)
         links = collected_records(
             lambda: self.page.get_links(resolved_annotation_dicts),
             lambda _index, record: Link(
@@ -226,9 +240,12 @@ class PageExtraction:
         )
         source_fields = capture.fields
         fetch_fields = self.page.get_fields if source_fields is None else lambda: source_fields
-        field_records = collected_records(
-            fetch_fields,
-            lambda index, record: FormField(
+        document = self.page.document
+        # The interactive form dictionary, read once for the fields that need it.
+        acroform = cache(lambda: document.acroform)
+
+        def field_record(index: int, record: RawFormField) -> FormField:
+            return FormField(
                 name=record.name,
                 field_type=record.type,
                 value_text=record.value_text,
@@ -238,8 +255,14 @@ class PageExtraction:
                 read_only=record.is_read_only,
                 no_export=record.no_export,
                 options=record.options,
-            ),
-        )
+                alignment=(
+                    field_quadding(record.dict, acroform(), resolver.resolve)
+                    if record.type in VARIABLE_TEXT_FIELD_TYPES
+                    else None
+                ),
+            )
+
+        field_records = collected_records(fetch_fields, field_record)
         cropbox = assembled.cropbox
         with suppress(TypeError, ValueError):
             cropbox = self.page.crop_box

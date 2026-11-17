@@ -15,6 +15,7 @@ from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content.model import (
     NON_PAINTING_RENDER_MODES,
     ContentSink,
+    Expansion,
     GraphicsState,
     MarkedContentEntry,
     PatternPaint,
@@ -69,6 +70,7 @@ lazy from core_pdf.impl.spec.s_08_graphics.geometry import transform_bbox
 lazy from core_pdf.impl.spec.s_11_transparency.blend import first_recognized_blend_mode
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
 lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, parse_soft_mask
+lazy from core_pdf.impl.spec.s_14_structure.expansions import expansion_text
 lazy from core_pdf_cythonized._text_array import show_decoded, show_string, show_text_array
 
 NUMERIC_TYPES = frozenset((int, float))
@@ -740,6 +742,7 @@ class ContentInterpreter:
         tag = self.resolver.resolve_name(operands[0]) if operands else None
         layer: str | None = None
         actual_text: str | None = None
+        expansion: Expansion | None = None
         mcid: int | None = None
         if len(operands) >= 2:
             properties = operands[1]
@@ -750,9 +753,12 @@ class ContentInterpreter:
                 resolver = self.resolver
                 if tag == "Span":
                     actual_text = resolver.resolve_str(props.get("ActualText"))
+                    expansion_value = expansion_text(props, resolver.resolve_str)
+                    if expansion_value is not None:
+                        expansion = Expansion(expansion_value)
                 mcid = resolver.resolve_int(props.get("MCID"))
         self.marked_content_stack.append(
-            MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid)
+            MarkedContentEntry(layer=layer, actual_text=actual_text, mcid=mcid, expansion=expansion)
         )
 
     def op_BMC(self, operands: ContentOperands, depth: int) -> None:
@@ -1358,6 +1364,10 @@ class ContentInterpreter:
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
         self.apply_extgstate_line_style(extgstate)
+        if "Font" in extgstate:
+            self.apply_extgstate_font(extgstate["Font"])
+        if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
+            self.apply_extgstate_overprint(extgstate)
         intent = self.resolver.resolve(extgstate.get("RI"))
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
@@ -1431,6 +1441,70 @@ class ContentInterpreter:
             if isinstance(array, (list, tuple)):
                 array = [resolve(value) for value in array]
             ContentInterpreter.op_d(self, (array, resolve(dash[1])), 0)
+
+    @cites(
+        "ISO 32000-2",
+        "8.4.5",
+        introduced="1.3",
+        rule="Font, an array of a font dictionary and a size, sets the text font as Tf does",
+    )
+    def apply_extgstate_font(self, value: object) -> None:
+        """A parameter dictionary's Font: an indirect reference to a font dictionary and a
+        size, which select the text font and size as Tf does with a Font resource's name
+        (Table 57). The font is named by the reference, so the state names it by its
+        BaseFont. A facade mirroring a reader that ignores it overrides this."""
+        resolve = self.resolver.resolve
+        entry = resolve(value)
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            self.reject(PdfParseError("Font must hold a font and a size"), "font-operands", None)
+            return
+        font_reference = entry[0]
+        font = resolve(font_reference)
+        if isinstance(font, PdfStream) or not isinstance(font, dict):
+            self.reject(PdfParseError("Font must name a font dictionary"), "font-resource", None)
+            return
+        font_size = self.parse_font_size(resolve(entry[1]))
+        if font_size is None:
+            return
+        graphics = self.graphics
+        resources = self.resources
+        graphics.current_font = self.resolver.resolve_name(font.get("BaseFont")) or "Font"
+        graphics.font_size = font_size
+        graphics.current_decoder = self.decoder_for(font_reference, font, resources)
+        graphics.decoder_resources = resources
+
+    @cites(
+        "ISO 32000-2",
+        "8.6.7",
+        introduced="1.3",
+        rule="OP and op set overprint for stroking and other painting, OPM the overprint mode",
+    )
+    def apply_extgstate_overprint(self, extgstate: dict[str, Any]) -> None:
+        """A parameter dictionary's overprint entries (Table 57): OP, whether stroking
+        overprints, and op, whether other painting does, which OP also sets when op is
+        absent; OPM, the overprint mode, 0 or 1 (8.6.7). The state carries them; core paints
+        no separations, so they do not change what is painted."""
+        resolve = self.resolver.resolve
+        graphics = self.graphics
+        for key in ("OP", "op"):
+            flag = resolve(extgstate.get(key))
+            if flag is None:
+                continue
+            if not isinstance(flag, bool):
+                self.reject(PdfParseError(f"{key} must be a boolean"), "overprint", None)
+                continue
+            if key == "OP":
+                graphics.stroke_overprint = flag
+                if extgstate.get("op") is None:
+                    graphics.fill_overprint = flag
+            else:
+                graphics.fill_overprint = flag
+        mode = resolve(extgstate.get("OPM"))
+        if mode is not None:
+            if type(mode) is int and mode in (0, 1):
+                graphics.overprint_mode = mode
+            else:
+                self.reject(PdfParseError("OPM must be 0 or 1"), "overprint", None)
 
     def resolve_pattern_resource(self, name_operand: object) -> tuple[object, PdfDict] | None:
         pattern_name = self.resolver.resolve_name(name_operand)

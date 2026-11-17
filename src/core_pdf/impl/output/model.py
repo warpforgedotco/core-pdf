@@ -220,6 +220,13 @@ class Annotation(FrozenMetadataFields, GeneratedRecord):
     bbox: Rectangle | None = None
     contents: str = ""
     destination: Any = None
+    # Indexes in the page's annotations (ISO 32000-2 12.5.6.2, 12.5.6.14): the annotation
+    # this one replies to or is grouped with, as reply_type "R" or "Group"; a markup
+    # annotation's pop-up, and a pop-up's markup annotation.
+    in_reply_to: int | None = None
+    reply_type: str | None = None
+    popup: int | None = None
+    popup_parent: int | None = None
 
     __frozen_fields__: ClassVar[tuple[str, ...]] = ("destination",)
 
@@ -234,6 +241,9 @@ class FormField(GeneratedRecord):
     read_only: bool = False
     no_export: bool = False
     options: tuple[str, ...] = ()
+    # How a text or choice field justifies its text, from Q (ISO 32000-2 12.7.4.3): "left",
+    # "center" or "right"; None for other fields.
+    alignment: str | None = None
 
 
 class TextSpan(TextStyleFields, GeneratedRecord):
@@ -245,6 +255,8 @@ class TextSpan(TextStyleFields, GeneratedRecord):
     mark: bool = False
     superscript: bool = False
     subscript: bool = False
+    # The expanded form of the abbreviation or acronym the span shows (ISO 32000-2 14.9.5).
+    expansion: str | None = field(default=None, kw_only=True)
 
 
 class TextLine(TextStyleFields, GeneratedRecord):

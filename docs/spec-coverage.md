@@ -24,13 +24,13 @@ still passes it through). Deprecated keys are left out. See also the
 
 | Added by | Keys, by object | Read by core | Never read |
 | --- | --- | --- | --- |
-| PDF 2.0 | 668 | 365 | 303 |
-| PDF 1.7 | 150 | 62 | 88 |
-| PDF 1.6 | 207 | 109 | 98 |
-| PDF 1.5 | 587 | 277 | 310 |
-| PDF 1.4 | 208 | 138 | 70 |
-| PDF 1.3 | 554 | 395 | 159 |
-| PDF 1.2 | 366 | 252 | 114 |
+| PDF 2.0 | 668 | 368 | 300 |
+| PDF 1.7 | 150 | 67 | 83 |
+| PDF 1.6 | 207 | 125 | 82 |
+| PDF 1.5 | 587 | 301 | 286 |
+| PDF 1.4 | 208 | 140 | 68 |
+| PDF 1.3 | 554 | 409 | 145 |
+| PDF 1.2 | 366 | 261 | 105 |
 | PDF 1.1 | 90 | 77 | 13 |
 | PDF 1.0 | 193 | 158 | 35 |
 | extension AAPL | 9 | 3 | 6 |
@@ -119,7 +119,6 @@ Keys core never reads:
 - `HTO` in GraphicsStateParameter
 - `ICCVersion` in DestOutputProfileRef
 - `IN` in 3DViewAddEntries
-- `IRT` in AnnotProjection
 - `IT` in AnnotProjection, AnnotStamp
 - `Instance` in 3DNode, ViewParams
 - `Instances` in RichMediaConfiguration
@@ -155,7 +154,6 @@ Keys core never reads:
 - `Phoneme` in StructElem
 - `PhoneticAlphabet` in StructElem
 - `PlayCount` in RichMediaAnimation
-- `Popup` in AnnotProjection
 - `Position` in CollectionSplit, RichMediaWindow
 - `Presentation` in RichMediaActivation
 - `PrimaryText` in CollectionColors
@@ -170,7 +168,6 @@ Keys core never reads:
 - `RF` in AFFileSpecification
 - `RH` in Requirements3DMarkup, RequirementsAcroFormInteract, RequirementsAction, RequirementsAttachment, RequirementsAttachmentEditing, RequirementsCollection and 19 more
 - `RM` in 3DNode, 3DViewAddEntries
-- `RT` in AnnotProjection
 - `Reason` in DocTimeStamp
 - `RecordLevel` in DPartRoot
 - `Ref` in StructElem
@@ -331,11 +328,9 @@ Keys core never reads:
 - `DA` in AnnotRedact
 - `DigestMethod` in SigFieldSeedValue
 - `Duplex` in ViewerPreferences
-- `E` in CollectionField
 - `ExData` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 10 more
 - `FC` in 3DRenderMode
 - `IC` in 3DCrossSection, AnnotRedact
-- `IRT` in AnnotRedact
 - `IT` in AnnotRedact
 - `IV` in 3DCrossSection
 - `KeyUsage` in CertSeedValue
@@ -356,17 +351,14 @@ Keys core never reads:
 - `PO` in 3DCrossSection
 - `PV` in 3DCrossSection
 - `PickTrayByPDFSize` in ViewerPreferences
-- `Popup` in AnnotRedact
 - `Preview` in SignatureBuildDataSigQDict
 - `PrintPageRange` in ViewerPreferences
-- `Q` in AnnotRedact
 - `QuadPoints` in AnnotRedact
 - `RC` in AnnotRedact
 - `RD` in AnnotFreeText
 - `RH` in RequirementsEnableJavaScripts
 - `RM` in 3DView
 - `RO` in AnnotRedact
-- `RT` in AnnotRedact
 - `Repeat` in AnnotRedact
 - `Requirements` in Catalog
 - `Role` in StructureAttributesDict
@@ -483,7 +475,6 @@ Keys core never reads:
 - `QuadPoints` in AnnotLink
 - `RD` in NumberFormat
 - `REx` in SignatureBuildDataAppDict
-- `RT` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 10 more
 - `SS` in NumberFormat
 - `Solidities` in DeviceNMixingHints
 - `StructParent` in Annot3D, AnnotWatermark
@@ -565,7 +556,6 @@ Keys core never reads:
 - `DigestMethod` in SignatureReferenceFieldMDP
 - `DocMDP` in Permissions
 - `Dur` in NavNode
-- `E` in AddActionScreenAnnotation, MediaClipSectionMHBE, StructElem
 - `Event` in OptContentUsageApplication
 - `Export` in OptContentUsage
 - `ExportState` in OptContentExport
@@ -581,7 +571,6 @@ Keys core never reads:
 - `HI` in SoftwareIdentifier
 - `HideAnnotationActions` in LegalAttestation
 - `IC` in AnnotPolyLine, AnnotPolygon
-- `IRT` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 10 more
 - `Identity` in CryptFilterMap
 - `Issuer` in CertSeedValue
 - `JS` in ActionRendition
@@ -605,7 +594,6 @@ Keys core never reads:
 - `NonEFontNoWarn` in SignatureBuildDataAppDict, SignatureBuildDataDict, SignatureBuildDataSigQDict
 - `NonEmbeddedFonts` in LegalAttestation
 - `OID` in CertSeedValue
-- `OP` in ActionRendition
 - `OS` in SignatureBuildDataAppDict, SignatureBuildDataDict, SignatureBuildDataSigQDict, SoftwareIdentifier
 - `OptionalContent` in LegalAttestation
 - `PA` in NavNode
@@ -617,7 +605,6 @@ Keys core never reads:
 - `PV` in AddActionScreenAnnotation, AddActionWidgetAnnotation
 - `Padding` in StructureAttributesDict
 - `PageElement` in OptContentUsage
-- `Popup` in AnnotCaret, AnnotPolyLine, AnnotPolygon
 - `PreRelease` in SignatureBuildDataAppDict, SignatureBuildDataDict, SignatureBuildDataSigQDict
 - `Preferred` in OptContentLanguage
 - `PresSteps` in PageObject
@@ -631,7 +618,6 @@ Keys core never reads:
 - `RBGroups` in OptContentConfig
 - `RC` in AnnotCaret, AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk and 11 more
 - `RD` in AnnotCaret, AnnotCircle, AnnotSquare
-- `RT` in FloatingWindowParameters
 - `RV` in FieldBtnCheckbox, FieldBtnPush, FieldBtnRadio, FieldChoice, FieldSig, FieldTx
 - `Reasons` in SigFieldSeedValue
 - `Recipients` in CryptFilterPublicKey
@@ -767,8 +753,6 @@ Keys core never reads:
 - `Page` in Reference
 - `PieceInfo` in Catalog, XObjectFormPrinterMark
 - `Placement` in StructureAttributesDict
-- `Popup` in AnnotSquiggly
-- `Q` in AnnotFreeText
 - `QuadPoints` in AnnotSquiggly
 - `Ref` in XObjectFormPrinterMark, XObjectFormType1
 - `RegistryName` in OutputIntents
@@ -801,7 +785,6 @@ Values core never compares, of keys it reads:
 - `Subtype` `PrinterMark` in AnnotPrinterMark
 - `Subtype` `Squiggly` in AnnotSquiggly
 - `Subtype` `XML` in Metadata
-- `Type` `Group` in GroupAttributes
 - `Type` `OutputIntent` in OutputIntents
 
 ## PDF 1.3
@@ -849,15 +832,12 @@ Keys core never reads:
 - `Length3` in FontFile3CIDType0
 - `Location` in Signature
 - `M` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 6 more
-- `OPM` in GraphicsStateParameter
 - `Open` in AnnotPopup
 - `PA` in AnnotLink
 - `PZ` in PageObject
 - `ParentTreeNextKey` in StructTreeRoot
 - `PieceInfo` in PageObject, XObjectFormType1
-- `Popup` in AnnotCircle, AnnotFileAttachment, AnnotFreeText, AnnotHighlight, AnnotInk, AnnotLine and 5 more
 - `Private` in Data
-- `Q` in FieldSig
 - `QuadPoints` in AnnotHighlight, AnnotStrikeOut, AnnotUnderline
 - `RF` in FileSpecification
 - `Reason` in Signature
@@ -876,7 +856,6 @@ Keys core never reads:
 - `TransferFunction` in HalftoneType16
 - `UCR2` in GraphicsStateParameter
 - `Width2` in HalftoneType16
-- `op` in GraphicsStateParameter
 
 Values core never compares, of keys it reads:
 
@@ -935,7 +914,6 @@ Keys core never reads:
 - `DR` in InteractiveForm
 - `DV` in FieldBtnCheckbox, FieldBtnPush, FieldBtnRadio, FieldChoice, FieldTx
 - `Default` in HalftoneType5
-- `E` in AddActionWidgetAnnotation, LinearizationParameterDict
 - `FD` in FontDescriptorCIDType0, FontDescriptorCIDType2
 - `FitWindow` in ViewerPreferences
 - `Fo` in AddActionWidgetAnnotation
@@ -959,9 +937,7 @@ Keys core never reads:
 - `MaxWidth` in CIDFontDescriptorMetrics, FontDescriptorCIDType0, FontDescriptorCIDType2
 - `NewWindow` in ActionGoToR, ActionLaunch
 - `NonFullScreenPageMode` in ViewerPreferences
-- `OP` in GraphicsStateParameter
 - `Panose` in StyleDict
-- `Q` in FieldBtnCheckbox, FieldBtnPush, FieldBtnRadio, FieldChoice, FieldTx, InteractiveForm
 - `RC` in AppearanceCharacteristics
 - `SA` in GraphicsStateParameter
 - `SpotFunction` in HalftoneType1
@@ -1006,8 +982,6 @@ Values core never compares, of keys it reads:
 - `Encoding` `UniKS-UTF16-H` in FontType0
 - `Encoding` `UniKS-UTF16-V` in FontType0
 - `FT` `Btn` in FieldBtnCheckbox, FieldBtnPush, FieldBtnRadio
-- `FT` `Ch` in FieldChoice
-- `FT` `Tx` in FieldTx
 - `N` `FirstPage` in ActionNamed
 - `N` `LastPage` in ActionNamed
 - `N` `NextPage` in ActionNamed

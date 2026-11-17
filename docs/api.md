@@ -98,6 +98,17 @@ payload, and blocks reference canonical lines. IDs have the form
 Metadata must already consist of JSON scalars, mappings, lists, or tuples. Anything
 else raises a `TypeError` naming the offending path rather than being stringified.
 
+A few records carry what the PDF says about the content beside the content itself. A
+`TextSpan` showing an abbreviation has the `expansion` its `Span` marked content or
+structure element gives as `/E` (ISO 32000-2 14.9.5); JSON spans include `expansion` only
+when there is one, and HTML and Markdown wrap such a span in `<abbr title="...">`.
+`StructureElement.expansion` reads the same entry. A text or choice `FormField` has the
+`alignment` (`left`, `center` or `right`) its `/Q` gives, inherited from parent fields and
+the AcroForm dictionary (12.7.4.3), and `None` for other fields. An `Annotation` records
+the annotation it replies to (`in_reply_to`, `/IRT`) and how (`reply_type`, `R` or `Group`
+from `/RT`), a markup annotation's `popup`, and a pop-up's `popup_parent` (12.5.6.2,
+12.5.6.14): indexes in `Page.annotations`, which JSON gives as annotation ids.
+
 ## Associated and embedded files
 
 `Document.associated_files` lists the files that `AF` arrays (ISO 32000-2 14.13, PDF 2.0,

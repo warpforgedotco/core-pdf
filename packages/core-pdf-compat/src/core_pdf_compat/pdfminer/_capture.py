@@ -190,6 +190,11 @@ class PdfminerTextState(TextState):
         self.pdfminer_ctms: dict[int, tuple[Any, PdfminerMatrix]] = {}
         self.glyph_matrices: dict[int, PdfminerMatrix] = {}
 
+    def apply_extgstate_font(self, value: object) -> None:
+        # pdfminer.six's do_gs applies nothing, so a parameter dictionary's Font leaves the
+        # text font as Tf set it.
+        return
+
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
         super().op_BDC(operands, depth)
         self.current_tag = self.resolver.resolve_name(operands[0]) if operands else None

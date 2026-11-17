@@ -54,6 +54,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.1 | an image's device ColorSpace remaps through the current default spaces | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.capture.image_painting.remapped_image_dictionary` |
 | PDF 1.1 | device colour values pass to the default space, clipped to its ranges | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.clip_to_ranges` |
 | PDF 1.1 | the default spaces are those of the current resource dictionary | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_07_content.interpreter.default_spaces_of` |
+| PDF 1.2 | Q, inheritable from the field tree and the AcroForm dictionary, quads variable text | ISO 32000-2 12.7.4.3 (Variable text) | `core_pdf.impl.spec.s_07_document.fields.field_quadding` |
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
@@ -63,12 +64,15 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | tiling cells sit at multiples of XStep and YStep in pattern space, clipped by BBox there | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.tiling_offsets` |
 | PDF 1.3 | Background fills the area a shading pattern paints, not one sh paints | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.render.raster_shading.shading_background` |
 | PDF 1.3 | Background holds one colour's components in the shading's colour space | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.graphics.shading.background_components` |
+| PDF 1.3 | Font, an array of a font dictionary and a size, sets the text font as Tf does | ISO 32000-2 8.4.5 (Graphics state parameter dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_font` |
 | PDF 1.3 | LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash | ISO 32000-2 8.4.5 (Graphics state parameter dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style` |
+| PDF 1.3 | OP and op set overprint for stroking and other painting, OPM the overprint mode | ISO 32000-2 8.6.7 (Overprint control) | `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_overprint` |
 | PDF 1.3 | a Coons patch's inner control points follow from its boundary curves | ISO 32000-2 8.7.4.5.8 (Type 7 (tensor-product patch mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.coons_inner_points` |
 | PDF 1.3 | a free-form mesh's edge flags join each vertex to the previous triangle | ISO 32000-2 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.free_form_triangles` |
 | PDF 1.3 | a function-based shading paints its Function over Domain, mapped by Matrix | ISO 32000-2 8.7.4.5.2 (Type 1 (function-based) shadings) | `core_pdf.impl.render.raster_shading.function_shading_values` |
 | PDF 1.3 | a function-based shading's Domain defaults to [0 1 0 1] and its Matrix to the identity | ISO 32000-2 8.7.4.5.2 (Type 1 (function-based) shadings) | `core_pdf.impl.spec.s_08_graphics.shading.parse_function_shading` |
 | PDF 1.3 | a lattice-form mesh splits each cell of its lattice into two triangles | ISO 32000-2 8.7.4.5.6 (Type 5 (lattice-form Gouraud-shaded triangle mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.lattice_triangles` |
+| PDF 1.3 | a markup annotation's Popup names its pop-up; the pop-up's Parent names it back | ISO 32000-2 12.5.6.14 (Popup annotations) | `core_pdf.impl.spec.s_07_document.markup_annotations.popup_link` |
 | PDF 1.3 | a patch with edge flag 1, 2 or 3 repeats an edge of the previous patch | ISO 32000-2 8.7.4.5.7 (Type 6 (Coons patch mesh) shadings) | `core_pdf.impl.spec.s_08_graphics.shading_mesh.patch_arrays` |
 | PDF 1.3 | an Indexed shading's colours are converted to the base space before interpolation | ISO 32000-2 8.7.4.4 (Colour space: special considerations) | `core_pdf.impl.graphics.shading.indexed_values` |
 | PDF 1.3 | an embedded file's Subtype and Params | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_parameters` |
@@ -95,6 +99,8 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.4 | the page group's blending colour space | ISO 32000-2 11.4.7 (Page group) | `core_pdf.impl.spec.s_11_transparency.blending_space.page_blending_space` |
 | PDF 1.4 | the standard non-separable blend modes | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.non_separable_blend` |
 | PDF 1.4 | the standard separable blend modes | ISO 32000-2 11.3.5.2 (Separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blend.separable_blend` |
+| PDF 1.5 | E of a structure element or Span property list expands the abbreviation it holds | ISO 32000-2 14.9.5 (Expansion of abbreviations and acronyms) | `core_pdf.impl.spec.s_14_structure.expansions.expansion_text` |
+| PDF 1.5 | IRT names the annotation this one replies to (RT R) or is grouped with (RT Group) | ISO 32000-2 12.5.6.2 (Markup annotations) | `core_pdf.impl.spec.s_07_document.markup_annotations.reply_relation` |
 | PDF 1.6 | Desc, a file specification's description | ISO 32000-2 7.11.3 (File specification dictionaries) | `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings` |
 | PDF 1.7 | UF, a file name as a text string | ISO 32000-2 7.11.3 (File specification dictionaries) | `core_pdf.impl.spec.s_07_document.file_specification.file_specification_strings` |
 | PDF 2.0 | AF, an object's associated files | ISO 32000-2 14.13 (Associated files) | `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications` |
@@ -232,10 +238,12 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.soft_masks`: soft-mask dictionaries: their group, backdrop and transfer function
 - 12.4.2 (Page labels) `core_pdf.impl.spec.s_07_document.document_labels`: page labels and their numbering styles
 - 12.5.5 (Appearance streams) `core_pdf.impl.spec.s_07_document.annotation_appearance`: an annotation's normal appearance and the matrix fitting it to Rect
+- 12.5.6.2 (Markup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations`: markup annotations' replies and pop-up windows
 - 12.7 (Forms) `core_pdf.impl.spec.s_07_document.fields`: interactive form fields: Kids and fully qualified field names
 - 14.3 (Metadata) `core_pdf.impl.spec.s_07_document.metadata`: the document information dictionary and the catalog's metadata stream
 - 14.7 (Logical structure) `core_pdf.impl.spec.s_14_structure.dictionaries`: structure role maps, attributes and marked-content identifiers
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles`: standard structure types, namespaces and role mapping
+- 14.9.5 (Expansion of abbreviations and acronyms) `core_pdf.impl.spec.s_14_structure.expansions`: the expansion text of abbreviations and acronyms
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files`: associated files, the AF arrays linking files to PDF objects
 - Annex A ((informative) Operator Summary) `core_pdf.impl.spec.s_07_syntax_primitives.content_operators`: the content stream operators and their operands
 - D.2 (Latin character set and encodings) `core_pdf.impl.adobe_fonts._vendor.font_data.encoding_names`: the glyph names of the standard, Mac Roman and WinAnsi encodings
@@ -265,6 +273,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.4.3.3 (Line cap style) `core_pdf.impl.render.raster_strokes.stroke_path`: butt, round and projecting square caps
 - 8.4.3.4 (Line join style) `core_pdf.impl.render.raster_strokes.stroke_path`: miter, round and bevel joins
 - 8.4.3.5 (Miter limit) `core_pdf.impl.render.raster_strokes.stroke_path`: a miter past the miter limit is a bevel
+- 8.4.5 (Graphics state parameter dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_font`: Font, an array of a font dictionary and a size, sets the text font as Tf does
 - 8.4.5 (Graphics state parameter dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style`: LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash
 - 8.5.3.2 (Stroking) `core_pdf.impl.render.raster_strokes.stroke_once`: a stroke is one shape: its segments, joins, caps and dashes are painted once
 - 8.6.5.6 (Default colour spaces) `core_pdf.impl.capture.image_painting.remapped_image_dictionary`: an image's device ColorSpace remaps through the current default spaces
@@ -276,6 +285,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space`: a default colour space is not Lab, Indexed or Pattern, with the device's components
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 8.6.7 (Overprint control) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_overprint`: OP and op set overprint for stroking and other painting, OPM the overprint mode
 - 8.6.8 (Colour operators) `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask`: where colour is set elsewhere, only image masks of the images are painted
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
 - 8.7.3.1 (General) `core_pdf.impl.render.raster_shading.paint_fill_pattern`: f with a pattern as its colour paints the pattern through the path's outline
@@ -331,8 +341,12 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_07_content.interpreter.group_color_space`: a group's CS naming a device space is remapped through the default spaces
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.graphics.device_profiles.convert_cmyk_words`: a colour not in its group's colour space converts to it
+- 12.5.6.2 (Markup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations.reply_relation`: IRT names the annotation this one replies to (RT R) or is grouped with (RT Group)
+- 12.5.6.14 (Popup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations.popup_link`: a markup annotation's Popup names its pop-up; the pop-up's Parent names it back
+- 12.7.4.3 (Variable text) `core_pdf.impl.spec.s_07_document.fields.field_quadding`: Q, inheritable from the field tree and the AcroForm dictionary, quads variable text
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
+- 14.9.5 (Expansion of abbreviations and acronyms) `core_pdf.impl.spec.s_14_structure.expansions.expansion_text`: E of a structure element or Span property list expands the abbreviation it holds
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: AF, an object's associated files
 - 14.13 (Associated files) `core_pdf.impl.spec.s_14_structure.associated_files.associated_file_specifications`: PDF/A-3 allows AF in PDF 1.7 files
 - 14.13.6 (Associated files linked to structure elements) `core_pdf.impl.spec.s_14_structure.associated_files.structure_elements_hold_af`: PDF/A-3 structure elements hold AF
