@@ -382,10 +382,16 @@ def stroke_once(
         return
     ix0, iy0, ix1, iy1 = clipped[1]
     dashed = bool(dash_pattern and dash_pattern[0])
-    deferred = path.deferred_columns() if matrix is None and not dashed else None
+    deferred = path.deferred_columns() if not dashed else None
     squares: list[float] = []
     if deferred is not None:
         xs, ys, spans, outline = deferred
+        if matrix is not None:
+            # The columns in stroke space, as CapturedSubpath.transformed maps each point.
+            a, b, c, d = matrix
+            determinant = a * d - b * c
+            ia, ib, ic, id_ = d / determinant, -b / determinant, -c / determinant, a / determinant
+            xs, ys = xs * ia + ys * ic + 0.0, xs * ib + ys * id_ + 0.0
     else:
         subpaths = path.subpaths
         if matrix is not None:
