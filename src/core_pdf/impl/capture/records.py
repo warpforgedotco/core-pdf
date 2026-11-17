@@ -215,7 +215,10 @@ def deferred_axis_aligned_rect(deferred: DeferredPoints) -> Rectangle | None:
 
 
 class CapturedPath:
-    __slots__ = ("subpaths", "_deferred", "_parts", "_summary", "_rect")
+    # _part_subpaths, set only with _parts, is the number of subpaths in them.
+    __slots__ = ("subpaths", "_deferred", "_parts", "_part_subpaths", "_summary", "_rect")
+
+    _part_subpaths: int
 
     def __init__(self, subpaths: list[CapturedSubpath] | None = None) -> None:
         self.subpaths = subpaths if subpaths is not None else []
@@ -259,6 +262,8 @@ class CapturedPath:
         path = CapturedPath.__new__(CapturedPath)
         path._deferred = None
         path._parts = [*mine, *theirs]
+        # Counted once here: a stroke coalesced from many asks for each one added.
+        path._part_subpaths = self.subpath_count() + other.subpath_count()
         path._summary = None
         path._rect = None
         return path
@@ -323,7 +328,7 @@ class CapturedPath:
 
     def subpath_count(self) -> int:
         if self._parts is not None:
-            return sum(len(part[2]) for part in self._parts)
+            return self._part_subpaths
         deferred = self._deferred
         if deferred is not None:
             return len(deferred[2])
@@ -360,6 +365,7 @@ class CapturedPath:
             path = CapturedPath.__new__(CapturedPath)
             path._deferred = None
             path._parts = [(x + tx, y + ty, spans, outline) for x, y, spans, outline in parts]
+            path._part_subpaths = self._part_subpaths
             path._summary = None
             path._rect = None
             return path
