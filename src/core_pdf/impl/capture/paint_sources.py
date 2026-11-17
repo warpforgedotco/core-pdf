@@ -14,9 +14,11 @@ from core_pdf.impl.base.types import MISSING, MissingObject
 from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
+from core_pdf.impl.spec.s_08_graphics.default_spaces import remap_color_space
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 if TYPE_CHECKING:
@@ -99,16 +101,31 @@ SHADING_RESOLVED_KEYS = frozenset(
 )
 
 
+@cites(
+    "ISO 32000-2",
+    "8.6.5.6",
+    introduced="1.1",
+    rule="a shading's device ColorSpace remaps through the current default spaces",
+)
 def capture_shading_dictionary(self: TextState, dictionary: dict) -> dict:
+    """A shading dictionary with the entries the renderer reads resolved, and its ColorSpace
+    remapped through the default spaces of the current resource dictionary."""
     shadings = self.caches.capture_shadings
-    cached = shadings.get(dictionary)
+    defaults = self.current_default_spaces()
+    pins = () if defaults is None else (defaults,)
+    cached = shadings.get(dictionary, pins=pins)
     if cached is not None:
         return cached
     captured = {
         key: self.resolver.deep_resolve(value) if str(key) in SHADING_RESOLVED_KEYS else value
         for key, value in dictionary.items()
     }
-    return shadings.put(dictionary, captured)
+    if defaults is not None:
+        for key, value in captured.items():
+            if str(key) == "ColorSpace":
+                captured[key] = remap_color_space(value, defaults.values)
+                break
+    return shadings.put(dictionary, captured, pins=pins)
 
 
 def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
@@ -121,7 +138,15 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
     initial_text_knockout = (
         pattern.text_knockout if isinstance(pattern, model.TilingPattern) else True
     )
-    cache_key = (id(pattern), rendering, initial_alpha_is_shape, initial_text_knockout)
+    # A shading pattern's colour space remaps through the default spaces where it paints.
+    defaults = self.current_default_spaces() if isinstance(pattern, model.ShadingPattern) else None
+    cache_key = (
+        id(pattern),
+        rendering,
+        initial_alpha_is_shape,
+        initial_text_knockout,
+        id(defaults),
+    )
     cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
     if not isinstance(cached, MissingObject):
         return cached
@@ -149,4 +174,6 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             )
         finally:
             nested.release()
-    return self.capture_patterns.put_key(pattern, cache_key, result)
+    return self.capture_patterns.put_key(
+        pattern, cache_key, result, () if defaults is None else (defaults,)
+    )

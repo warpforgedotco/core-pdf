@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Callable, Mapping
+from copy import replace
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.caches import BoundedDict, IdentityCache
@@ -22,6 +23,7 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_08_graphics.color_rendering import BlackPointCompensation
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
+from core_pdf.impl.spec.s_08_graphics.default_spaces import DEFAULT_SPACE_KEYS
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.service import FontProvider, FontService
 from core_pdf.impl.spec.standards import SemanticContext
@@ -151,7 +153,20 @@ class RecoveringTextState(ContentInterpreter):
         if not isinstance(cached, MissingObject):
             return cached
         mask = parse_soft_mask(value, self.resolver, ctm=ctm, compile_function=compile_pdf_function)
+        if mask is not None:
+            mask = self.remapped_soft_mask(mask)
         return cache.put_key(value, key, mask, (resources,))
+
+    def remapped_soft_mask(self, mask: SoftMask) -> SoftMask:
+        """A Luminosity mask whose group's CS names a device space, in the default space of
+        the group XObject's resources, as any transparency group's CS (11.6.6)."""
+        space = mask.color_space
+        if space is None or space.kind not in DEFAULT_SPACE_KEYS:
+            return mask
+        own = self.resolve_resources(mask.group.dictionary.get("Resources"))
+        defaults = self.default_spaces_of(self.resources if own is None else own)
+        remapped = defaults.spaces.get(space.kind) if defaults is not None else None
+        return mask if remapped is None else replace(mask, color_space=remapped)
 
     def operation_table(self) -> Mapping[str, OperationHandler]:
         overrides = self.operator_overrides

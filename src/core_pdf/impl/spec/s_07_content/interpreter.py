@@ -54,6 +54,12 @@ from core_pdf.impl.spec.s_08_graphics.color_spec import (
     ColorSpace,
     parse_color_space,
 )
+from core_pdf.impl.spec.s_08_graphics.default_spaces import (
+    DefaultSpaces,
+    default_space_values,
+    remap_color_space,
+    valid_default_space,
+)
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_08_graphics.shading import SHADING_STREAM_KEY
 from core_pdf.impl.spec.s_09_fonts.service import DecodedFontGlyph, FontProvider, FontService
@@ -117,9 +123,17 @@ class ContentInterpreter:
         self.xobject_depth = 0
         self.compatibility_depth = 0
         self.marked_content_stack: list[MarkedContentEntry] = []
+        # Whether colour is set elsewhere, so the colour operators are ignored (8.6.8): in a
+        # Type 3 glyph that begins with d1, in the cell of an uncoloured tiling pattern, and
+        # in every stream either invokes. inherited_uncolored is the value a glyph
+        # description starts with, which d0 leaves in place.
         self.type3_uncolored = False
+        self.inherited_uncolored = False
         self.resources: PdfDict = {}
         self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
+        self.remapped_space_cache: dict[int, tuple[object, DefaultSpaces, ColorSpace]] = {}
+        self.default_spaces_cache: dict[int, tuple[PdfDict, DefaultSpaces | None]] = {}
+        self.default_spaces_memo: tuple[object, DefaultSpaces | None] = (None, None)
         self.shading_streams: dict[int, tuple[PdfStream, PdfDict]] = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
         self.default_handlers: dict[str, OperationHandler] = {
@@ -332,11 +346,25 @@ class ContentInterpreter:
                 PdfParseError("XObject resource is an object stream"), "xobject", None
             )
         if subtype == "Image":
+            if self.type3_uncolored and not self.paints_image_mask(xobj_dict):
+                return None
             self.sink.paint_image(self, xobj)
             return None
         if subtype != "Form":
             return self.reject(PdfParseError("unsupported XObject subtype"), "xobject", None)
         return self.append_form_xobject(xobj, depth, stream_key=stream_key)
+
+    @cites(
+        "ISO 32000-2",
+        "8.6.8",
+        introduced="1.0",
+        rule="where colour is set elsewhere, only image masks of the images are painted",
+    )
+    def paints_image_mask(self, dictionary: object) -> bool:
+        return (
+            isinstance(dictionary, dict)
+            and self.resolver.resolve(dictionary.get("ImageMask")) is True
+        )
 
     def resolve_form_resources(self, value: object) -> PdfDict:
         resources = self.resolve_resources(value)
@@ -356,6 +384,7 @@ class ContentInterpreter:
         group_isolated = True
         group_knockout = False
         group_color_space = None
+        group_cs: object = None
         group = xobj_dict.get("Group")
         if group is not None:
             group_dict = self.resolver.resolve_dict(group)
@@ -366,9 +395,10 @@ class ContentInterpreter:
                 group_alpha = max(0.0, min(1.0, self.graphics.fill_opacity))
                 group_isolated = self.resolver.resolve(group_dict.get("I")) is True
                 group_knockout = self.resolver.resolve(group_dict.get("K")) is True
-                if group_isolated:
-                    group_color_space = self.group_color_space(group_dict.get("CS"))
+                group_cs = group_dict.get("CS") if group_isolated else None
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
+        if group_cs is not None:
+            group_color_space = self.group_color_space(group_cs, self.default_spaces_of(resources))
         xobj_matrix = xobj_dict.get("Matrix")
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
@@ -397,16 +427,75 @@ class ContentInterpreter:
                 frame.group_color_space = group_color_space
         return frame
 
-    def group_color_space(self, value: object) -> ColorSpace | None:
+    @cites(
+        "ISO 32000-2",
+        "11.6.6",
+        introduced="1.4",
+        rule="a group's CS naming a device space is remapped through the default spaces",
+    )
+    def group_color_space(
+        self, value: object, defaults: DefaultSpaces | None = None
+    ) -> ColorSpace | None:
         """The colour space a group attributes dictionary's CS entry names, if it can be a
-        blending space; None leaves the group in its parent's (11.6.6)."""
+        blending space; None leaves the group in its parent's (11.6.6). A device space is
+        remapped through defaults, those of the group XObject's resources (8.6.5.6)."""
         if value is None:
             return None
         try:
-            space = self.parse_color_space_value(self.resolver.deep_resolve(value))
+            resolved = self.resolver.deep_resolve(value)
+            remapped = (
+                defaults.spaces.get(self.resolver.resolve_name(resolved) or "")
+                if defaults is not None
+                else None
+            )
+            space = remapped if remapped is not None else self.parse_color_space_value(resolved)
         except ValueError, TypeError:
             return None
         return space if blending_space_of(space) is not None else None
+
+    def current_default_spaces(self) -> DefaultSpaces | None:
+        """The default colour spaces of the current resource dictionary (8.6.5.6)."""
+        resources = self.resources
+        memo = self.default_spaces_memo
+        if memo[0] is resources:
+            return memo[1]
+        found = self.default_spaces_of(resources)
+        self.default_spaces_memo = (resources, found)
+        return found
+
+    @cites(
+        "ISO 32000-2",
+        "8.6.5.6",
+        introduced="1.1",
+        rule="the default spaces are those of the current resource dictionary",
+    )
+    def default_spaces_of(self, resources: PdfDict) -> DefaultSpaces | None:
+        """The valid default colour spaces a resource dictionary's ColorSpace subdictionary
+        names, or None."""
+        raw = resources.get("ColorSpace")
+        if raw is None:
+            return None
+        cached = self.default_spaces_cache.get(id(resources))
+        if cached is not None and cached[0] is resources:
+            return cached[1]
+        found: DefaultSpaces | None = None
+        try:
+            color_spaces = resolve_resource_dict(raw, self.resolver)
+        except PdfParseError:
+            color_spaces = None
+        values = default_space_values(color_spaces, self.resolver.deep_resolve)
+        spaces: dict[str, ColorSpace] = {}
+        for device, value in values.items():
+            try:
+                space = self.parse_color_space_value(value)
+            except ValueError, TypeError, PdfParseError:
+                continue
+            if valid_default_space(device, space):
+                spaces[device] = space
+        if spaces:
+            found = DefaultSpaces({key: values[key] for key in spaces}, spaces)
+        self.default_spaces_cache[id(resources)] = (resources, found)
+        return found
 
     def append_text(self, data: bytes | memoryview, *, decoder: FontService | None = None) -> None:
         """Show a string's glyphs at the text matrix, and move it past them."""
@@ -456,14 +545,18 @@ class ContentInterpreter:
                     ).multiply(text_space)
                 )
                 previous_type3_uncolored = self.type3_uncolored
+                previous_inherited = self.inherited_uncolored
                 self.sink.text_boundary(self, "type3-glyph-begin")
-                self.type3_uncolored = False
+                # A glyph shown where colour is already set elsewhere keeps the restriction,
+                # whether it begins with d0 or d1 (8.6.8).
+                self.inherited_uncolored = previous_type3_uncolored
                 try:
                     self.stream_executor.consume(
                         char_proc, resources, glyph_ctm, self.xobject_depth + 1
                     )
                 finally:
                     self.type3_uncolored = previous_type3_uncolored
+                    self.inherited_uncolored = previous_inherited
                     self.sink.text_boundary(self, "type3-glyph-end")
 
             advance_x, advance_y = decoder.glyph_advance_vector(
@@ -636,6 +729,10 @@ class ContentInterpreter:
 
     def op_BI(self, operands: ContentOperands, depth: int) -> None:
         if operands and hasattr(operands[0], "dictionary"):
+            if self.type3_uncolored and not self.paints_image_mask(
+                getattr(operands[0], "dictionary", None)  # noqa: B009
+            ):
+                return
             self.sink.paint_inline_image(self, operands[0])  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     def op_BDC(self, operands: ContentOperands, depth: int) -> None:
@@ -852,6 +949,9 @@ class ContentInterpreter:
         )
         if normalized is None:
             return
+        defaults = self.current_default_spaces()
+        if defaults is not None:
+            space, normalized = defaults.remap(space, normalized)
         self.set_paint(space, normalized, None, stroke=stroke)
 
     def set_paint(
@@ -880,9 +980,16 @@ class ContentInterpreter:
             return self.reject(
                 PdfParseError("color space operand must be a name"), "color-space", DEVICE_GRAY
             )
+        defaults = self.current_default_spaces()
         if name in {"DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern"}:
+            if defaults is not None and name in defaults.spaces:
+                return defaults.spaces[name]
             return self.parse_named_color_space(name, name)
         raw = self.lookup_page_resource("ColorSpace", name)
+        if defaults is not None:
+            remapped = self.resolve_remapped_color_space(raw, defaults)
+            if remapped is not None:
+                return remapped
         cache = self.color_space_cache if type(raw) is PdfReference else None
         if cache is not None:
             cached = cache.get(id(raw))
@@ -898,6 +1005,29 @@ class ContentInterpreter:
             return self.parse_named_color_space(value, name)
         if cache is not None:
             cache[id(raw)] = (raw, space)
+        return space
+
+    def resolve_remapped_color_space(
+        self, raw: object, defaults: DefaultSpaces
+    ) -> ColorSpace | None:
+        """A ColorSpace resource whose device spaces the default spaces remap, or None for
+        one they leave as it is (8.6.5.6)."""
+        cached = self.remapped_space_cache.get(id(raw))
+        if cached is not None and cached[0] is raw and cached[1] is defaults:
+            return cached[2]
+        value = self.resolver.deep_resolve(raw)
+        name = self.resolver.resolve_name(value)
+        if name is not None:
+            return defaults.spaces.get(name)
+        remapped = remap_color_space(value, defaults.values)
+        if remapped is value:
+            return None
+        try:
+            space = self.parse_color_space_value(remapped)
+        except ValueError, TypeError:
+            return None
+        if type(raw) is PdfReference:
+            self.remapped_space_cache[id(raw)] = (raw, defaults, space)
         return space
 
     def parse_color_space_value(self, value: object) -> ColorSpace:
@@ -947,7 +1077,10 @@ class ContentInterpreter:
             return
         if operands:
             space = self.resolve_color_space(operands[0])
-            color = self.initial_color_components(space, stroke=stroke)
+            defaults = self.current_default_spaces()
+            color = defaults.initial_color(space) if defaults is not None else None
+            if color is None:
+                color = self.initial_color_components(space, stroke=stroke)
             self.set_paint(space, color, None, stroke=stroke)
 
     def op_CS(self, operands: ContentOperands, depth: int) -> None:
@@ -989,7 +1122,7 @@ class ContentInterpreter:
             self.graphics.flatness = max(0.0, min(100.0, values[0]))
 
     def op_ri(self, operands: ContentOperands, depth: int) -> None:
-        if not operands:
+        if not operands or self.type3_uncolored:
             return
         try:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(operands[0]))
@@ -1042,7 +1175,7 @@ class ContentInterpreter:
         self.compatibility_depth -= 1
 
     def op_d0(self, operands: ContentOperands, depth: int) -> None:
-        self.type3_uncolored = False
+        self.type3_uncolored = self.inherited_uncolored
 
     def op_d1(self, operands: ContentOperands, depth: int) -> None:
         self.type3_uncolored = True
@@ -1081,6 +1214,8 @@ class ContentInterpreter:
         return shading
 
     def op_sh(self, operands: ContentOperands, depth: int) -> None:
+        if self.type3_uncolored:
+            return
         name = self.resource_operand_name(operands)
         if name is None:
             return
@@ -1227,7 +1362,7 @@ class ContentInterpreter:
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
         black_point = self.resolver.resolve(extgstate.get("UseBlackPtComp"))
-        if black_point is not None:
+        if black_point is not None and not self.type3_uncolored:
             self.graphics.black_point_compensation = parse_black_point_compensation(
                 self.named_value(black_point)
             )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from copy import copy, replace
+from copy import copy
 from functools import lru_cache
 from math import isfinite
 from typing import TYPE_CHECKING, Any, cast
@@ -34,6 +34,7 @@ from core_pdf.impl.fonts.ligatures import detect_ligature_overrides
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.recovery.lexer import PdfLexer
+from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.exceptions import PdfParseError
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_07_content.interpreter import ContentInterpreter
@@ -57,6 +58,8 @@ if TYPE_CHECKING:
     from core_pdf.impl.capture.records import LayoutFormId, StrokeMatrix
     from core_pdf.impl.document.pdf_document import PdfDocument
     from core_pdf.impl.recovery.resolver import ObjectResolver
+    from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
+    from core_pdf.impl.spec.s_08_graphics.default_spaces import DefaultSpaces
     from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
 
 
@@ -166,23 +169,50 @@ DEFAULT_OPERATOR_NAMES: frozenset[bytes] = frozenset(
 
 
 @lru_cache(maxsize=16)
-def cached_native_operators(operators: frozenset[str]) -> NativeOperators:
+def cached_native_operators(
+    operators: frozenset[str],
+    gray: ColorSpace = DEVICE_GRAY,
+    rgb: ColorSpace = DEVICE_RGB,
+    cmyk: ColorSpace = DEVICE_CMYK,
+) -> NativeOperators:
     return NativeOperators(
         operators,
         GLYPH_PAINT_KEEPING_OPERATORS,
         LINE_MOVING_OPERATORS,
         TEXT_LAYOUT_KEEPING_OPERATORS,
-        DEVICE_GRAY,
-        DEVICE_RGB,
-        DEVICE_CMYK,
+        gray,
+        rgb,
+        cmyk,
         Matrix,
     )
+
+
+# The operators that set a device colour, which a stream's default spaces remap.
+DEVICE_COLOR_OPERATORS = frozenset({"G", "g", "RG", "rg", "K", "k"})
+
+
+def remapped_native_operators(
+    operators: frozenset[str], defaults: DefaultSpaces
+) -> NativeOperators | None:
+    """The native operators of a stream whose resources have default colour spaces: the
+    device colour operators set the default spaces, when their components range over 0 to
+    1 as the native operators clamp to, and are left to their handlers otherwise."""
+    if defaults.unit_ranges:
+        spaces = defaults.spaces
+        return cached_native_operators(
+            operators,
+            spaces.get("DeviceGray", DEVICE_GRAY),
+            spaces.get("DeviceRGB", DEVICE_RGB),
+            spaces.get("DeviceCMYK", DEVICE_CMYK),
+        )
+    remaining = operators - DEVICE_COLOR_OPERATORS
+    return cached_native_operators(remaining) if remaining else None
 
 
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState  # ty: ignore[invalid-mutable-override]
     _operator_names: frozenset[bytes] | None = None
-    _native_operators: tuple[object, NativeOperators | None] | None = None
+    _native_operators: tuple[object, frozenset[str], NativeOperators | None] | None = None
 
     max_depth = 10
 
@@ -221,12 +251,16 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         cached = self._native_operators
         default = table is state.default_handlers
         if default and cached is not None and cached[0] is table:
-            return cached[1]
-        operators = native_state_operators(table, state)
-        native = cached_native_operators(operators) if operators else None
-        if default:
-            self._native_operators = (table, native)
-        return native
+            operators, native = cached[1], cached[2]
+        else:
+            operators = native_state_operators(table, state)
+            native = cached_native_operators(operators) if operators else None
+            if default:
+                self._native_operators = (table, operators, native)
+        if native is None:
+            return None
+        defaults = state.current_default_spaces()
+        return native if defaults is None else remapped_native_operators(operators, defaults)
 
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state
@@ -608,25 +642,12 @@ class TextState(RecoveringTextState):
         nested.graphics.black_point_compensation = self.graphics.black_point_compensation
         nested.graphics.alpha_is_shape = initial_alpha_is_shape
         nested.graphics.text_knockout = initial_text_knockout
+        if pattern.paint_type == 2:
+            self.uncolored_cell_state(nested, pattern)
         try:
             nested.stream_executor.consume(pattern.stream, pattern.resources, pattern.matrix, 0)
         except Exception:
             return None
-        if pattern.paint_type == 2:
-            base_color = pattern.base_color
-            if base_color is not None and pattern.base_color_spec is not None:
-                converted = color_operands_to_srgb(
-                    pattern.base_color_spec, base_color, rendering=rendering
-                )
-                if converted is not None:
-                    base_color = converted
-            for drawing in nested.drawings:
-                if drawing.kind in {"fill", "fillstroke"}:
-                    drawing.fill = base_color
-                if drawing.kind in {"stroke", "fillstroke"}:
-                    drawing.stroke_color = base_color
-            for glyph in nested.glyphs:
-                glyph.style = replace(glyph.style, fill=base_color, stroke_color=base_color)
         # The cell ran under its pattern matrix, so the program is in default user space.
         matrix = pattern.matrix
         return TilingPattern(
@@ -642,6 +663,27 @@ class TextState(RecoveringTextState):
             ),
             matrix=None if matrix == IDENTITY_MATRIX else matrix,
         )
+
+    @cites(
+        "ISO 32000-2",
+        "8.7.3.3",
+        introduced="1.2",
+        rule="an uncoloured cell is painted in the scn colour, its colour operators ignored",
+    )
+    def uncolored_cell_state(self, nested: TextState, pattern: model.TilingPattern) -> None:
+        """Start an uncoloured tiling pattern's cell in the colour scn gave with the pattern,
+        in its underlying space, for fills, strokes, text and image masks alike, and with the
+        colour operators ignored there and in every stream the cell invokes (8.6.8), so the
+        cell is a stencil that colour is poured through."""
+        graphics = nested.graphics
+        space = pattern.base_color_spec
+        color = pattern.base_color
+        if space is not None and color is not None:
+            graphics.fill_space = graphics.stroke_space = space
+            graphics.fill_color = graphics.stroke_color = color
+        graphics.fill_pattern = graphics.stroke_pattern = None
+        nested.type3_uncolored = True
+        nested.inherited_uncolored = True
 
     def capture_graphics_soft_mask(self) -> CapturedSoftMask | None:
         mask = self.graphics.soft_mask

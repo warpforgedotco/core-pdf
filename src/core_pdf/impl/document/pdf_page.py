@@ -36,6 +36,11 @@ lazy from core_pdf.impl.output.model import Page
 lazy from core_pdf.impl.render.model import RenderOptions
 lazy from core_pdf.impl.render.page import compose_page
 lazy from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
+lazy from core_pdf.impl.spec.s_08_graphics.default_spaces import (
+    DEFAULT_SPACE_KEYS,
+    default_space_values,
+    valid_default_space,
+)
 lazy from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import blending_space_of
 
@@ -378,7 +383,24 @@ class PdfPage:
             space = parse_color_space(resolver.deep_resolve(value))
         except ValueError, TypeError:
             return None
+        space = self.default_color_space(space)
         return space if blending_space_of(space) is not None else None
+
+    def default_color_space(self, space: ColorSpace) -> ColorSpace:
+        """A device space as the page resources' default space for it, if they name a valid
+        one (8.6.5.6): the page group's CS is remapped as any group's is (11.6.6)."""
+        if space.kind not in DEFAULT_SPACE_KEYS:
+            return space
+        resolver = self.document.resolver
+        color_spaces = resolve_resource_dict(self.resources.get("ColorSpace"), resolver)
+        value = default_space_values(color_spaces, resolver.deep_resolve).get(space.kind)
+        if value is None:
+            return space
+        try:
+            remapped = parse_color_space(value)
+        except ValueError, TypeError:
+            return space
+        return remapped if valid_default_space(space.kind, remapped) else space
 
     @property
     def structure(self) -> PageStructure:
