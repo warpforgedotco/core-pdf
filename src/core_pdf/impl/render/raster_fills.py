@@ -7,8 +7,6 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 
 from __future__ import annotations
 
-import heapq
-import math
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -21,12 +19,7 @@ from core_pdf.impl.render.blend import (
     blend_solid_array_numpy,
     declared_blend,
 )
-from core_pdf.impl.render.paths import (
-    RASTER_CIRCLE_MIN_PIXEL_AREA,
-    fill_path_crossing_spans,
-    intersect_box,
-)
-from core_pdf.impl.render.raster_support import bounded_edges
+from core_pdf.impl.render.paths import RASTER_CIRCLE_MIN_PIXEL_AREA, intersect_box
 lazy from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     fill_glyph_coverage_at,
@@ -36,10 +29,6 @@ lazy from core_pdf_cythonized import (
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
-
-# A fill whose pixel box is smaller is antialiased; a larger one covers a pixel whole or not
-# at all, by whether its centre is inside the path.
-ANTIALIASED_FILL_PIXELS = 10_000
 
 
 def fill_rect(
@@ -327,169 +316,6 @@ def fill_circle(
                 blend_px(row + px * 4, rgba, blend_resolved_mode)
 
 
-def fill_path_scanlines(
-    self: RasterTarget,
-    edge_segments: list[tuple[float, float, float, float, float, float]],
-    pixel_box: tuple[int, int, int, int],
-    rgba: tuple[int, int, int, int],
-    blend_mode: str | None,
-    fill_rule: str,
-) -> None:
-    blend_normal_solid_span = self.blend_normal_solid_span
-    blend_px = self.blend_px
-    blend_resolved_mode = self.resolved_blend(blend_mode)
-    clip_paths_are_axis_aligned_rects = self.clip.clip_paths_are_axis_aligned_rects
-    clip_row_visible_spans = self.clip.clip_row_visible_spans
-    crop_x0 = self.crop_x0
-    crop_y1 = self.crop_y1
-    scale = self.scale
-    width = self.width
-    ix0, iy0, ix1, iy1 = pixel_box
-    rectangular_clip = clip_paths_are_axis_aligned_rects()
-    simple_opaque = rgba[3] == 255 and blend_mode is None and rectangular_clip
-    normal_fast = blend_mode is None
-    normal_target = self.pixel_array if normal_fast and not simple_opaque else None
-    blend_target = self.pixel_array if not normal_fast and rgba[3] > 0 else None
-
-    def span_pixels(start_x: float, end_x: float) -> tuple[int, int] | None:
-        if end_x <= start_x:
-            return None
-        start = math.ceil((start_x - crop_x0) * scale - 0.5)
-        end = math.ceil((end_x - crop_x0) * scale - 0.5)
-        start = max(ix0, min(ix1, start))
-        end = max(ix0, min(ix1, end))
-        if end <= start:
-            return None
-        return start, end
-
-    edge_count = len(edge_segments)
-    pending_order = sorted(range(edge_count), key=lambda i: -edge_segments[i][5])
-    pending_index = 0
-    active_heap: list[tuple[float, int]] = []
-    for py in range(iy0, iy1):
-        visible_spans = clip_row_visible_spans(py)
-        if not visible_spans:
-            continue
-        page_y = crop_y1 - (py + 0.5) / scale
-        while (
-            pending_index < edge_count and edge_segments[pending_order[pending_index]][5] > page_y
-        ):
-            edge_index = pending_order[pending_index]
-            heapq.heappush(active_heap, (-edge_segments[edge_index][4], edge_index))
-            pending_index += 1
-        while active_heap and -active_heap[0][0] > page_y:
-            heapq.heappop(active_heap)
-        crossings: list[tuple[float, int]] = []
-        for _low, edge_index in active_heap:
-            ex0, ey0, ex1, ey1, edge_low, edge_high = edge_segments[edge_index]
-            if not (edge_low <= page_y < edge_high):
-                continue
-            t = (page_y - ey0) / (ey1 - ey0)
-            x_intersection = ex0 + t * (ex1 - ex0)
-            crossings.append((x_intersection, 1 if ey1 > ey0 else -1))
-        if not crossings:
-            continue
-        row = py * width * 4
-        scan_spans = fill_path_crossing_spans(crossings, fill_rule)
-        for start_x, end_x in scan_spans:
-            span = span_pixels(start_x, end_x)
-            if span is None:
-                continue
-            start, end = span
-            for clip_start, clip_end in visible_spans:
-                visible_start = max(start, clip_start)
-                visible_end = min(end, clip_end)
-                if visible_end <= visible_start:
-                    continue
-                if simple_opaque:
-                    self.pixel_array[py, visible_start:visible_end] = rgba
-                    self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
-                    continue
-                if rectangular_clip and normal_fast:
-                    blend_normal_solid_span(row, visible_start, visible_end, rgba)
-                    continue
-                if (
-                    normal_target is not None
-                    and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
-                ):
-                    blend_normal_solid_array_numpy(
-                        normal_target[py, visible_start:visible_end], rgba
-                    )
-                    self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
-                    continue
-                if (
-                    blend_target is not None
-                    and visible_end - visible_start >= RASTER_NUMPY_SPAN_MIN_PIXELS
-                ):
-                    blend_solid_array_numpy(
-                        blend_target[py, visible_start:visible_end],
-                        rgba,
-                        blend_resolved_mode,
-                        semantic_context=self.semantic_context,
-                    )
-                    self.record_source_coverage(py, slice(visible_start, visible_end), rgba[3])
-                    continue
-                for px in range(visible_start, visible_end):
-                    blend_px(row + px * 4, rgba, blend_resolved_mode)
-
-
-def fast_fill_path(
-    self: RasterTarget,
-    edges: list[tuple[float, float, float, float]] | numpy.ndarray[Any, Any],
-    bbox: tuple[float, float, float, float],
-) -> bool:
-    blend_normal_solid_span = self.blend_normal_solid_span
-    crop_x0 = self.crop_x0
-    crop_y1 = self.crop_y1
-    page_box_to_pixels = self.grid.page_box_to_pixels
-    scale = self.scale
-    width = self.width
-    x0, y0, x1, y1 = bbox
-    pixel_box = page_box_to_pixels(x0, y0, x1, y1)
-    if pixel_box is None:
-        return True
-    ix0, iy0, ix1, iy1 = pixel_box
-    if ix1 - ix0 < 10 or iy1 - iy0 < 10:
-        return False
-    edge_bounds = (
-        bounded_edges(edges)
-        if isinstance(edges, numpy.ndarray)
-        else [(ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1)) for ex0, ey0, ex1, ey1 in edges]
-    )
-    edge_count = len(edge_bounds)
-    pending_order = sorted(range(edge_count), key=lambda i: -edge_bounds[i][5])
-    pending_index = 0
-    active_heap: list[tuple[float, int]] = []
-    for py in range(iy0, iy1):
-        scan_y = crop_y1 - (py + 0.5) / scale
-        while pending_index < edge_count and edge_bounds[pending_order[pending_index]][5] > scan_y:
-            edge_index = pending_order[pending_index]
-            heapq.heappush(active_heap, (-edge_bounds[edge_index][4], edge_index))
-            pending_index += 1
-        while active_heap and -active_heap[0][0] > scan_y:
-            heapq.heappop(active_heap)
-        intersections: list[tuple[float, int]] = []
-        for _low, edge_index in active_heap:
-            ex0, ey0, ex1, ey1, edge_low, edge_high = edge_bounds[edge_index]
-            if not (edge_low <= scan_y < edge_high):
-                continue
-            intersections.append(
-                (ex0 + (scan_y - ey0) * (ex1 - ex0) / (ey1 - ey0), 1 if ey1 > ey0 else -1)
-            )
-        intersections.sort()
-        winding = 0
-        start_x = 0.0
-        for end_x, delta in intersections:
-            if winding:
-                start = max(ix0, math.ceil((start_x - crop_x0) * scale - 0.5))
-                end = min(ix1, math.ceil((end_x - crop_x0) * scale - 0.5))
-                blend_normal_solid_span(py * width * 4, start, end, (0, 0, 0, 255))
-            if winding == 0:
-                start_x = end_x
-            winding += delta
-    return True
-
-
 def fill_path(
     self: RasterTarget,
     path: CapturedPath,
@@ -500,120 +326,80 @@ def fill_path(
     bbox: tuple[float, float, float, float] | None = None,
     edge_array: numpy.ndarray[Any, Any] | None = None,
 ) -> None:
-    clipped_pixel_box = self.clip.clipped_pixel_box
+    """Fill path antialiased, whatever its size: a pixel's alpha is the share of it the
+    path covers. Under the nonzero rule, in the Normal blend mode and a rectangular clip,
+    that share is the signed area of the pixel inside the path; otherwise it is the share
+    of a 4x4 grid of sample points inside the path, under fill_rule."""
     clip = self.clip
-    clip_regions = clip.regions
-    clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-    crop_x0 = self.crop_x0
-    crop_y1 = self.crop_y1
-    current_clip = clip.current_clip
-    fast_fill_path = self.fast_fill_path
-    fill_path_scanlines = self.fill_path_scanlines
-    fill_rect = self.fill_rect
-    scale = self.scale
     rect = path.axis_aligned_rect()
     if rect is not None:
-        fill_rect(rect, rgba, blend_mode)
+        self.fill_rect(rect, rgba, blend_mode)
         return
-    edges: list[tuple[float, float, float, float]] | numpy.ndarray[Any, Any]
     if edge_array is None:
         edge_array = path.fill_edge_array()
     if edge_array is None:
         edges = path.fill_edges()
         if not edges:
             return
-    else:
-        edges = edge_array
-        if len(edge_array) == 0:
-            return
+        edge_array = numpy.asarray(edges, dtype=numpy.float64)
+    elif len(edge_array) == 0:
+        return
     if bbox is None:
         bbox = clip.path_bbox(path)
     if bbox is None:
         return
-    fast_bbox: tuple[float, float, float, float] | None = bbox
-    if clip_regions:
-        if not clip_paths_are_axis_aligned_rects():
-            fast_bbox = None
-        else:
-            clip_box = current_clip()
-            if clip_box is not None:
-                fast_bbox = intersect_box(bbox, clip_box)
-    if (
-        rgba == (0, 0, 0, 255)
-        and blend_mode is None
-        and self.group_source_shape is None
-        and fast_bbox is not None
-        and fill_rule == "nonzero"
-        and fast_fill_path(edges, fast_bbox)
-    ):
-        return
-    clipped_box = clipped_pixel_box(bbox)
+    clipped_box = clip.clipped_pixel_box(bbox)
     if clipped_box is None:
         return
-    pixel_box = clipped_box[1]
-    ix0, iy0, ix1, iy1 = pixel_box
-    pixel_area = (ix1 - ix0) * (iy1 - iy0)
-    rectangular_clip = clip_paths_are_axis_aligned_rects()
+    ix0, iy0, ix1, iy1 = clipped_box[1]
+    crop_x0 = self.crop_x0
+    crop_y1 = self.crop_y1
+    scale = self.scale
+    rectangular_clip = clip.clip_paths_are_axis_aligned_rects()
     normal_fast = blend_mode is None
-    if pixel_area < ANTIALIASED_FILL_PIXELS:
-        source = (
-            edges if isinstance(edges, numpy.ndarray) else numpy.asarray(edges, dtype=numpy.float64)
-        )
-        if normal_fast and rectangular_clip and fill_rule == "nonzero":
-            drawn = fill_glyph_coverage_at(
-                source,
-                crop_x0,
-                crop_y1,
-                scale,
-                ix0,
-                iy0,
-                ix1 - ix0,
-                iy1 - iy0,
-                rgba,
-                self.pixel_array,
-                self.group_source_alpha,
-                self.group_source_shape,
-                self.shape_alpha,
-            )
-            if drawn is not None:
-                self.extend_paint_box(iy0, iy1, ix0, ix1)
-            return
-        sampled = supersampled_coverage_plane(
-            source, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
-        )
-        if sampled is None:
-            return
-        counts, first_row = sampled
-        if normal_fast and rectangular_clip:
-            rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
-            columns = slice(ix0, ix1)
-            coverage = counts.astype(numpy.float32)
-            alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
-            blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
-            self.record_source_alpha(rows, columns, alpha_plane)
-            if self.group_source_shape is not None:
-                self.record_source_shape(
-                    rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
-                )
-            return
-        top = iy0 + first_row
-        self.blend_counts(
-            counts,
+    if normal_fast and rectangular_clip and fill_rule == "nonzero":
+        drawn = fill_glyph_coverage_at(
+            edge_array,
+            crop_x0,
+            crop_y1,
+            scale,
             ix0,
-            top,
-            None if rectangular_clip else self.clip_pixel_mask(ix0, top, ix1, top + len(counts)),
+            iy0,
+            ix1 - ix0,
+            iy1 - iy0,
             rgba,
-            blend_mode,
+            self.pixel_array,
+            self.group_source_alpha,
+            self.group_source_shape,
+            self.shape_alpha,
         )
+        if drawn is not None:
+            self.extend_paint_box(iy0, iy1, ix0, ix1)
         return
-    if isinstance(edges, numpy.ndarray):
-        edge_segments = bounded_edges(edges, skip_horizontal=True)
-    else:
-        edge_segments = [
-            (ex0, ey0, ex1, ey1, min(ey1, ey0), max(ey0, ey1))
-            for ex0, ey0, ex1, ey1 in edges
-            if ey0 != ey1
-        ]
-    if not edge_segments:
+    sampled = supersampled_coverage_plane(
+        edge_array, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
+    )
+    if sampled is None:
         return
-    fill_path_scanlines(edge_segments, pixel_box, rgba, blend_mode, fill_rule)
+    counts, first_row = sampled
+    if normal_fast and rectangular_clip:
+        rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
+        columns = slice(ix0, ix1)
+        coverage = counts.astype(numpy.float32)
+        alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
+        blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
+        self.record_source_alpha(rows, columns, alpha_plane)
+        if self.group_source_shape is not None:
+            self.record_source_shape(
+                rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
+            )
+        return
+    top = iy0 + first_row
+    self.blend_counts(
+        counts,
+        ix0,
+        top,
+        None if rectangular_clip else self.clip_pixel_mask(ix0, top, ix1, top + len(counts)),
+        rgba,
+        blend_mode,
+    )

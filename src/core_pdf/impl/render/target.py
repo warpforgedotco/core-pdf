@@ -165,7 +165,6 @@ class RasterTarget:
     # Blending source pixels into the target, and the clip mask they pass through.
     resolved_blend = blend.resolved_blend
     blend_px = blend.blend_px
-    blend_normal_solid_span = blend.blend_normal_solid_span
     clip_pixel_mask = blend.clip_pixel_mask
     blend_rules = blend.blend_rules
     blend_counts = blend.blend_counts
@@ -174,8 +173,6 @@ class RasterTarget:
     fill_rect = fills.fill_rect
     draw_glyph_bitmap = fills.draw_glyph_bitmap
     fill_circle = fills.fill_circle
-    fill_path_scanlines = fills.fill_path_scanlines
-    fast_fill_path = fills.fast_fill_path
     fill_path = fills.fill_path
 
     # Stroking paths: segments, joins and caps.

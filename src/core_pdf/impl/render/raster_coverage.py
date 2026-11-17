@@ -17,7 +17,6 @@ from core_pdf.impl.base.geometry import clamp01
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import declared_blend
 from core_pdf.impl.render.model import DisplayItem, PathPaintItem, PathPaintKind, RasterGroup
-from core_pdf.impl.render.raster_fills import ANTIALIASED_FILL_PIXELS
 from core_pdf.impl.render.raster_support import EMPTY_PIXEL_BOX, PixelBox
 lazy from core_pdf_cythonized import (
     accumulate_source_plane,
@@ -211,11 +210,7 @@ def knockout_glyph_fill(self: RasterTarget, item: DisplayItem) -> bool:
     if clipped is None:
         return True
     pixel_box = clipped[1]
-    ix0, iy0, ix1, iy1 = pixel_box
-    if not (
-        (ix1 - ix0) * (iy1 - iy0) < ANTIALIASED_FILL_PIXELS
-        and self.clip.clip_paths_are_axis_aligned_rects()
-    ):
+    if not self.clip.clip_paths_are_axis_aligned_rects():
         return False
     self.shape_alpha = clamp01(rgba[3] / 255.0) if self.paint_alpha_is_shape else 1.0
     knockout_glyph_paint(
@@ -282,7 +277,7 @@ def paint_glyph_fill(self: RasterTarget, item: PathPaintItem) -> bool:
 
     It paints as paint_item would: in a knockout group, an elementary group by
     knockout_glyph_paint unless the glyph's pixels are clear of every earlier member's,
-    and otherwise fill_path's small-coverage kernel, its shape alpha that set_shape_alpha
+    and otherwise fill_path's coverage kernel, its shape alpha that set_shape_alpha
     would set for the item. Neither reads paint_alpha_is_shape or shape_alpha, so the
     state paint_item saves and restores is left alone.
     """
@@ -310,8 +305,7 @@ def paint_glyph_fill(self: RasterTarget, item: PathPaintItem) -> bool:
         return False
     pixel_box = clipped[1]
     ix0, iy0, ix1, iy1 = pixel_box
-    area = (ix1 - ix0) * (iy1 - iy0)
-    if area >= ANTIALIASED_FILL_PIXELS or not clip.clip_paths_are_axis_aligned_rects():
+    if not clip.clip_paths_are_axis_aligned_rects():
         return False
     group = self.buffer_stack[-1]
     boxes = group.painted_boxes
@@ -345,9 +339,6 @@ def paint_glyph_fill(self: RasterTarget, item: PathPaintItem) -> bool:
         return True
     rgba = self.glyph_fill_rgba(item)
     shape = self.group_source_shape
-    if shape is None and rgba == (0, 0, 0, 255):
-        # fill_path tries its aliased scanline fill first.
-        return False
     shape_alpha = clamp01(rgba[3] / 255.0) if item.alpha_is_shape else 1.0
     drawn = fill_glyph_coverage_at(
         edge_array,

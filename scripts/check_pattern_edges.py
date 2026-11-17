@@ -44,8 +44,7 @@ MATCH_TOLERANCE = 2
 # Each fill must have at least this many pixels its path covers in part.
 MIN_EDGE_PIXELS = 100
 
-# Core antialiases a fill whose pixel box is smaller than 10000 pixels, and any rectangle;
-# a larger fill covers a pixel by its centre, with or without a pattern.
+# LARGE's pixel box is over 10000 pixels, where core once covered a pixel by its centre.
 PENTAGON: list[Point] = [(68.1, 59.3), (131.7, 68.5), (136.8, 104.1), (100.0, 132.7), (62.3, 110.1)]
 HOLE: list[Point] = [(86.2, 77.1), (117.5, 84.1), (97.5, 113.2)]
 LARGE: list[Point] = [(30.3, 20.7), (171.6, 41.2), (182.9, 120.4), (101.15, 183.8), (17.45, 133.6)]
@@ -210,7 +209,7 @@ def cases() -> list[Case]:
             Case(f"{kind}, pentagon", [PENTAGON], tiling=tiling),
             Case(f"{kind}, even-odd ring", [PENTAGON, HOLE], tiling=tiling, evenodd=True),
             Case(f"{kind}, rectangle", [RECTANGLE], tiling=tiling),
-            Case(f"{kind}, large pentagon", [LARGE], tiling=tiling, analytic=False),
+            Case(f"{kind}, large pentagon", [LARGE], tiling=tiling),
             Case(
                 f"{kind}, clipped by W n",
                 [PENTAGON],

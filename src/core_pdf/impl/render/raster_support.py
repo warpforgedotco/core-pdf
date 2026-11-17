@@ -349,22 +349,6 @@ def composite_masked_group(
     return effective_alpha
 
 
-def bounded_edges(
-    edge_array: numpy.ndarray[Any, Any], *, skip_horizontal: bool = False
-) -> list[tuple[float, float, float, float, float, float]]:
-    """Edge rows with each edge's low and high y appended, as the scanline
-    fills take them; the low and high pick exactly as min(y1, y0) and
-    max(y0, y1) do."""
-    ey0 = edge_array[:, 1]
-    ey1 = edge_array[:, 3]
-    rows = numpy.column_stack(
-        (edge_array, numpy.where(ey0 < ey1, ey0, ey1), numpy.where(ey1 > ey0, ey1, ey0))
-    )
-    if skip_horizontal:
-        rows = rows[ey0 != ey1]
-    return list(map(tuple, rows.tolist()))
-
-
 def subpath_columns(
     subpaths: list[CapturedSubpath],
 ) -> tuple[

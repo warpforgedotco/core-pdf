@@ -36,7 +36,6 @@ from core_pdf.impl.render.model import (
     SpaceMode,
 )
 from core_pdf.impl.render.paths import intersect_box
-from core_pdf.impl.render.raster_fills import ANTIALIASED_FILL_PIXELS
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
     shading_rgba,
@@ -835,18 +834,7 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     if type(path) is not CapturedPath or not path.has_segments() or box is None:
         self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
         return True
-    clipped = clip_state.clipped_pixel_box(box)
-    if clipped is None:
-        return True
-    ix0, iy0, ix1, iy1 = clipped[1]
-    if (ix1 - ix0) * (iy1 - iy0) >= ANTIALIASED_FILL_PIXELS and path.axis_aligned_rect() is None:
-        # A fill this large, other than a rectangle's, covers each pixel whole or not at all,
-        # which the path as a clip gives without drawing its coverage.
-        clip_state.push(path, data.fill_rule or "nonzero")
-        try:
-            self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
-        finally:
-            clip_state.pop()
+    if clip_state.clipped_pixel_box(box) is None:
         return True
     # The fill's coverage, drawn opaque on a blank page of its own under the same clip and
     # in the same blend mode, which choose how a plain fill antialiases.
