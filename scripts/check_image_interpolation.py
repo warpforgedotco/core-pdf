@@ -10,7 +10,10 @@ the image is drawn larger than its samples along one of its axes. This writes pa
 small images upscaled, under axis-aligned and rotated placements: grey and RGB images, an
 image mask, an inline image with /I true, an image at fill opacity 0.5, an image with an
 SMask, and one with a colour key Mask, whose colours are interpolated weighted by alpha, so
-that a masked-out sample lends its neighbours nothing. Each pixel whose centre is more than
+that a masked-out sample lends its neighbours nothing. An SMask is an image of its own, its
+Interpolate its own (11.6.5.2, Table 143): an image whose SMask alone interpolates, one
+interpolated over an SMask that is not, and an SMask of another size than its image, each
+plane sampled by its own flag and at its own resolution. Each pixel whose centre is more than
 EDGE device pixels inside the image must be within TOLERANCE of the value interpolated at
 its centre, worked out back through the placement in Python. With Interpolate false or
 absent each must equal the nearest sample, and an image drawn smaller than its samples must
@@ -45,6 +48,7 @@ RGB = [[(255, 0, 0), (0, 255, 0), (0, 0, 255)], [(255, 255, 0), (20, 40, 60), (2
 # The bits of a 4 by 4 image mask, 1 where it paints with the default Decode [0 1] off.
 MASK_BITS = [[1, 0, 1, 1], [0, 1, 0, 0], [1, 1, 0, 1], [0, 0, 1, 0]]
 SOFT_MASK = [[255, 0, 255, 0], [0, 128, 64, 255], [255, 32, 0, 200], [10, 255, 90, 0]]
+SMALL_MASK = [[0, 255, 60], [200, 20, 255]]
 RED = (255, 0, 0)
 # A 4 by 4 RGB image whose black samples a colour key Mask [0 0 0 0 0 0] masks out.
 KEYED = [
@@ -140,12 +144,9 @@ def render(pdf: bytes) -> numpy.ndarray:
 def grey_image(*, interpolate: bool | None, width: int = 4, rows: Grid | None = None) -> bytes:
     rows = GREY if rows is None else rows
     data = bytes(int(value) for row in rows for value in row)
-    flag = (
-        b"" if interpolate is None else b" /Interpolate %s" % (b"true" if interpolate else b"false")
-    )
     return stream(
         b"/Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray "
-        b"/BitsPerComponent 8%s" % (width, len(rows), flag),
+        b"/BitsPerComponent 8%s" % (width, len(rows), flag(interpolate)),
         data,
     )
 
@@ -172,6 +173,52 @@ def painted_by(alpha: Grid) -> Callable[[float, float], Sequence[float]]:
         return tuple(255 * (1 - a) + channel * a for channel in RED)
 
     return expected
+
+
+type Rule = Callable[[Grid, float, float], float]
+
+
+def masked(
+    colors: Sequence[Sequence[tuple[int, int, int]]],
+    color_rule: Rule,
+    alpha: Grid,
+    alpha_rule: Rule,
+) -> Callable[[float, float], Sequence[float]]:
+    """colors, sampled at u, v by color_rule, painted over white through alpha (0 to 255)
+    sampled by alpha_rule: each plane by its own rule, on its own grid."""
+
+    def expected(u: float, v: float) -> Sequence[float]:
+        a = alpha_rule(alpha, u, v) / 255
+        return tuple(
+            255 * (1 - a) + color_rule([[pixel[k] for pixel in row] for row in colors], u, v) * a
+            for k in range(3)
+        )
+
+    return expected
+
+
+def flag(interpolate: bool | None) -> bytes:
+    if interpolate is None:
+        return b""
+    return b" /Interpolate %s" % (b"true" if interpolate else b"false")
+
+
+def masked_image(
+    colors: Sequence[Sequence[tuple[int, int, int]]], interpolate: bool | None
+) -> bytes:
+    return stream(
+        b"/Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB "
+        b"/BitsPerComponent 8%s /SMask 6 0 R" % (len(colors[0]), len(colors), flag(interpolate)),
+        bytes(channel for row in colors for pixel in row for channel in pixel),
+    )
+
+
+def soft_mask_image(alpha: Grid, interpolate: bool | None) -> bytes:
+    return stream(
+        b"/Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray "
+        b"/BitsPerComponent 8%s" % (len(alpha[0]), len(alpha), flag(interpolate)),
+        bytes(int(value) for row in alpha for value in row),
+    )
 
 
 def keyed_expected(u: float, v: float) -> Sequence[float]:
@@ -273,6 +320,34 @@ def cases() -> list[Case]:
         ),
         Case("RGB with an SMask", soft, axis, painted_by(SOFT_MASK), extra=(soft_mask,)),
         Case("RGB with a colour key Mask", keyed, turned, keyed_expected),
+        Case(
+            "RGB not interpolated, its SMask interpolated",
+            masked_image(KEYED, False),
+            axis,
+            masked(KEYED, nearest, SOFT_MASK, bilinear),
+            extra=(soft_mask_image(SOFT_MASK, True),),
+        ),
+        Case(
+            "RGB interpolated, its SMask's Interpolate absent",
+            masked_image(KEYED, True),
+            turned,
+            masked(KEYED, bilinear, SOFT_MASK, nearest),
+            extra=(soft_mask_image(SOFT_MASK, None),),
+        ),
+        Case(
+            "RGB interpolated, its SMask's Interpolate false",
+            masked_image(KEYED, True),
+            axis,
+            masked(KEYED, bilinear, SOFT_MASK, nearest),
+            extra=(soft_mask_image(SOFT_MASK, False),),
+        ),
+        Case(
+            "a 3 by 2 SMask interpolated over a 4 by 4 image that is not",
+            masked_image(KEYED, None),
+            turned,
+            masked(KEYED, nearest, SMALL_MASK, bilinear),
+            extra=(soft_mask_image(SMALL_MASK, True),),
+        ),
         downscaled,
     ]
 
