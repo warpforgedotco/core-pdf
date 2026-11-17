@@ -57,6 +57,8 @@ if TYPE_CHECKING:
     from core_pdf.impl.capture.records import LayoutFormId, StrokeMatrix
     from core_pdf.impl.document.pdf_document import PdfDocument
     from core_pdf.impl.recovery.resolver import ObjectResolver
+    from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
+    from core_pdf.impl.spec.s_08_graphics.default_spaces import DefaultSpaces
     from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace
 
 
@@ -166,23 +168,50 @@ DEFAULT_OPERATOR_NAMES: frozenset[bytes] = frozenset(
 
 
 @lru_cache(maxsize=16)
-def cached_native_operators(operators: frozenset[str]) -> NativeOperators:
+def cached_native_operators(
+    operators: frozenset[str],
+    gray: ColorSpace = DEVICE_GRAY,
+    rgb: ColorSpace = DEVICE_RGB,
+    cmyk: ColorSpace = DEVICE_CMYK,
+) -> NativeOperators:
     return NativeOperators(
         operators,
         GLYPH_PAINT_KEEPING_OPERATORS,
         LINE_MOVING_OPERATORS,
         TEXT_LAYOUT_KEEPING_OPERATORS,
-        DEVICE_GRAY,
-        DEVICE_RGB,
-        DEVICE_CMYK,
+        gray,
+        rgb,
+        cmyk,
         Matrix,
     )
+
+
+# The operators that set a device colour, which a stream's default spaces remap.
+DEVICE_COLOR_OPERATORS = frozenset({"G", "g", "RG", "rg", "K", "k"})
+
+
+def remapped_native_operators(
+    operators: frozenset[str], defaults: DefaultSpaces
+) -> NativeOperators | None:
+    """The native operators of a stream whose resources have default colour spaces: the
+    device colour operators set the default spaces, when their components range over 0 to
+    1 as the native operators clamp to, and are left to their handlers otherwise."""
+    if defaults.unit_ranges:
+        spaces = defaults.spaces
+        return cached_native_operators(
+            operators,
+            spaces.get("DeviceGray", DEVICE_GRAY),
+            spaces.get("DeviceRGB", DEVICE_RGB),
+            spaces.get("DeviceCMYK", DEVICE_CMYK),
+        )
+    remaining = operators - DEVICE_COLOR_OPERATORS
+    return cached_native_operators(remaining) if remaining else None
 
 
 class CaptureStreamExecutor(ContentStreamExecutor):
     state: TextState  # ty: ignore[invalid-mutable-override]
     _operator_names: frozenset[bytes] | None = None
-    _native_operators: tuple[object, NativeOperators | None] | None = None
+    _native_operators: tuple[object, frozenset[str], NativeOperators | None] | None = None
 
     max_depth = 10
 
@@ -221,12 +250,16 @@ class CaptureStreamExecutor(ContentStreamExecutor):
         cached = self._native_operators
         default = table is state.default_handlers
         if default and cached is not None and cached[0] is table:
-            return cached[1]
-        operators = native_state_operators(table, state)
-        native = cached_native_operators(operators) if operators else None
-        if default:
-            self._native_operators = (table, native)
-        return native
+            operators, native = cached[1], cached[2]
+        else:
+            operators = native_state_operators(table, state)
+            native = cached_native_operators(operators) if operators else None
+            if default:
+                self._native_operators = (table, operators, native)
+        if native is None:
+            return None
+        defaults = state.current_default_spaces()
+        return native if defaults is None else remapped_native_operators(operators, defaults)
 
     def dispatch_frame(self, frame: ContentStreamFrame) -> ContentStreamFrame | None:
         state = self.state

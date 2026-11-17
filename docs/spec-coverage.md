@@ -29,9 +29,9 @@ still passes it through). Deprecated keys are left out. See also the
 | PDF 1.6 | 207 | 109 | 98 |
 | PDF 1.5 | 587 | 277 | 310 |
 | PDF 1.4 | 208 | 138 | 70 |
-| PDF 1.3 | 554 | 394 | 160 |
+| PDF 1.3 | 554 | 395 | 159 |
 | PDF 1.2 | 366 | 252 | 114 |
-| PDF 1.1 | 90 | 75 | 15 |
+| PDF 1.1 | 90 | 77 | 13 |
 | PDF 1.0 | 193 | 158 | 35 |
 | extension AAPL | 9 | 3 | 6 |
 | extension EAPDF_1 | 2 | 0 | 2 |
@@ -268,6 +268,7 @@ Values core never compares, of keys it reads:
 - `Subtype` `GEO` in MeasureGEO
 - `Subtype` `LD3` in 3DMeasureLD3
 - `Subtype` `LineNum` in StructureAttributesDict
+- `Subtype` `Linear` in RichMediaAnimation
 - `Subtype` `MarkupGeo` in ExDataMarkupGeo
 - `Subtype` `Oscillating` in RichMediaAnimation
 - `Subtype` `PD3` in 3DMeasurePD3
@@ -400,6 +401,7 @@ Values core never compares, of keys it reads:
 - `Subtype` `Headlamp` in 3DLightingScheme
 - `Subtype` `HiddenWireframe` in 3DRenderMode
 - `Subtype` `Illustration` in 3DRenderMode
+- `Subtype` `Linear` in 3DAnimationStyle
 - `Subtype` `Markup3D` in ExData3DMarkup
 - `Subtype` `ModDate` in CollectionField
 - `Subtype` `Night` in 3DLightingScheme
@@ -828,7 +830,6 @@ Keys core never reads:
 - `ContactInfo` in Signature
 - `DA` in AnnotFreeText, FieldSig
 - `DV` in FieldSig
-- `DefaultCMYK` in ColorSpaceMap
 - `DefaultForPrinting` in AlternateImage
 - `DeviceColorant` in Separation
 - `Direction` in ViewerPreferences
@@ -1028,8 +1029,6 @@ Keys core never reads:
 
 - `B` in ActionThread, PageObject
 - `Base` in URI
-- `DefaultGray` in ColorSpaceMap
-- `DefaultRGB` in ColorSpaceMap
 - `Di` in Transition
 - `Dm` in Transition
 - `Dur` in PageObject

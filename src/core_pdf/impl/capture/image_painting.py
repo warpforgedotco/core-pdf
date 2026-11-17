@@ -7,6 +7,7 @@ Each function takes the state as self; TextState lists them as its methods.
 
 from __future__ import annotations
 
+from copy import replace
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.types import PdfName
@@ -17,6 +18,7 @@ from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
+from core_pdf.impl.spec.s_08_graphics.default_spaces import DefaultSpaces, remap_color_space
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 lazy from core_pdf.impl.graphics.images import image_overrides_graphics_soft_mask
 lazy from core_pdf.impl.spec.s_08_graphics.geometry import unit_square_placement
@@ -32,19 +34,45 @@ if TYPE_CHECKING:
     from core_pdf.impl.capture.recording import TextState
 
 
+@cites(
+    "ISO 32000-2",
+    "8.6.5.6",
+    introduced="1.1",
+    rule="an image's device ColorSpace remaps through the current default spaces",
+)
+def remapped_image_dictionary(dictionary: PdfDict, defaults: DefaultSpaces) -> PdfDict | None:
+    """An image dictionary with its ColorSpace's device spaces remapped through the default
+    spaces, or None when that changes nothing. An image mask has no colour space: it paints
+    the current colour, which the default spaces remapped as it was set."""
+    space = dictionary.get("ColorSpace")
+    if space is None or dictionary.get("ImageMask") is True:
+        return None
+    remapped = remap_color_space(space, defaults.values)
+    if remapped is space:
+        return None
+    changed = dict(dictionary)
+    changed[PdfName.of("ColorSpace")] = remapped  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    return changed
+
+
 def captured_image_source(self: TextState, xobj: PdfStream) -> tuple[ImageSource, float | None]:
     rendering = self.graphics.color_rendering
     cache = self.caches.capture_image_sources
-    key = (id(xobj), rendering)
+    defaults = self.current_default_spaces()
+    pins: tuple[object, ...] = ()
+    if defaults is None:
+        key: tuple[object, ...] = (id(xobj), rendering)
+    else:
+        key = (id(xobj), rendering, id(defaults))
+        pins = (defaults,)
     cached = cache.get_key(xobj, key)
     if cached is None:
-        cached = cache.put_key(
-            xobj,
-            key,
-            CachedImageSource(
-                image_source_from_stream(xobj, self.resolver, color_rendering=rendering)
-            ),
-        )
+        source = image_source_from_stream(xobj, self.resolver, color_rendering=rendering)
+        if defaults is not None:
+            remapped = remapped_image_dictionary(source.dictionary, defaults)
+            if remapped is not None:
+                source = replace(source, dictionary=remapped)
+        cached = cache.put_key(xobj, key, CachedImageSource(source), pins)
     alpha = cached.soft_mask_alpha() if self.options.soft_mask_alpha else None
     return cached.source, alpha
 
@@ -107,6 +135,9 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
             )
             if color_resource is not None:
                 dictionary[PdfName.of("ColorSpace")] = color_resource
+        defaults = self.current_default_spaces()
+        if defaults is not None:
+            dictionary = remapped_image_dictionary(dictionary, defaults) or dictionary
         source = image_source_from_stream(
             PdfStream(raw_data=data, dictionary=dictionary),
             self.resolver,

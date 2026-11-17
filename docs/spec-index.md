@@ -43,6 +43,13 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | the line width and dashes are measured in user space, where the pen is a circle | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.raster_strokes.stroke_once` |
 | PDF 1.0 | the line width is measured in user space, so the pen is an ellipse on the page | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.capture.path_painting.stroke_space` |
+| PDF 1.1 | a ColorSpace subdictionary's DefaultGray, DefaultRGB and DefaultCMYK entries | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.default_space_values` |
+| PDF 1.1 | a default colour space is not Lab, Indexed or Pattern, with the device's components | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space` |
+| PDF 1.1 | a device space remaps where selected and as an Indexed, Pattern or tint space's base | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.remap_color_space` |
+| PDF 1.1 | a shading's device ColorSpace remaps through the current default spaces | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.capture.paint_sources.capture_shading_dictionary` |
+| PDF 1.1 | an image's device ColorSpace remaps through the current default spaces | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.capture.image_painting.remapped_image_dictionary` |
+| PDF 1.1 | device colour values pass to the default space, clipped to its ranges | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_08_graphics.default_spaces.clip_to_ranges` |
+| PDF 1.1 | the default spaces are those of the current resource dictionary | ISO 32000-2 8.6.5.6 (Default colour spaces) | `core_pdf.impl.spec.s_07_content.interpreter.default_spaces_of` |
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
@@ -66,6 +73,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.3 | sh paints in the current user space | ISO 32000-2 8.7.4.2 (Shading operator) | `core_pdf.impl.capture.image_painting.paint_shading` |
 | PDF 1.3 | shadings of types 4 to 7 are streams, whose data holds their geometry | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_shading` |
 | PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
+| PDF 1.4 | a group's CS naming a device space is remapped through the default spaces | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_07_content.interpreter.group_color_space` |
 | PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
 | PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
@@ -191,6 +199,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6 (Colour spaces) `core_pdf.impl.spec.s_08_graphics.color`: colour components: their ranges, initial values and Indexed lookups
 - 8.6 (Colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec`: colour spaces: device, CIE-based and special
 - 8.6.5 (CIE-Based colour spaces) `core_pdf.impl.spec.s_08_graphics.color_math`: CIE-based colour arithmetic: Lab and XYZ, and black point compensation
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces`: default colour spaces
 - 8.6.5.8 (Rendering intents) `core_pdf.impl.spec.s_08_graphics.color_rendering`: rendering intents, and black point compensation (8.6.5.9)
 - 8.7.4 (Shading patterns) `core_pdf.impl.spec.s_08_graphics.shading`: shading dictionaries
 - 8.7.4.5.5 (Type 4 (free-form Gouraud-shaded triangle mesh) shadings) `core_pdf.impl.spec.s_08_graphics.shading_mesh`: the stream data of triangle and patch mesh shadings (types 4 to 7)
@@ -246,6 +255,13 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.4.3.5 (Miter limit) `core_pdf.impl.render.raster_strokes.stroke_path`: a miter past the miter limit is a bevel
 - 8.4.5 (Graphics state parameter dictionaries) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_line_style`: LW, LC, LJ, ML and D set the line width, cap, join, miter limit and dash
 - 8.5.3.2 (Stroking) `core_pdf.impl.render.raster_strokes.stroke_once`: a stroke is one shape: its segments, joins, caps and dashes are painted once
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.capture.image_painting.remapped_image_dictionary`: an image's device ColorSpace remaps through the current default spaces
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.capture.paint_sources.capture_shading_dictionary`: a shading's device ColorSpace remaps through the current default spaces
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_07_content.interpreter.default_spaces_of`: the default spaces are those of the current resource dictionary
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.clip_to_ranges`: device colour values pass to the default space, clipped to its ranges
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.default_space_values`: a ColorSpace subdictionary's DefaultGray, DefaultRGB and DefaultCMYK entries
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.remap_color_space`: a device space remaps where selected and as an Indexed, Pattern or tint space's base
+- 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space`: a default colour space is not Lab, Indexed or Pattern, with the device's components
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
@@ -291,6 +307,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.5.3 (Deriving a soft mask from group luminosity) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_color`: the colour a luminosity mask is taken from
 - 11.6.3 (Specifying blending colour space and blend mode) `core_pdf.impl.spec.s_11_transparency.blend.first_recognized_blend_mode`: an array of blend modes selects the first one recognized
 - 11.6.5.1 (Soft-mask dictionaries) `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value`: a luminosity mask outside its group
+- 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_07_content.interpreter.group_color_space`: a group's CS naming a device space is remapped through the default spaces
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 14.7.3 (Structure types) `core_pdf.impl.spec.s_14_structure.roles.resolve_structure_role`: a role map can remap standard structure types
 - 14.7.4 (Namespaces) `core_pdf.impl.spec.s_14_structure.roles.resolve_namespace`: structure namespaces and RoleMapNS
