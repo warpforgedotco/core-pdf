@@ -161,6 +161,26 @@ def cms_transform_block(
     return numpy.asarray(converted, dtype=numpy.uint8).reshape(rows, 3)
 
 
+# The data colour space an ICCBased space's number of components implies.
+CHANNEL_COLOR_SPACES = {1: "GRAY", 3: "RGB", 4: "CMYK"}
+
+
+def readable_icc_profile(profile: bytes | None, channels: int) -> bool:
+    """Whether profile is an ICC profile core can read, of channels input channels and the
+    gray, RGB or CMYK data colour space they imply: an ICCBased space whose profile is not
+    converts through its Alternate instead."""
+    if profile is None:
+        return False
+    try:
+        transform = parse_icc_transform(profile)
+    except IccProfileError:
+        return False
+    return (
+        transform.input_channels == channels
+        and transform.color_space == CHANNEL_COLOR_SPACES.get(channels)
+    )
+
+
 def parse_icc_transform(profile: bytes) -> IccTransform:
     return parse_icc_transform_cached(bytes(profile))
 

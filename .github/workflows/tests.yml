@@ -358,6 +358,7 @@ jobs:
           $run/check_pdf_functions.py
           $run/check_soft_masks.py
           $run/check_default_spaces.py
+          $run/check_group_profiles.py
           $run/check_char_gaps.py
           $run/check_glyph_outline_edges.py
           $run/check_pdfminer_chars.py

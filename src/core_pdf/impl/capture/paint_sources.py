@@ -56,7 +56,8 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
     if not color_space_paints(spec):
         return color
     cmyk = self.capture_cmyk
-    key = (id(spec), color, intent, black_point, cmyk)
+    profile = self.capture_cmyk_profile
+    key = (id(spec), color, intent, black_point, cmyk, profile)
     caches = self.caches
     previous = caches.capture_colors.get(key)
     if previous is not None:
@@ -64,8 +65,11 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
     else:
         converted: tuple[float, ...] | None = None
         if cmyk and spec.kind not in GRAY_RGB_KINDS:
-            # A CMYK blending space takes a colour that comes down to CMYK as that CMYK.
-            converted = color_operands_to_cmyk(spec, color)
+            # A CMYK blending space takes a colour that comes down to CMYK as that CMYK, of
+            # its own profile.
+            converted = color_operands_to_cmyk(
+                spec, color, profile, rendering=graphics.color_rendering
+            )
         if converted is None:
             converted = color_operands_to_srgb(
                 spec, list(color), rendering=graphics.color_rendering
@@ -146,6 +150,11 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         initial_alpha_is_shape,
         initial_text_knockout,
         id(defaults),
+        # A tiling cell's colours are captured for the blending space it paints into; a
+        # shading pattern's do not depend on it.
+        (self.capture_cmyk, self.capture_cmyk_profile)
+        if isinstance(pattern, model.TilingPattern)
+        else None,
     )
     cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
     if not isinstance(cached, MissingObject):
@@ -168,6 +177,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         )
     elif isinstance(pattern, model.TilingPattern):
         nested = self.nested_capture_state()
+        nested.set_capture_cmyk(self.capture_cmyk, self.capture_cmyk_profile)
         try:
             result = self.capture_tiling_pattern(
                 nested, pattern, rendering, initial_alpha_is_shape, initial_text_knockout

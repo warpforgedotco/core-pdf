@@ -12,9 +12,19 @@ Where the clauses leave a choice open:
 - A device space's luminosity is "implementation-defined"; this takes the formulas of
   11.5.3's example: a gray level as it is, 0.30 R + 0.59 G + 0.11 B, and
   1 - min(1, 0.3 C + 0.59 M + 0.11 Y + K).
-- A CIE-based space should give its CIE 1931 Y. Core composites a CalGray, CalRGB or
-  ICCBased group as the device space of its family (blending_space), and takes the luminosity
-  the same way, as viewers commonly do, rather than the colorimetric Y.
+- A CIE-based space (CalGray, CalRGB, ICCBased, and a device space a default space remaps
+  to one) gives the CIE 1931 Y of C, relative to the space's white (colorimetric_luminosity),
+  not a formula on its components. Core composites a CalGray, CalRGB or ICCBased gray or RGB
+  group in sRGB, the colour every such colour converts to, and takes Y from that sRGB, which
+  is the colour's own Y wherever sRGB holds it; an ICCBased CMYK group composites the CMYK of
+  its profile, whose Y the profile gives, rescaled so that the space's black, 0 0 0 1, is 0
+  and its white 1: a printing profile's black reflects a few percent, and Note 2 has a black
+  backdrop leave zero luminosity outside the group's shape. An ICCBased space whose profile
+  core cannot read converts through its Alternate, and its luminosity is the device one.
+- BC's default is "the colour space's initial value, representing black": all components 0,
+  which is black in an additive space, and for a CMYK space -- whose initial value under
+  8.6.5.5 would be all components 0, white -- its black, 0 0 0 1, as DeviceCMYK's initial
+  value is (default_backdrop_color).
 """
 
 from __future__ import annotations
@@ -209,7 +219,7 @@ def parse_soft_mask(
         color_space = resolve_soft_mask_color_space(attributes.get("CS"), resolver)
         backdrop = resolve(value.get("BC"), resolver)
         backdrop_color = (
-            initial_color_components(color_space)
+            default_backdrop_color(color_space)
             if backdrop is None
             else require_pdf_number_array(array(backdrop, resolver))
         )
@@ -223,6 +233,24 @@ def parse_soft_mask(
         backdrop_color,
         color_space,
     )
+
+
+@cites("ISO 32000-2", "11.6.5.1", introduced="1.4", rule="BC defaults to the space's black")
+def default_backdrop_color(space: ColorSpace) -> tuple[float, ...] | None:
+    """A Luminosity mask's BC when the dictionary has none (Table 142): the initial value of
+    the group's space, which represents black, and for a CMYK space black, 0 0 0 1, though
+    the initial value of an ICCBased CMYK space is 0 0 0 0, white."""
+    if space.kind == "ICCBased" and len(space.component_ranges) == 4:
+        return (0.0, 0.0, 0.0, 1.0)
+    return initial_color_components(space)
+
+
+@cites("ISO 32000-2", "11.5.3", introduced="1.4", rule="a CIE-based space's luminosity is Y")
+def colorimetric_luminosity(space: ColorSpace | None) -> bool:
+    """Whether a Luminosity mask whose group composites in space takes the CIE 1931 Y of its
+    colour, as a CIE-based space gives (CalGray, CalRGB, ICCBased), rather than the gray
+    level a device space's colour converts to (device_luminosity)."""
+    return space is not None and space.kind in {"CalGray", "CalRGB", "ICCBased"}
 
 
 @cites("ISO 32000-2", "11.5.3", introduced="1.4", rule="the colour a luminosity mask is taken from")
@@ -264,6 +292,8 @@ def luminosity_mask_value(
 
 __all__ = (
     "SoftMask",
+    "colorimetric_luminosity",
+    "default_backdrop_color",
     "device_luminosity",
     "luminosity_mask_color",
     "luminosity_mask_value",

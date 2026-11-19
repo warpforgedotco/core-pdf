@@ -47,11 +47,12 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+lazy from core_pdf.impl.graphics.icc_profiles import readable_icc_profile
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_profile,
     blending_space_of,
 )
-lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask
+lazy from core_pdf.impl.spec.s_11_transparency.soft_masks import SoftMask, colorimetric_luminosity
 lazy from core_pdf_cythonized import NativeOperators, RunAccumulator
 
 if TYPE_CHECKING:
@@ -295,6 +296,21 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             raise error
 
 
+def colorimetric_space(space: ColorSpace | None) -> bool:
+    """Whether colour in space has a CIE 1931 Y to take as its luminosity: a CalGray or
+    CalRGB space, or an ICCBased one whose profile core reads; an ICCBased space whose
+    profile it cannot read converts through its Alternate, and has a Y if that does."""
+    for _ in range(8):
+        if space is None or not colorimetric_luminosity(space):
+            return False
+        if space.kind != "ICCBased" or readable_icc_profile(
+            space.icc_profile, len(space.component_ranges)
+        ):
+            return True
+        space = space.alternate
+    return False
+
+
 class TextState(RecoveringTextState):
     document: PdfDocument[Any]
     name_resolver: ObjectResolver
@@ -327,10 +343,15 @@ class TextState(RecoveringTextState):
     scale_cache: tuple[Matrix, float, StrokeMatrix | None] | None
     shared_glyph_paint: GlyphPaint | None
     # Whether paint lands in a DeviceCMYK blending space (the page group's, or an isolated
-    # group's), where a colour that comes down to CMYK is captured as that CMYK; and the
-    # value to restore when each group that changed it ends.
+    # group's), where a colour that comes down to CMYK is captured as that CMYK, and the
+    # space's ICC profile (None: DeviceCMYK, the built-in profile) the CMYK is of; and the
+    # values to restore when each group that changed them ends.
     capture_cmyk: bool
-    capture_cmyk_frames: dict[int, bool]
+    capture_cmyk_profile: bytes | None
+    # Whether an isolated group whose space is CIE-based gray composites in sRGB rather than
+    # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
+    cie_gray_groups_in_srgb: bool
+    capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
@@ -375,6 +396,8 @@ class TextState(RecoveringTextState):
         self.last_fill_color: CaptureColorMemo | None = None
         self.last_stroke_color: CaptureColorMemo | None = None
         self.capture_cmyk = False
+        self.capture_cmyk_profile = None
+        self.cie_gray_groups_in_srgb = False
         self.capture_cmyk_frames = {}
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
@@ -536,9 +559,21 @@ class TextState(RecoveringTextState):
                 )
             )
             self.sequence += 1
+        if (
+            self.cie_gray_groups_in_srgb
+            and frame.group_color_space is not None
+            and blending_space_of(frame.group_color_space) == "DeviceGray"
+            and colorimetric_space(frame.group_color_space)
+        ):
+            # A CIE-based gray group keeps colour's Y, as converting to it would, where the
+            # gray its family's device group takes colours to would not.
+            frame.group_color_space = None
         if frame.group_alpha is not None and frame.group_color_space is not None:
-            self.capture_cmyk_frames[id(frame)] = self.capture_cmyk
-            self.set_capture_cmyk(blending_space_of(frame.group_color_space) == "DeviceCMYK")
+            self.capture_cmyk_frames[id(frame)] = (self.capture_cmyk, self.capture_cmyk_profile)
+            self.set_capture_cmyk(
+                blending_space_of(frame.group_color_space) == "DeviceCMYK",
+                blending_profile(frame.group_color_space),
+            )
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -612,11 +647,17 @@ class TextState(RecoveringTextState):
             self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
         if id(frame) in self.capture_cmyk_frames:
-            self.set_capture_cmyk(self.capture_cmyk_frames.pop(id(frame)))
+            self.set_capture_cmyk(*self.capture_cmyk_frames.pop(id(frame)))
 
-    def set_capture_cmyk(self, cmyk: bool) -> None:
-        if cmyk is not self.capture_cmyk and self.options.render_details:
+    def set_capture_cmyk(self, cmyk: bool, profile: bytes | None = None) -> None:
+        """Capture paint from now on for a DeviceCMYK blending space (cmyk) whose CMYK is
+        that of profile (None: the built-in DeviceCMYK profile), or else for sRGB."""
+        profile = profile if cmyk else None
+        if (
+            cmyk is not self.capture_cmyk or profile is not self.capture_cmyk_profile
+        ) and self.options.render_details:
             self.capture_cmyk = cmyk
+            self.capture_cmyk_profile = profile
             self.last_fill_color = None
             self.last_stroke_color = None
             self.shared_glyph_paint = None
@@ -718,12 +759,17 @@ class TextState(RecoveringTextState):
             nested = self.nested_capture_state()
             nested.graphics = graphics
             if space is not None:
-                nested.set_capture_cmyk(space == "DeviceCMYK")
+                nested.set_capture_cmyk(space == "DeviceCMYK", blending_profile(mask.color_space))
             scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
             nested.resources = self.resources if isinstance(scope, MissingObject) else scope
             frame = nested.append_form_xobject(mask.group, 0)
             if frame is None:
                 return None
+            colorimetric = self.mask_is_colorimetric(mask)
+            # A colorimetric gray or RGB mask composites in sRGB (raster_spaces.
+            # luminosity_mask_channel), and so do its own group and each isolated CIE-based
+            # gray group inside it, rather than flattening colour to device gray first.
+            nested.cie_gray_groups_in_srgb = colorimetric and space != "DeviceCMYK"
             nested.stream_executor.consume_frame(frame)
             nested.run_accumulator.flush()
             if space is None:
@@ -737,6 +783,7 @@ class TextState(RecoveringTextState):
                     blending_space=space,
                     blending_profile=blending_profile(mask.color_space),
                     backdrop=self.soft_mask_backdrop(mask, space),
+                    colorimetric=colorimetric,
                 )
             return caches.capture_soft_masks.put_key(mask, key, captured)
         except PdfParseError, TypeError, ValueError, ArithmeticError:
@@ -745,6 +792,12 @@ class TextState(RecoveringTextState):
             caches.capture_active_mask_groups.remove(group_key)
             if nested is not None:
                 nested.release()
+
+    @staticmethod
+    def mask_is_colorimetric(mask: SoftMask) -> bool:
+        """Whether a Luminosity mask takes the CIE 1931 Y of its colour: its group's space
+        is CIE-based (colorimetric_space)."""
+        return mask.subtype == "Luminosity" and colorimetric_space(mask.color_space)
 
     def soft_mask_backdrop(self, mask: SoftMask, space: BlendingSpace) -> tuple[float, ...]:
         """A Luminosity mask's BC colour as capture_color gives paint in its group: a device
@@ -755,7 +808,12 @@ class TextState(RecoveringTextState):
             return color
         converted: tuple[float, ...] | None = None
         if space == "DeviceCMYK" and spec.kind not in GRAY_RGB_KINDS:
-            converted = color_operands_to_cmyk(spec, color)
+            converted = color_operands_to_cmyk(
+                spec,
+                color,
+                blending_profile(mask.color_space),
+                rendering=self.graphics.color_rendering,
+            )
         if converted is None:
             converted = color_operands_to_srgb(
                 spec, list(color), rendering=self.graphics.color_rendering

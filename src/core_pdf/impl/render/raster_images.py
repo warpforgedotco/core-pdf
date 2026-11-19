@@ -84,9 +84,11 @@ def blit_affine_image(
     soft_mask: UInt8Array | None = None,
     image_clip: tuple[float, float, float, float] | None = None,
     interpolate: bool = False,
+    mask_interpolate: bool = False,
 ) -> bool:
     """Paint the image whose unit square quad places, sampling the nearest sample to each
-    pixel's centre, or with interpolate, interpolating between the nearest four."""
+    pixel's centre, or with interpolate, interpolating between the nearest four; the soft
+    mask likewise, by mask_interpolate, its own Interpolate (ISO 32000-2 11.6.5.2)."""
     clipped_pixel_box = self.clip.clipped_pixel_box
     clip = self.clip
     blend_resolved_mode = self.resolved_blend(blend_mode)
@@ -340,7 +342,9 @@ def blit_affine_image(
                 else numpy.full(visible.shape, 255, dtype=numpy.uint8)
             )
             if soft_mask is not None:
-                mask_alpha = sample_plane(soft_mask, source_u, source_v)
+                mask_alpha = (bilinear_uint8 if mask_interpolate else sample_image_plane)(
+                    soft_mask, source_u, source_v
+                )
                 alpha_grid = numpy.rint(
                     alpha_grid.astype(numpy.float64) * mask_alpha / 255.0
                 ).astype(numpy.uint8)
@@ -414,7 +418,40 @@ def image_interpolates(
     by quad: when its Interpolate is true and it is drawn larger than its samples along
     either of its axes, in device pixels. An image mask interpolates its mask (8.9.6.2)."""
     source = item.source
-    if source is None or source.dictionary.get("Interpolate") is not True or len(quad) < 3:
+    return source is not None and plane_interpolates(source.dictionary, quad, width, height, scale)
+
+
+@cites(
+    "ISO 32000-2",
+    "11.6.5.2",
+    introduced="1.4",
+    rule="a soft-mask image's own Interpolate smooths the mask, not the base image's",
+)
+def soft_mask_interpolates(
+    item: ImagePaintItem,
+    quad: tuple[tuple[float, float], ...],
+    width: int,
+    height: int,
+    scale: float,
+) -> bool:
+    """Whether to interpolate the soft-mask image of item's image, width by height samples
+    stretched over the same quad, by the soft mask's own Interpolate, as a separate image
+    (8.9.5.3, Table 143) whatever the base image's says."""
+    source = item.source
+    mask = source.soft_mask if source is not None else None
+    return mask is not None and plane_interpolates(mask.dictionary, quad, width, height, scale)
+
+
+def plane_interpolates(
+    dictionary: dict[Any, Any],
+    quad: tuple[tuple[float, float], ...],
+    width: int,
+    height: int,
+    scale: float,
+) -> bool:
+    """Whether an image dictionary's samples, width by height placed by quad, interpolate:
+    its Interpolate is true and they are drawn larger than they are along either axis."""
+    if dictionary.get("Interpolate") is not True or len(quad) < 3:
         return False
     (x00, y00), (x10, y10), (x01, y01) = quad[0], quad[1], quad[2]
     return (
@@ -444,6 +481,9 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
     converted = raster.array[:, :, :components].reshape(-1)
     native_soft_mask = prepared.soft_mask
     soft_mask = native_soft_mask.array[:, :, 0] if native_soft_mask is not None else None
+    mask_interpolate = native_soft_mask is not None and soft_mask_interpolates(
+        item, quad, native_soft_mask.width, native_soft_mask.height, self.scale
+    )
     source_alpha: numpy.ndarray[Any, Any] | None = None
     if raster.has_alpha and soft_mask is None:
         source_alpha = raster.array[:, :, components].reshape(-1)
@@ -488,6 +528,7 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
         soft_mask=soft_mask,
         image_clip=rect_tuple(item.image_clip),
         interpolate=interpolate,
+        mask_interpolate=mask_interpolate,
     )
 
 

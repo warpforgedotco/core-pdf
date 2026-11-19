@@ -36,10 +36,13 @@ class CapturedSoftMask(GeneratedRecord, eq=False):
     offset: tuple[float, float] = (0.0, 0.0)
     # A Luminosity mask's blending space (an Alpha mask's is None), an ICCBased CMYK space's
     # profile, and its BC colour as capture gives paint: the space's own components for a
-    # device space, else the CMYK (in a CMYK space) or sRGB the colour converts to.
+    # device space, else the CMYK (in a CMYK space) or sRGB the colour converts to. With
+    # colorimetric, the space is CIE-based and the luminosity is the CIE 1931 Y of the colour
+    # rather than its device gray level (ISO 32000-2 11.5.3).
     blending_space: BlendingSpace | None = None
     blending_profile: bytes | None = None
     backdrop: tuple[float, ...] = ()
+    colorimetric: bool = False
 
 
 class CapturedTextBoundary(GeneratedRecord):
