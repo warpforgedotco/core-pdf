@@ -68,10 +68,15 @@ SPAN_TOLERANCE = 0.05
 # How far a row supersampled 4x4, as rows past the sweep's budget are, may be from the span
 # measure: two edges in a pixel, each up to an eighth off in x, and the lines' y.
 SAMPLED_TOLERANCE = 0.3
+# And on average: edges a share of a sample's spacing off its centres, about 0.07 for bars.
+SAMPLED_MEAN_TOLERANCE = 0.1
 # The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
 TOUCH = 1e-7
 # The kernel's CROSS_SLACK: chains closer than this, relative to x, meet rather than cross.
 CROSS_SLACK = 1e-9
+# The kernel's sweep budget: work per edge and per row, on top of 4096.
+SWEEP_WORK_PER_EDGE = 64
+SWEEP_WORK_PER_ROW = 16
 # The kernel's EXACT_EDGES and ROW_SAMPLES: a row to measure exactly with more active edges is
 # supersampled, ROW_SAMPLES x ROW_SAMPLES per pixel, as are the rows past the sweep's budget.
 EXACT_EDGES = 256
@@ -712,17 +717,18 @@ def edge_table(
     return table
 
 
-def mark_span(flags: list[int], height: int, y0: float, y1: float) -> None:
+def mark_span(flags: list[int], height: int, y0: float, y1: float, value: int = 1) -> None:
     first = py_max(float(math.floor(y0)), 0.0)
     last = py_min(float(math.ceil(y1)), float(height))
     if not last > first:
         return
     for row in range(int(first), int(last)):
-        flags[row] = 1
+        flags[row] = value
 
 
-def mark_rows(table: list[Edge], height: int) -> list[int]:
-    """The kernel's _mark_rows, without its budget: which rows to measure exactly."""
+def mark_rows(table: list[Edge], height: int, budgeted: bool = False) -> list[int]:
+    """The kernel's _mark_rows: which rows to measure exactly, and with budgeted, the rows
+    its budget leaves unchecked, flagged 2; without, the sweep runs to the end."""
     mixed = [0] * (height + 1)
     positive = [0] * (height + 1)
     negative = [0] * (height + 1)
@@ -756,24 +762,28 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
             edge = table[cursor[index]]
         return edge_x(edge, y)
 
+    walked = [0]
+
     def crossing(left: int, right: int, ya: float, yb: float) -> float | None:
+        # As the kernel's _pair_crossing walks, step for step, which the budget counts.
         li, ri = cursors[left], cursors[right]
-        y = previous = ya
-        while True:
+        y = ya
+        while y < yb:
             el, er = table[li], table[ri]
-            xl = edge_x(el, y)
-            gap = xl - edge_x(er, y)
-            if gap > CROSS_SLACK * py_max(1.0, abs(xl)):
-                return previous
-            if not y < yb:
-                return None
-            previous = y
-            y = py_min(py_min(el[2], er[2]), yb)
+            walked[0] += 1
+            below = py_min(py_min(el[2], er[2]), yb)
+            xl = edge_x(el, below)
+            if xl - edge_x(er, below) > CROSS_SLACK * py_max(1.0, abs(xl)):
+                return y
+            y = below
             if el[2] <= y and li != chains[left][1]:
                 li += int(chains[left][2])
             if er[2] <= y and ri != chains[right][1]:
                 ri += int(chains[right][2])
+        return None
 
+    work = 0
+    budget = SWEEP_WORK_PER_EDGE * len(table) + SWEEP_WORK_PER_ROW * height + 4096
     events = sorted(y for chain in chains for y in (chain[3], chain[4]))
     for low, high in itertools.pairwise(events):
         if not high > low or high <= 0.0 or low >= height:
@@ -788,6 +798,10 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
                 )
         if not band:
             continue
+        work += len(band)
+        if budgeted and work + walked[0] > budget:
+            mark_span(mixed, height, low, float(height), 2)
+            break
         band.sort()
         bad = False
         sign = 0
@@ -814,8 +828,11 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
                 earliest = y
         if earliest < yb:
             mark_span(mixed, height, earliest, yb)
+        if budgeted and work + walked[0] > budget:
+            mark_span(mixed, height, yb, float(height), 2)
+            break
     for row in range(height):
-        if positive[row] and negative[row]:
+        if positive[row] and negative[row] and not mixed[row]:
             mixed[row] = 1
     return mixed
 
@@ -955,6 +972,16 @@ def finish_row(cells: list[float], rights: list[tuple[int, float]], width: int) 
     return out
 
 
+def sample_column(x: float, columns: int) -> int:
+    """The first column of samples whose centre is at or right of x, within 0..columns: the
+    kernel's clamp, and NaN, which its edge table never yields, taken as 0 before math.ceil
+    sees it."""
+    value = x * ROW_SAMPLES - 0.5
+    if value != value:
+        return 0
+    return int(math.ceil(py_max(py_min(value, float(columns)), 0.0)))
+
+
 def sampled_row(active: list[Edge], row: int, width: int) -> list[float]:
     """The kernel's _sampled_row: the share of a ROW_SAMPLES x ROW_SAMPLES grid of samples
     per pixel inside the path by nonzero winding, the crossings of each line taken in order
@@ -973,8 +1000,8 @@ def sampled_row(active: list[Edge], row: int, width: int) -> list[float]:
             winding += direction
             if winding == 0:
                 continue
-            first = int(py_max(py_min(math.ceil(x * ROW_SAMPLES - 0.5), columns), 0.0))
-            end = int(py_max(py_min(math.ceil(following * ROW_SAMPLES - 0.5), columns), 0.0))
+            first = sample_column(x, columns)
+            end = sample_column(following, columns)
             for column in range(first, end):
                 counts[column // ROW_SAMPLES] += 1
     return [py_min(1.0, count / ROW_SAMPLES**2) for count in counts]
@@ -989,28 +1016,28 @@ def reference_area(
     iy0: float,
     width: int,
     height: int,
-    unchecked: frozenset[int] = frozenset(),
+    budgeted: bool = False,
 ) -> tuple[numpy.ndarray, int, list[int]] | None:
     """area_coverage_plane in Python, line by line: each row's sums of its edges' pieces, or
     the outline's pieces alone in the rows mark_rows marks, supersampled when such a row has
-    more than EXACT_EDGES edges; and the rows in unchecked, which the kernel's sweep ran out
-    of budget before (the reference has none), supersampled. Also each row's kind, as the
-    kernel numbers them."""
+    more than EXACT_EDGES edges; and with budgeted, the rows mark_rows' budget leaves
+    unchecked, supersampled. Also each row's kind, as the kernel numbers them."""
     if not any(row[1] != row[3] for row in edges.tolist()):
         return None
     table = edge_table(edges, crop_x0, crop_y1, scale, ix0, iy0, height)
     plane = numpy.zeros((height, width))
     exact = 0
     kinds = [0] * height
-    flags = mark_rows(table, height)
+    flags = mark_rows(table, height, budgeted)
     for row in range(height):
         indices = [i for i, edge in enumerate(table) if edge[5] <= row < edge[6]]
         active = [table[i] for i in indices]
+        kinds[row] = flags[row]
         if not active:
             continue
-        if row in unchecked or (flags[row] and len(active) > EXACT_EDGES):
+        if flags[row] == 2 or (flags[row] and len(active) > EXACT_EDGES):
             plane[row] = sampled_row(active, row, width)
-            kinds[row] = 2 if row in unchecked else 3
+            kinds[row] = 2 if flags[row] == 2 else 3
             continue
         if flags[row]:
             plane[row] = exact_row(active, row, width)
@@ -1264,8 +1291,8 @@ def check_glyph_outlines() -> int:
 def check_sampled(name: str, loops: list[list[Point]], width: int, height: int, kind: int) -> int:
     """Whether area_coverage_plane supersamples at least a third of the rows of the loops
     with kind (2 past the budget, 3 for many edges), and gives reference_area's coverage and
-    kinds exactly, taking the rows it left unchecked from the kernel, and the span measure's
-    within SAMPLED_TOLERANCE."""
+    kinds exactly, the reference's own budgeted sweep finding where the budget runs out, and
+    the span measure's within SAMPLED_TOLERANCE, SAMPLED_MEAN_TOLERANCE on average."""
     failed = 0
     edges = loop_edges(loops)
     spans = span_coverage(loops, float(height), width, height, rows=16)
@@ -1273,8 +1300,7 @@ def check_sampled(name: str, loops: list[list[Point]], width: int, height: int, 
         found = area_coverage_plane(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, mode)
         assert found is not None
         kinds = found[2].tolist()
-        unchecked = frozenset(row for row, value in enumerate(kinds) if value == 2)
-        want = reference_area(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, unchecked)
+        want = reference_area(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, True)
         assert want is not None
         error = numpy.abs(found[0] - spans)
         if kinds.count(kind) < height // 3:
@@ -1283,7 +1309,7 @@ def check_sampled(name: str, loops: list[list[Point]], width: int, height: int, 
         elif kinds != want[2] or not numpy.array_equal(found[0], want[0]):
             print(f"  {name}, {mode=}: not the reference's coverage")
             failed += 1
-        elif error.max() > SAMPLED_TOLERANCE:
+        elif error.max() > SAMPLED_TOLERANCE or error.mean() > SAMPLED_MEAN_TOLERANCE:
             print(f"  {name}, {mode=}: off the span measure by up to {error.max():.4f}")
             failed += 1
     return failed
@@ -1343,6 +1369,11 @@ def check_engine_edges() -> int:
         for k in range(240)
     ]
     failed += check_sampled("staggered bars past the budget", loops, 245, 200, 2)
+    # 203 staggered bars of one orientation, whose sweep runs out walking a band's pairs,
+    # from 28.65 to 29.0: the band is finished, so rows from 29 on are left unchecked, not
+    # from 28.
+    loops = [rectangle(1.0 + k, 1.0 + 0.35 * k, 1.6 + k, 150.0 + 0.35 * k) for k in range(203)]
+    failed += check_sampled("staggered bars past the budget in a band's walks", loops, 206, 200, 2)
     # Rows with windings meeting and more than 256 active edges, which are supersampled
     # rather than measured exactly: 140 bars crossed by 20 near-horizontal hatches.
     loops = [rectangle(1.0 + 1.5 * k, 5.0, 2.0 + 1.5 * k, 195.0) for k in range(140)] + [
@@ -1400,7 +1431,7 @@ def check_engine_edges() -> int:
         if not arrays.simple or not numpy.array_equal(placed[0], placed[1]):
             print(f"  simple outline {case}: the two paths differ (simple={arrays.simple})")
             failed += 1
-    print(f"6 engine cases and 200 outlines on both paths: {failed} failures")
+    print(f"7 engine cases and 200 outlines on both paths: {failed} failures")
     return failed
 
 

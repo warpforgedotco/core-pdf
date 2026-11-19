@@ -1809,22 +1809,20 @@ def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bi
     """Row r's runs in rows.runs, rows rising, and 0; or 1 when emit is false and the row is
     the dense sums', in rows.cells, for the caller to read."""
     rows.run_count = 0
-    rows.kind = 0
+    # The kind by the row's flag, an empty row's too; a row of many edges is supersampled
+    # too, as its exact measure looks for crossings among every pair of them.
+    rows.kind = 2 if rows.mixed[r] == SAMPLED_ROW else (1 if rows.mixed[r] else 0)
     if rows.mixed[r] or not rows.dense:
         # Only these rows read the active list, which catches up with the rows skipped.
         _order_edges(rows)
         if _advance(rows, r) == 0:
             return 0
-        # A row of many edges is supersampled too: its exact measure looks for crossings
-        # among every pair of them.
-        if rows.mixed[r] == SAMPLED_ROW:
-            rows.kind = 2
+        if rows.kind == 2:
             return _sampled_row(rows, r)
-        if rows.mixed[r] and rows.active_count > EXACT_EDGES:
+        if rows.kind == 1 and rows.active_count > EXACT_EDGES:
             rows.kind = 3
             return _sampled_row(rows, r)
-        if rows.mixed[r]:
-            rows.kind = 1
+        if rows.kind == 1:
             return _exact_row(rows, r)
         return _sum_row(rows, r)
     if not emit:
