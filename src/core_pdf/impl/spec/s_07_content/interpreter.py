@@ -1363,6 +1363,28 @@ class ContentInterpreter:
             self.reject(parse_error_from(error), "extended-graphics-state", None)
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
+        # Font and the overprint entries are applied or declined each on their own, whatever
+        # happens to the others, which stay as they were: the first of those to fail ends
+        # them, and op_gs declines the dictionary with its error.
+        failure: TypeError | ValueError | None = None
+        try:
+            self.apply_extgstate_entries(extgstate)
+        except (TypeError, ValueError) as error:
+            failure = error
+        if "Font" in extgstate:
+            try:
+                self.apply_extgstate_font(extgstate["Font"])
+            except (TypeError, ValueError) as error:
+                self.reject(parse_error_from(error), "font-operands", None)
+        if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
+            try:
+                self.apply_extgstate_overprint(extgstate)
+            except (TypeError, ValueError) as error:
+                self.reject(parse_error_from(error), "overprint", None)
+        if failure is not None:
+            raise failure
+
+    def apply_extgstate_entries(self, extgstate: dict[str, Any]) -> None:
         self.apply_extgstate_line_style(extgstate)
         intent = self.resolver.resolve(extgstate.get("RI"))
         if intent is not None:
@@ -1401,18 +1423,6 @@ class ContentInterpreter:
         soft_mask = self.resolver.resolve(extgstate.get("SMask"))
         if soft_mask is not None:
             self.graphics.soft_mask = self.resolve_soft_mask(soft_mask)
-        # After the entries above, and each declined alone, so that a malformed one leaves
-        # them applied.
-        if "Font" in extgstate:
-            try:
-                self.apply_extgstate_font(extgstate["Font"])
-            except (TypeError, ValueError, PdfParseError) as error:
-                self.reject(parse_error_from(error), "font-operands", None)
-        if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
-            try:
-                self.apply_extgstate_overprint(extgstate)
-            except (TypeError, ValueError, PdfParseError) as error:
-                self.reject(parse_error_from(error), "overprint", None)
 
     @cites(
         "ISO 32000-2",
@@ -1474,11 +1484,13 @@ class ContentInterpreter:
         font_size = self.parse_font_size(resolve(entry[1]))
         if font_size is None:
             return
+        name = self.resolver.resolve_name(font.get("BaseFont")) or "Font"
+        # The decoder first, so that a font that cannot be loaded leaves the state whole.
+        decoder = self.decoder_for(font_reference, font, self.resources)
         graphics = self.graphics
-        resources = self.resources
-        graphics.current_font = self.resolver.resolve_name(font.get("BaseFont")) or "Font"
+        graphics.current_font = name
         graphics.font_size = font_size
-        graphics.current_decoder = self.decoder_for(font_reference, font, resources)
+        graphics.current_decoder = decoder
         # No resources, so that the next Tf loads its font even when its resource name is
         # this font's BaseFont, rather than keep this decoder.
         graphics.decoder_resources = None

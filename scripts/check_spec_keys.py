@@ -6,22 +6,25 @@ package's profiles, on PDFs written here.
 
 - E (ISO 32000-2 14.9.5): a Span property list's E, and a structure element's E reached
   through its MCID, give the extracted span its expansion; JSON carries it and HTML marks
-  the span as an abbreviation, the space before it outside its markers.
+  the span as an abbreviation. A styled span's end spaces stay outside its markers.
   StructureElement.expansion reads it.
 - Q (12.7.4.3): a text or choice field's alignment comes from its own Q, else the nearest
-  ancestor's down the Kids (with or without a Parent entry), else the AcroForm
-  dictionary's, else left; a button has none.
+  ancestor's down the Kids (with or without a Parent entry) or up the Parent entries of a
+  field Fields names below the root (which also inherits its name, FT and V), else the
+  AcroForm dictionary's, else left; a button has none.
 - IRT, RT and Popup (12.5.6.2, 12.5.6.14): an annotation records the one it replies to
   (RT R, the default) or is grouped with (RT Group), a markup annotation its pop-up, and a
   pop-up its markup annotation, as indexes in the page's annotations and ids in JSON.
   An annotation dropped because its record cannot be built shifts none of them, and a
-  reply whose target is not among them has no reply type.
+  reply whose target is not among them has no reply type. A dictionary Annots repeats is
+  linked to at its first position.
 - Font in a parameter dictionary (8.4.5) selects the font and size as Tf does: text shown
   after gs with no Tf is extracted at that size, a later Tf loads its own font even
   under the gs font's BaseFont, and the pdfminer facade, like pdfminer.six, ignores it.
 - OP, op and OPM (8.6.7) are carried in the graphics state, op following OP when absent
-  or invalid, and restored by Q. A Font or overprint entry whose handling fails leaves the
-  dictionary's other entries applied.
+  or invalid, and restored by Q. Font and the overprint entries apply or fail on their
+  own, whatever the dictionary's other entries do, and a gs font that cannot be loaded
+  leaves the text state as it was.
 - core-pdf-validate's veraPDF profiles take their editions from STANDARD_PROFILES and
   refuse an identifier that table lacks.
 
@@ -311,6 +314,74 @@ def check_abbreviation_markup(failures: list[str]) -> None:
     )
 
 
+def check_fields_listed_below_root(failures: list[str]) -> None:
+    """A field AcroForm's Fields names below the root inherits through its Parent entries:
+    the qualified name, FT, V and Q."""
+    data = page_pdf(
+        b"",
+        catalog=b"/AcroForm << /Fields [7 0 R] >> ",
+        page=b"/Annots [7 0 R] ",
+        extra=(
+            b"<< /T (top) /FT /Tx /V (value) /Q 2 /Kids [7 0 R] >>",
+            b"<< /Type /Annot /Subtype /Widget /Parent 6 0 R /T (kid) "
+            b"/Rect [72 700 272 720] /P 3 0 R >>",
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        extracted = pdf.extract()
+    expectation(
+        failures,
+        "field listed below the root",
+        [
+            (item.name, item.field_type, item.value_text, item.alignment)
+            for item in extracted.pages[0].form_fields
+        ],
+        [("top.kid", "Tx", "value", "right")],
+    )
+
+
+def check_repeated_annotation(failures: list[str]) -> None:
+    """A dictionary Annots lists twice is linked to at its first position, and the
+    annotation JSON without page ids gives indexes."""
+    from core_pdf.impl.output.serialize import annotation_to_json_dict
+
+    data = page_pdf(
+        b"",
+        page=b"/Annots [6 0 R 7 0 R 6 0 R] ",
+        extra=(
+            annotation(b"/Subtype /Text /Contents (a) /Popup 7 0 R"),
+            annotation(b"/Subtype /Popup /Parent 6 0 R", b"100 600 300 700"),
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        extracted = pdf.extract()
+    annotations = extracted.pages[0].annotations
+    expectation(
+        failures,
+        "repeated annotation links",
+        [(item.popup, item.popup_parent) for item in annotations],
+        [(1, None), (None, 0), (1, None)],
+    )
+    try:
+        payload = annotation_to_json_dict(annotations[1])
+    except TypeError as error:
+        failures.append(f"annotation JSON without ids: {error}")
+    else:
+        expectation(failures, "annotation JSON without ids", payload["popup_parent"], 0)
+
+
+def check_span_markup_spaces(failures: list[str]) -> None:
+    """Spaces at a styled span's ends stay outside its Markdown and HTML markers."""
+    from core_pdf.impl.output.model import TextLine, TextSpan
+    from core_pdf.impl.output.serialize import html_line, markdown_line
+
+    line = TextLine(
+        "a word b", spans=(TextSpan("a "), TextSpan("word ", bold=True), TextSpan("b", italic=True))
+    )
+    expectation(failures, "Markdown span spaces", markdown_line(line), "a **word** *b*")
+    expectation(failures, "HTML span spaces", html_line(line), "a <strong>word</strong> <em>b</em>")
+
+
 def check_extgstate_font(failures: list[str]) -> None:
     data = page_pdf(
         b"BT /GS1 gs 72 700 Td (Hello) Tj ET BT /F1 10 Tf /GS1 gs 72 600 Td (World) Tj ET",
@@ -434,6 +505,56 @@ def check_overprint(failures: list[str]) -> None:
         expectation(
             failures, f"opacity beside a failing {entries!r}", state.opacities, [(0.5, 0.25)]
         )
+    # A failing earlier entry (ca) does not keep Font and OP from applying.
+    data = page_pdf(
+        b"/GS1 gs /P BMC EMC BT 72 700 Td (Hi) Tj ET",
+        resources=b"/ExtGState << /GS1 6 0 R >>",
+        extra=(b"<< /Type /ExtGState /Font [7 0 R 20] /OP true /ca (bad) >>", HELVETICA),
+    )
+    with PdfDocument(data) as pdf:
+        state = Probe(pdf)
+        state.seen = []
+        state.opacities = []
+        try:
+            pdf.pages[0].consume_contents(state)
+            state.run_accumulator.flush()
+            runs = [(run.text, run.font_size) for run in state.runs]
+        finally:
+            state.release()
+    expectation(
+        failures,
+        "Font and OP beside a failing ca",
+        (state.seen, runs),
+        ([(True, True, 0)], [("Hi", 20.0)]),
+    )
+
+    # A gs font that cannot be loaded leaves the state whole: the Tf after it loads its own
+    # font rather than keep F1's under the gs font's BaseFont.
+    class Unloadable(TextState):
+        def decoder_for(self, font_reference: object, font: object, resources: Any) -> Any:
+            if isinstance(font, dict) and font.get("Unloadable") is not None:
+                raise ValueError("unloadable font")
+            return super().decoder_for(font_reference, font, resources)
+
+    data = page_pdf(
+        b"BT /F1 12 Tf 72 700 Td (AAA) Tj /GS1 gs /Helvetica 12 Tf 0 -20 Td (AAA) Tj ET",
+        resources=b"/Font << /F1 6 0 R /Helvetica 5 0 R >> /ExtGState << /GS1 7 0 R >>",
+        extra=(
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+            b"/Encoding << /Differences [65 /Z] >> >>",
+            b"<< /Type /ExtGState /Font [8 0 R 12] >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Unloadable true >>",
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        unloadable = Unloadable(pdf)
+        try:
+            pdf.pages[0].consume_contents(unloadable)
+            unloadable.run_accumulator.flush()
+            texts = [run.text for run in unloadable.runs]
+        finally:
+            unloadable.release()
+    expectation(failures, "Tf after an unloadable gs Font", texts, ["ZZZ", "AAA"])
 
 
 def check_validate_profiles(failures: list[str]) -> None:
@@ -465,9 +586,12 @@ CHECKS: tuple[tuple[str, Callable[[list[str]], None]], ...] = (
     ("StructElem E", check_structure_expansion),
     ("field Q", check_quadding),
     ("field Q down Kids", check_quadding_down_kids),
+    ("field listed below the root", check_fields_listed_below_root),
     ("annotation IRT, RT, Popup", check_replies),
     ("annotation links past a dropped record", check_links_past_dropped),
     ("abbreviation markup", check_abbreviation_markup),
+    ("repeated annotation", check_repeated_annotation),
+    ("span markup spaces", check_span_markup_spaces),
     ("ExtGState Font", check_extgstate_font),
     ("ExtGState OP, op, OPM", check_overprint),
     ("validate profiles", check_validate_profiles),

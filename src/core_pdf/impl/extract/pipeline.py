@@ -56,9 +56,12 @@ def link_annotations(
     12.5.6.14), as indexes in the annotations built, so that one whose build failed and was
     dropped shifts none. A link to an annotation not among them, on another page or
     dropped, is None, and so is the reply type of a reply whose target is."""
-    indexes = {id(record.dict): index for index, (record, _) in enumerate(built)}
+    # A dictionary Annots lists more than once is linked to at its first position.
+    indexes: dict[int, int] = {}
+    for index, (record, _) in enumerate(built):
+        indexes.setdefault(id(record.dict), index)
     linked: list[Annotation] = []
-    for record, built_annotation in built:
+    for position, (record, built_annotation) in enumerate(built):
         try:
             reply = reply_relation(record.dict, resolver.resolve, resolver.resolve_name)
             target = popup_link(record.dict, record.subtype, resolver.resolve)
@@ -67,6 +70,11 @@ def link_annotations(
             continue
         reply_index = None if reply is None else indexes.get(id(reply[0]))
         target_index = None if target is None else indexes.get(id(target))
+        # Never a link to the annotation itself, as a repeated dictionary would give.
+        if reply_index == position:
+            reply_index = None
+        if target_index == position:
+            target_index = None
         is_popup = record.subtype == "Popup"
         if reply_index is None and target_index is None:
             linked.append(built_annotation)

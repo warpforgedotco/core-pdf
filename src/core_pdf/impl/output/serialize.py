@@ -375,11 +375,16 @@ def link_to_json_dict(link: Link) -> dict[str, JsonValue]:
     }
 
 
-def annotation_to_json_dict(annotation: Annotation, *, ids: PageIds) -> dict[str, JsonValue]:
-    """An annotation's record; ids, its page's, names the annotations it links to."""
+def annotation_to_json_dict(
+    annotation: Annotation, *, ids: PageIds | None = None
+) -> dict[str, JsonValue]:
+    """An annotation's record. The annotations it links to are named by their ids on its
+    page, ids, or without them by their indexes in Page.annotations."""
 
     def reference(index: int | None) -> JsonValue:
-        return None if index is None else ids.record("annotation", index)
+        if index is None or ids is None:
+            return index
+        return ids.record("annotation", index)
 
     return {
         "subtype": annotation.subtype,
@@ -484,10 +489,15 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             if not text:
                 continue
         text = escape(text) if markup.escape_text else text
-        leading = ""
-        if span.expansion is not None:
-            body = text.lstrip()
-            leading, text = text[: len(text) - len(body)], body
+        # Spaces at either end stay outside the markers: Markdown emphasis does not open
+        # before or close after whitespace.
+        body = text.strip()
+        if body:
+            start_at = text.index(body)
+            leading, trailing = text[:start_at], text[start_at + len(body) :]
+            text = body
+        else:
+            leading = trailing = ""
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -506,8 +516,8 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
             # space joining it to the text before stays outside it and its styles.
             title = escape(span.expansion, quote=True)
-            text = f'{leading}<abbr title="{title}">{text}</abbr>'
-        rendered.append(text)
+            text = f'<abbr title="{title}">{text}</abbr>'
+        rendered.append(f"{leading}{text}{trailing}")
     return "".join(rendered)
 
 

@@ -101,12 +101,37 @@ def field_record(
     )
 
 
+def inherited_field_seed(resolver: FieldResolver, node: object) -> tuple[str, str, object, object]:
+    """What a field inherits from the ancestors its Parent entries name (ISO 32000-2
+    12.7.4.1, 12.7.4.3): the qualified name they give, and their FT, V and Q, for a field
+    the traversal starts at, as AcroForm's Fields can name a field that is not a root.
+    Empty for a root field."""
+    ancestors: list[PdfDict] = []
+    seen: set[int] = set()
+    current = resolver.as_dict(node)
+    while current is not None and id(current) not in seen and len(ancestors) <= 50:
+        seen.add(id(current))
+        parent = resolver.as_dict(current.get("Parent"))
+        if parent is None or id(parent) in seen:
+            break
+        ancestors.append(parent)
+        current = parent
+    name, field_type, value, quadding = "", "", None, None
+    for ancestor in reversed(ancestors):
+        name = qualified_field_name(name, resolver.resolve_str(ancestor.get("T")))
+        field_type = resolver.resolve_name_or_text(ancestor.get("FT"), name_like=True) or field_type
+        value = inherited_dictionary_value(ancestor, "V", value, resolver.resolve)
+        quadding = inherited_dictionary_value(ancestor, "Q", quadding, resolver.resolve)
+    return name, field_type, value, quadding
+
+
 def collect_field_records(
     resolver: FieldResolver, node: object, malformed: MalformedFn
 ) -> list[RawFormField]:
     seen: set[int] = set()
     records: list[RawFormField] = []
-    stack: list[FieldTraversalEntry] = [("node", node, "", "", None, None, 0)]
+    name, field_type, value, quadding = inherited_field_seed(resolver, node)
+    stack: list[FieldTraversalEntry] = [("node", node, name, field_type, value, quadding, 0)]
     while stack:
         entry = stack.pop()
         if entry[0] == "record":
