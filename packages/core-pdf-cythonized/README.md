@@ -250,7 +250,9 @@ Nothing checks the result on the platforms that build wheels.
 signed areas for a small window and row-by-row sums for a large one, each cell's sum added in
 the same order, and an exact measure, from the outline's pieces alone, for the rows whose
 windings meet inside a pixel (+1 against -1, or beyond 1), where those sums cancel or count
-twice. `scripts/check_large_fills.py` checks `area_coverage_plane` against a Python reference
+twice. Rows the search for those runs out of work before, and such rows with more than 256
+active edges, are supersampled 4x4 by winding instead, at a cost bounded by their edges.
+`scripts/check_large_fills.py` checks `area_coverage_plane` against a Python reference
 of the engine for equality and against an independent span measure. Core reaches the engine
 through the fused entry points only.
 

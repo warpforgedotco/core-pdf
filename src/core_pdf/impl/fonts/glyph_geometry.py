@@ -35,9 +35,42 @@ class GlyphOutlineArrays:
         self.ys = ys
         self.spans = spans
         # Whether the outline's windings are 0 or one sign of 1 everywhere, which no
-        # invertible placement changes: its fills need not look for rows where they mix. The
-        # glyph cache keeps one of these per glyph of a font, so the check runs once per glyph.
-        self.simple = outline_simple(xs, ys, spans)
+        # invertible placement changes: its fills need not look for rows where they mix.
+        self.simple = cached_outline_simple(xs, ys, spans)
+
+
+# outline_simple's answers by an outline's point columns and spans, least recently used
+# first: a font's glyph cache keeps one outline per code, and the same glyph programs recur
+# across codes, fonts and documents. Looking one up (0.6 us for a text glyph) costs a third
+# of the check. Held to SIMPLE_OUTLINE_LIMIT entries and SIMPLE_OUTLINE_BYTES of keys; an
+# outline past SIMPLE_OUTLINE_LARGEST bytes is checked each time instead.
+SIMPLE_OUTLINES: dict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = {}
+SIMPLE_OUTLINE_LIMIT = 4096
+SIMPLE_OUTLINE_BYTES = 16 * 2**20
+SIMPLE_OUTLINE_LARGEST = 64 * 2**10
+simple_outline_bytes = [0]
+
+
+def cached_outline_simple(
+    xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: tuple[tuple[int, int], ...]
+) -> bool:
+    size = xs.nbytes + ys.nbytes
+    if size > SIMPLE_OUTLINE_LARGEST:
+        return outline_simple(xs, ys, spans)
+    key = (xs.tobytes(), ys.tobytes(), spans)
+    simple = SIMPLE_OUTLINES.pop(key, None)
+    if simple is None:
+        simple = outline_simple(xs, ys, spans)
+        simple_outline_bytes[0] += size
+        while SIMPLE_OUTLINES and (
+            len(SIMPLE_OUTLINES) >= SIMPLE_OUTLINE_LIMIT
+            or simple_outline_bytes[0] > SIMPLE_OUTLINE_BYTES
+        ):
+            oldest = next(iter(SIMPLE_OUTLINES))
+            del SIMPLE_OUTLINES[oldest]
+            simple_outline_bytes[0] -= len(oldest[0]) + len(oldest[1])
+    SIMPLE_OUTLINES[key] = simple
+    return simple
 
 
 def outline_arrays(

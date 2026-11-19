@@ -22,7 +22,7 @@ from cython.cimports.core_pdf_cythonized._coverage import (
 from cython.cimports.core_pdf_cythonized._knockout_math import knockout_component
 from cython.cimports.core_pdf_cythonized._pymath import py_max, py_min
 from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc
-from cython.cimports.libc.math import NAN, ceil, fabs, floor, rint
+from cython.cimports.libc.math import INFINITY, NAN, ceil, fabs, floor, rint
 from cython.cimports.libc.stdlib import qsort
 from cython.cimports.libc.string import memcpy, memset
 
@@ -277,8 +277,12 @@ Rows = cython.struct(
     cells_heap=cython.bint,
     ordered=cython.bint,
     block=cython.p_char,
-    # Whether _mark_rows ran out of work and marked every row after as mixed.
+    # Whether _mark_rows ran out of work and left every row after to be supersampled.
     exhausted=cython.bint,
+    # The edges crossing the last supersampled line, in order of x there, and its y.
+    sampled=cython.pointer[Span],
+    sampled_count=cython.Py_ssize_t,
+    sampled_y=cython.double,
     block_bytes=cython.Py_ssize_t,
     acc_cells=cython.Py_ssize_t,
     heap_cells=cython.Py_ssize_t,
@@ -317,10 +321,18 @@ class SimpleEdges(numpy.ndarray):
 DENSE_REACH = cython.declare(cython.double, 1e15)
 # Past this many items, the sorts go to qsort rather than insertion.
 SORT_SMALL = cython.declare(cython.Py_ssize_t, 16)
-# _mark_rows stops looking past this much work per edge, counting the chains of each band
-# and the edges its crossing walks read, as a path of tens of thousands of edges crossing
-# each row would cost; the rest of the window's rows are then measured exactly.
+# _mark_rows stops looking past this much work per edge and per row, counting the chains
+# of each band and the edges its crossing walks read, as a path of tens of thousands of
+# edges crossing each row would cost; the rest of the window's rows are then supersampled,
+# which keeps their windings at a cost bounded by their edges.
 SWEEP_WORK_PER_EDGE = cython.declare(cython.Py_ssize_t, 64)
+SWEEP_WORK_PER_ROW = cython.declare(cython.Py_ssize_t, 16)
+# A row's flag in rows.mixed when _mark_rows ran out of work before it: supersampled.
+SAMPLED_ROW = cython.declare(cython.uchar, 2)
+# A row to measure exactly with more active edges than this is supersampled instead.
+EXACT_EDGES = cython.declare(cython.Py_ssize_t, 256)
+# Each side of a supersampled row's grid of samples per pixel.
+ROW_SAMPLES = cython.declare(cython.Py_ssize_t, 4)
 OUTLINE_ROWS = cython.declare(cython.Py_ssize_t, 1)
 # How far outside two edges a worked-out crossing may fall and still be taken at their end.
 TOUCH = cython.declare(cython.double, 1e-7)
@@ -656,6 +668,8 @@ def _rows_clear(rows: cython.pointer[Rows]) -> cython.void:
     rows.run_count = 0
     rows.exact_rows = 0
     rows.exhausted = False
+    rows.sampled_count = 0
+    rows.sampled_y = -INFINITY
     rows.entry_capacity = 0
     rows.run_capacity = 0
     rows.ys_capacity = 0
@@ -722,7 +736,7 @@ def _rows_begin(
     per_edge: cython.Py_ssize_t = (
         cython.sizeof(RowEdge)
         + 2 * cython.sizeof(cython.Py_ssize_t)
-        + cython.sizeof(Span)
+        + 2 * cython.sizeof(Span)
         + cython.sizeof(Chain)
         + cython.sizeof(cython.Py_ssize_t)
         + 2 * cython.sizeof(cython.double)
@@ -757,6 +771,8 @@ def _rows_begin(
     rows.active = cython.cast(cython.p_Py_ssize_t, block)
     block += cells * cython.sizeof(cython.Py_ssize_t)
     rows.spans = cython.cast(cython.pointer[Span], block)
+    block += cells * cython.sizeof(Span)
+    rows.sampled = cython.cast(cython.pointer[Span], block)
     block += cells * cython.sizeof(Span)
     rows.chains = cython.cast(cython.pointer[Chain], block)
     block += cells * cython.sizeof(Chain)
@@ -1087,16 +1103,20 @@ def _chain_x(
 @cython.inline
 @cython.exceptval(check=False)
 def _mark_span(
-    flags: cython.p_uchar, height: cython.Py_ssize_t, y0: cython.double, y1: cython.double
+    flags: cython.p_uchar,
+    height: cython.Py_ssize_t,
+    y0: cython.double,
+    y1: cython.double,
+    value: cython.uchar = 1,
 ) -> cython.void:
-    """Set the flag of every row that overlaps y0..y1."""
+    """Set the flag of every row that overlaps y0..y1 to value (1 unless given)."""
     first: cython.double = py_max(floor(y0), 0.0)
     last: cython.double = py_min(ceil(y1), cython.cast(cython.double, height))
     r: cython.Py_ssize_t
     if not (last > first):
         return
     for r in range(cython.cast(cython.Py_ssize_t, first), cython.cast(cython.Py_ssize_t, last)):
-        flags[r] = 1
+        flags[r] = value
 
 
 @cython.cfunc
@@ -1150,7 +1170,8 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
     pair is walked down the band at every end of either's edges, where the gap between them,
     piecewise linear, takes its extremes. A band that breaks either marks its rows (from the
     crossing on), and so does a row under bands of both signs. Past its budget of work, which
-    counts only the bands and the edges walked, the sweep marks every row after as mixed."""
+    counts only the bands and the edges walked, the sweep leaves every row after to be
+    supersampled (SAMPLED_ROW)."""
     edges: cython.pointer[RowEdge] = rows.edges
     chains: cython.pointer[Chain] = rows.chains
     band: cython.p_Py_ssize_t = rows.band
@@ -1217,7 +1238,9 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
     for i in range(count):
         by_top[i] = spans[i].index
     work: cython.Py_ssize_t = 0
-    budget: cython.Py_ssize_t = SWEEP_WORK_PER_EDGE * rows.count + 4096
+    budget: cython.Py_ssize_t = (
+        SWEEP_WORK_PER_EDGE * rows.count + SWEEP_WORK_PER_ROW * height + 4096
+    )
     added: cython.Py_ssize_t
     next_top: cython.Py_ssize_t = 0
     m = 0
@@ -1241,8 +1264,11 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
             continue
         work += m
         if work > budget:
-            # Unchecked rows are not taken as safe: every row from here is measured exactly.
-            _mark_span(rows.mixed, height, events[e], cython.cast(cython.double, height))
+            # Unchecked rows are not taken as safe: every row from here is supersampled, by
+            # winding, at a cost bounded by its edges.
+            _mark_span(
+                rows.mixed, height, events[e], cython.cast(cython.double, height), SAMPLED_ROW
+            )
             rows.exhausted = True
             break
         # Only the band's part over the window matters.
@@ -1315,11 +1341,11 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
         if earliest < yb:
             _mark_span(rows.mixed, height, earliest, yb)
         if work > budget:
-            _mark_span(rows.mixed, height, ya, cython.cast(cython.double, height))
+            _mark_span(rows.mixed, height, ya, cython.cast(cython.double, height), SAMPLED_ROW)
             rows.exhausted = True
             break
     for i in range(height):
-        if rows.positive[i] and rows.negative[i]:
+        if rows.positive[i] and rows.negative[i] and rows.mixed[i] == 0:
             rows.mixed[i] = 1
 
 
@@ -1683,6 +1709,94 @@ def _sum_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int:
 
 @cython.cfunc
 @cython.exceptval(-1, check=False)
+def _sampled_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int:
+    """Row r's runs from a ROW_SAMPLES x ROW_SAMPLES grid of samples per pixel at the centres
+    of its cells, each inside where the nonzero winding of the active edges crossing its
+    line left of it is: correct for any windings. Each line's crossings are the last line's,
+    still crossing, then the edges that start between them, put in order of x by insertion
+    from the last line's order, or sorted afresh when many are new."""
+    edges: cython.pointer[RowEdge] = rows.edges
+    spans: cython.pointer[Span] = rows.sampled
+    width: cython.Py_ssize_t = rows.width
+    columns: cython.Py_ssize_t = width * ROW_SAMPLES
+    samples: cython.double = cython.cast(cython.double, ROW_SAMPLES)
+    unit: cython.double = 1.0 / (samples * samples)
+    acc: cython.p_double
+    edge: cython.pointer[RowEdge]
+    line: cython.Py_ssize_t
+    a: cython.Py_ssize_t
+    k: cython.Py_ssize_t
+    count: cython.Py_ssize_t
+    added: cython.Py_ssize_t
+    winding: cython.int
+    first: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    column: cython.Py_ssize_t
+    y: cython.double
+    previous: cython.double
+    span: Span
+    _row_buffers(rows)
+    acc = rows.acc
+    for line in range(ROW_SAMPLES):
+        y = r + (line + 0.5) / samples
+        previous = rows.sampled_y
+        count = 0
+        for a in range(rows.sampled_count):
+            edge = edges + spans[a].index
+            if edge.top_y <= y < edge.bottom_y:
+                spans[count].index = spans[a].index
+                spans[count].direction = spans[a].direction
+                spans[count].xa = edge.top_x + (y - edge.top_y) * edge.slope
+                spans[count].xb = 0.0
+                count += 1
+        added = 0
+        for a in range(rows.active_count):
+            edge = edges + rows.active[a]
+            if previous < edge.top_y <= y < edge.bottom_y:
+                spans[count].xa = edge.top_x + (y - edge.top_y) * edge.slope
+                spans[count].xb = 0.0
+                spans[count].direction = cython.cast(cython.int, edge.direction)
+                spans[count].index = rows.active[a]
+                count += 1
+                added += 1
+        if added > SORT_SMALL:
+            _sort_spans(spans, count)
+        else:
+            for a in range(1, count):
+                span = spans[a]
+                k = a
+                while k > 0 and (
+                    spans[k - 1].xa > span.xa
+                    or (spans[k - 1].xa == span.xa and spans[k - 1].index > span.index)
+                ):
+                    spans[k] = spans[k - 1]
+                    k -= 1
+                spans[k] = span
+        rows.sampled_count = count
+        rows.sampled_y = y
+        winding = 0
+        for a in range(count - 1):
+            winding += spans[a].direction
+            if winding == 0:
+                continue
+            # The columns of samples whose centres lie in xa..next xa.
+            first = cython.cast(
+                cython.Py_ssize_t, py_max(py_min(ceil(spans[a].xa * samples - 0.5), columns), 0.0)
+            )
+            end = cython.cast(
+                cython.Py_ssize_t,
+                py_max(py_min(ceil(spans[a + 1].xa * samples - 0.5), columns), 0.0),
+            )
+            for column in range(first, end):
+                acc[column // ROW_SAMPLES] += unit
+    for column in range(width):
+        _emit(rows, column, column + 1, py_min(1.0, acc[column]))
+        acc[column] = 0.0
+    return 0
+
+
+@cython.cfunc
+@cython.exceptval(-1, check=False)
 def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bint) -> cython.int:
     """Row r's runs in rows.runs, rows rising, and 0; or 1 when emit is false and the row is
     the dense sums', in rows.cells, for the caller to read."""
@@ -1692,6 +1806,10 @@ def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bi
         _order_edges(rows)
         if _advance(rows, r) == 0:
             return 0
+        # A row of many edges is supersampled too: its exact measure looks for crossings
+        # among every pair of them.
+        if rows.mixed[r] == SAMPLED_ROW or (rows.mixed[r] and rows.active_count > EXACT_EDGES):
+            return _sampled_row(rows, r)
         if rows.mixed[r]:
             return _exact_row(rows, r)
         return _sum_row(rows, r)
@@ -2007,6 +2125,36 @@ def _paint_coverage(
 
 
 @cython.cfunc
+@cython.exceptval(check=False)
+def _dense_ready(device: cython.p_const_double, kept: cython.Py_ssize_t) -> cython.bint:
+    """Whether the dense sums take these device edges as the engine's table would: every
+    coordinate finite, every y near enough to cast, and every sloped edge's slope finite."""
+    i: cython.Py_ssize_t
+    sx: cython.double
+    sy: cython.double
+    ex: cython.double
+    ey: cython.double
+    slope: cython.double
+    for i in range(kept):
+        sx = device[i * 4]
+        sy = device[i * 4 + 1]
+        ex = device[i * 4 + 2]
+        ey = device[i * 4 + 3]
+        if not (
+            -DENSE_REACH <= sy <= DENSE_REACH
+            and -DENSE_REACH <= ey <= DENSE_REACH
+            and sx - sx == 0.0
+            and ex - ex == 0.0
+        ):
+            return False
+        if sy != ey:
+            slope = (ex - sx) / (ey - sy)
+            if slope - slope != 0.0:
+                return False
+    return True
+
+
+@cython.cfunc
 @cython.exceptval(-1, check=False)
 def _coverage_fill(
     rows: object,
@@ -2054,26 +2202,20 @@ def _coverage_fill(
     cell: cython.p_float
     simple: cython.bint = type(rows) is SimpleEdges
     acc: cython.p_double = cython.NULL
-    i: cython.Py_ssize_t
-    if simple and (width + 2) * height <= DENSE_CELLS:
-        # An outline whose windings never mix needs no edge table: the dense sums, from the
-        # device edges, as main summed them, when every y is near enough to cast.
-        for i in range(kept):
-            if not (
-                -DENSE_REACH <= device[i * 4 + 1] <= DENSE_REACH
-                and -DENSE_REACH <= device[i * 4 + 3] <= DENSE_REACH
-                and device[i * 4] - device[i * 4] == 0.0
-                and device[i * 4 + 2] - device[i * 4 + 2] == 0.0
-            ):
-                simple = False
-                break
-    else:
-        simple = False
+    # An outline whose windings never mix needs no edge table: the dense sums, from the
+    # device edges, as main summed them, when the engine would keep the same edges.
+    simple = (
+        simple
+        and (cython.cast(cython.Py_ssize_t, width) + 2) * height <= DENSE_CELLS
+        and _dense_ready(device, kept)
+    )
     if not simple:
         _rows_clear(cython.address(engine))
     try:
         if simple:
-            acc = _zeroed_cells((width + 2) * height, cells_stack, STACK_CELLS)
+            acc = _zeroed_cells(
+                (cython.cast(cython.Py_ssize_t, width) + 2) * height, cells_stack, STACK_CELLS
+            )
             _accumulate_device(device, kept, width, height, acc)
         else:
             _rows_begin(
@@ -2448,29 +2590,25 @@ def _knockout_fill(
     source_alpha: cython.float
     source_shape: cython.float
     previous: cython.float
-    simple: cython.bint = type(rows) is SimpleEdges and (width + 2) * height <= DENSE_CELLS
+    # As in _coverage_fill: an outline whose windings never mix is summed densely from the
+    # device edges, each pixel a run of its own, when the engine would keep the same edges.
+    simple: cython.bint = (
+        type(rows) is SimpleEdges
+        and (cython.cast(cython.Py_ssize_t, width) + 2) * height <= DENSE_CELLS
+        and _dense_ready(device, kept)
+    )
     acc: cython.p_double = cython.NULL
     row_cells: cython.p_double
     running: cython.double = 0.0
     segments: cython.Py_ssize_t
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
-    if simple:
-        # As in _coverage_fill: an outline whose windings never mix is summed densely from
-        # the device edges, each pixel a run of its own, when every coordinate can be cast.
-        for k in range(kept):
-            if not (
-                -DENSE_REACH <= device[k * 4 + 1] <= DENSE_REACH
-                and -DENSE_REACH <= device[k * 4 + 3] <= DENSE_REACH
-                and device[k * 4] - device[k * 4] == 0.0
-                and device[k * 4 + 2] - device[k * 4 + 2] == 0.0
-            ):
-                simple = False
-                break
     _rows_clear(cython.address(engine))
     try:
         if simple:
-            acc = _zeroed_cells((width + 2) * height, cells_stack, STACK_CELLS)
+            acc = _zeroed_cells(
+                (cython.cast(cython.Py_ssize_t, width) + 2) * height, cells_stack, STACK_CELLS
+            )
             _accumulate_device(device, kept, width, height, acc)
         else:
             _rows_begin(

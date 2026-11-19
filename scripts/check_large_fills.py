@@ -65,6 +65,9 @@ SAMPLES = 4
 # A pixel of area_coverage_plane may be off span_coverage's measure by this much: a 64th of
 # its height for each of the few edges through it.
 SPAN_TOLERANCE = 0.05
+# How far a row supersampled 4x4, as rows past the sweep's budget are, may be from the span
+# measure: two edges in a pixel, each up to an eighth off in x, and the lines' y.
+SAMPLED_TOLERANCE = 0.3
 # The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
 TOUCH = 1e-7
 # The kernel's CROSS_SLACK: chains closer than this, relative to x, meet rather than cross.
@@ -1222,8 +1225,10 @@ def check_glyph_outlines() -> int:
 def check_engine_edges() -> int:
     """Cases the review of the row engine raised: a tall path whose few edges once spent the
     sweep's budget in its first band, edges whose x overflows to infinity among more than 16
-    active ones, and simple outlines filled as SimpleEdges and as plain rows, which must give
-    the same bytes."""
+    active ones, a path past the budget, whose rows left unchecked are supersampled, rows of
+    over 256 edges whose windings meet, supersampled too, an edge
+    of infinite slope, and simple outlines filled as SimpleEdges and as plain rows, which
+    must give the same bytes."""
     failed = 0
     # 20 edges 3000 rows tall: a tall frame, and in its lower half two rectangles of opposite
     # orientation sharing an edge at x = 60.4, whose seam column must be covered.
@@ -1264,6 +1269,65 @@ def check_engine_edges() -> int:
         ):
             print(f"  edges that overflow to infinity, {mode=}: not the reference's coverage")
             failed += 1
+    # A path past the sweep's budget: 160 staggered bars of alternating orientation, each
+    # overlapping the next, whose unchecked rows are supersampled, by winding, 4x4.
+    loops = [
+        rectangle(1.0 + 1.5 * k, 1.0 + 0.3 * k, 3.2 + 1.5 * k, 150.0 + 0.3 * k, reverse=k % 2 == 1)
+        for k in range(160)
+    ]
+    edges = loop_edges(loops)
+    spans = span_coverage(loops, 200.0, 245, 200, rows=16)
+    for mode in (1, 2):
+        found = area_coverage_plane(edges, 0.0, 200.0, 1.0, 0.0, 0.0, 245, 200, mode)
+        assert found is not None
+        error = numpy.abs(found[0] - spans)
+        if error.max() > SAMPLED_TOLERANCE or error.mean() > SAMPLED_TOLERANCE / 10:
+            print(
+                f"  staggered bars past the budget, {mode=}: off by up to {error.max():.4f}, "
+                f"{error.mean():.4f} on average"
+            )
+            failed += 1
+    # Rows with windings meeting and more than 256 active edges, which are supersampled
+    # rather than measured exactly: 140 bars crossed by 20 near-horizontal hatches.
+    loops = [rectangle(1.0 + 1.5 * k, 5.0, 2.0 + 1.5 * k, 195.0) for k in range(140)] + [
+        [(0.5, 10.0 + 9 * j), (215.0, 16.0 + 9 * j), (215.0, 17.0 + 9 * j), (0.5, 11.0 + 9 * j)]
+        for j in range(20)
+    ]
+    edges = loop_edges(loops)
+    spans = span_coverage(loops, 200.0, 216, 200, rows=16)
+    for mode in (1, 2):
+        found = area_coverage_plane(edges, 0.0, 200.0, 1.0, 0.0, 0.0, 216, 200, mode)
+        assert found is not None
+        error = numpy.abs(found[0] - spans)
+        if error.max() > SAMPLED_TOLERANCE or error.mean() > SAMPLED_TOLERANCE / 10:
+            print(
+                f"  hatched bars, {mode=}: off by up to {error.max():.4f}, "
+                f"{error.mean():.4f} on average"
+            )
+            failed += 1
+    # An outline with an edge whose x is finite but whose slope is not, taken as SimpleEdges:
+    # the dense path must drop it as the engine's table does.
+    arrays = outline_arrays(
+        (
+            ((10.0, 10.0), (30.0, 10.0), (30.0, 30.0), (10.0, 30.0)),
+            ((-1e308, 40.0), (1e308, 40.5), (20.0, 60.0)),
+        )
+    )
+    assert arrays is not None
+    placed = []
+    for simple in (True, False):
+        found_edges = glyph_outline_edges(
+            arrays.xs, arrays.ys, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, arrays.spans, simple
+        )[2]
+        assert found_edges is not None
+        target = numpy.full((70, 70, 4), 200, numpy.uint8)
+        fill_glyph_coverage_at(
+            found_edges, 0.0, 70.0, 1.0, 0, 0, 70, 70, (20, 40, 60, 200), target, None, None, 1.0
+        )
+        placed.append(target)
+    if not numpy.array_equal(placed[0], placed[1]):
+        print("  an edge with an infinite slope: SimpleEdges and plain rows differ")
+        failed += 1
     # Simple outlines filled from the device edges (SimpleEdges) and from the edge table.
     rng = numpy.random.default_rng(20261121)
     for case in range(200):
@@ -1291,7 +1355,7 @@ def check_engine_edges() -> int:
         if not arrays.simple or not numpy.array_equal(placed[0], placed[1]):
             print(f"  simple outline {case}: the two paths differ (simple={arrays.simple})")
             failed += 1
-    print(f"3 engine cases and 200 outlines on both paths: {failed} failures")
+    print(f"6 engine cases and 200 outlines on both paths: {failed} failures")
     return failed
 
 
