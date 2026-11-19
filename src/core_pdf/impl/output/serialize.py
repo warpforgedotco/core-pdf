@@ -492,12 +492,13 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
         # Spaces at either end stay outside the markers: Markdown emphasis does not open
         # before or close after whitespace.
         body = text.strip()
-        if body:
-            start_at = text.index(body)
-            leading, trailing = text[:start_at], text[start_at + len(body) :]
-            text = body
-        else:
-            leading = trailing = ""
+        if not body:
+            # Only spaces: nothing for markers to mark.
+            rendered.append(text)
+            continue
+        start_at = text.index(body)
+        leading, trailing = text[:start_at], text[start_at + len(body) :]
+        text = body
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:

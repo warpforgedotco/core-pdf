@@ -1363,26 +1363,42 @@ class ContentInterpreter:
             self.reject(parse_error_from(error), "extended-graphics-state", None)
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
-        # Font and the overprint entries are applied or declined each on their own, whatever
-        # happens to the others, which stay as they were: the first of those to fail ends
-        # them, and op_gs declines the dictionary with its error.
-        failure: TypeError | ValueError | None = None
+        # Three groups, each applied whatever happens to the others: the older entries,
+        # where the first to fail ends the rest as it always has; Font; and the overprint
+        # entries. Font and overprint failures are declined through reject; whatever a group
+        # raises (a strict reject's error, unchanged) is held until all three have run, and
+        # the first is raised then, for op_gs to decline or pass on.
+        failures: list[Exception] = []
         try:
             self.apply_extgstate_entries(extgstate)
-        except (TypeError, ValueError) as error:
-            failure = error
+        except (TypeError, ValueError, PdfParseError) as error:
+            failures.append(error)
         if "Font" in extgstate:
-            try:
-                self.apply_extgstate_font(extgstate["Font"])
-            except (TypeError, ValueError) as error:
-                self.reject(parse_error_from(error), "font-operands", None)
+            self.apply_extgstate_group(
+                lambda: self.apply_extgstate_font(extgstate["Font"]), "font-operands", failures
+            )
         if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
+            self.apply_extgstate_group(
+                lambda: self.apply_extgstate_overprint(extgstate), "overprint", failures
+            )
+        if failures:
+            raise failures[0]
+
+    def apply_extgstate_group(
+        self, apply: Callable[[], None], context: str, failures: list[Exception]
+    ) -> None:
+        """Apply one group of a parameter dictionary's entries, declining its failure: a
+        PdfParseError as raised, so a reject inside keeps its own context, anything else as
+        a PdfParseError of context. What the decline raises is added to failures."""
+        try:
             try:
-                self.apply_extgstate_overprint(extgstate)
+                apply()
             except (TypeError, ValueError) as error:
-                self.reject(parse_error_from(error), "overprint", None)
-        if failure is not None:
-            raise failure
+                self.reject(parse_error_from(error), context, None)
+            except PdfParseError as error:
+                self.reject(error, context, None)
+        except (TypeError, ValueError, PdfParseError) as error:
+            failures.append(error)
 
     def apply_extgstate_entries(self, extgstate: dict[str, Any]) -> None:
         self.apply_extgstate_line_style(extgstate)

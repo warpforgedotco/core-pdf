@@ -61,7 +61,7 @@ def link_annotations(
     for index, (record, _) in enumerate(built):
         indexes.setdefault(id(record.dict), index)
     linked: list[Annotation] = []
-    for position, (record, built_annotation) in enumerate(built):
+    for record, built_annotation in built:
         try:
             reply = reply_relation(record.dict, resolver.resolve, resolver.resolve_name)
             target = popup_link(record.dict, record.subtype, resolver.resolve)
@@ -70,10 +70,10 @@ def link_annotations(
             continue
         reply_index = None if reply is None else indexes.get(id(reply[0]))
         target_index = None if target is None else indexes.get(id(target))
-        # Never a link to the annotation itself, as a repeated dictionary would give.
-        if reply_index == position:
+        # Never a link to the annotation itself, whichever copy of it Annots lists.
+        if reply is not None and reply[0] is record.dict:
             reply_index = None
-        if target_index == position:
+        if target is record.dict:
             target_index = None
         is_popup = record.subtype == "Popup"
         if reply_index is None and target_index is None:

@@ -368,6 +368,26 @@ def check_repeated_annotation(failures: list[str]) -> None:
         failures.append(f"annotation JSON without ids: {error}")
     else:
         expectation(failures, "annotation JSON without ids", payload["popup_parent"], 0)
+    # A repeated dictionary that names itself links nowhere, whichever copy.
+    data = page_pdf(
+        b"",
+        page=b"/Annots [6 0 R 7 0 R 6 0 R] ",
+        extra=(
+            annotation(b"/Subtype /Text /Contents (a) /IRT 6 0 R /Popup 6 0 R"),
+            annotation(b"/Subtype /Text /Contents (b)"),
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        extracted = pdf.extract()
+    expectation(
+        failures,
+        "repeated annotation naming itself",
+        [
+            (item.in_reply_to, item.reply_type, item.popup)
+            for item in extracted.pages[0].annotations
+        ],
+        [(None, None, None)] * 3,
+    )
 
 
 def check_span_markup_spaces(failures: list[str]) -> None:
@@ -380,6 +400,12 @@ def check_span_markup_spaces(failures: list[str]) -> None:
     )
     expectation(failures, "Markdown span spaces", markdown_line(line), "a **word** *b*")
     expectation(failures, "HTML span spaces", html_line(line), "a <strong>word</strong> <em>b</em>")
+    # A styled span of spaces only gets no markers.
+    spaces = TextLine(
+        "word next", spans=(TextSpan("word"), TextSpan(" ", bold=True), TextSpan("next"))
+    )
+    expectation(failures, "Markdown span of spaces", markdown_line(spaces), "word next")
+    expectation(failures, "HTML span of spaces", html_line(spaces), "word next")
 
 
 def check_extgstate_font(failures: list[str]) -> None:
@@ -555,6 +581,89 @@ def check_overprint(failures: list[str]) -> None:
         finally:
             unloadable.release()
     expectation(failures, "Tf after an unloadable gs Font", texts, ["ZZZ", "AAA"])
+    check_extgstate_parse_errors(failures, Probe)
+
+
+def check_extgstate_parse_errors(failures: list[str], probe: Any) -> None:
+    """A PdfParseError in one group of a parameter dictionary's entries, tolerant or strict."""
+    # Tolerant: a gs font whose loading raises PdfParseError is declined alone; the page's
+    # content goes on, and OP and the opacities beside it apply.
+    from core_pdf.impl.spec.exceptions import PdfParseError
+
+    class Broken(probe):  # type: ignore[misc, valid-type]
+        def decoder_for(self, font_reference: object, font: object, resources: Any) -> Any:
+            if isinstance(font, dict) and font.get("Broken") is not None:
+                raise PdfParseError("broken font program")
+            return super().decoder_for(font_reference, font, resources)
+
+    data = page_pdf(
+        b"/GS1 gs /P BMC EMC BT /F1 12 Tf 72 700 Td (After) Tj ET",
+        resources=b"/Font << /F1 5 0 R >> /ExtGState << /GS1 6 0 R >>",
+        extra=(
+            b"<< /Type /ExtGState /Font [7 0 R 20] /OP true /ca 0.25 >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Broken true >>",
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        state = Broken(pdf)
+        state.seen = []
+        state.opacities = []
+        try:
+            pdf.pages[0].consume_contents(state)
+            state.run_accumulator.flush()
+            texts = [run.text for run in state.runs]
+        except PdfParseError as error:
+            texts = [f"raised {error}"]
+        finally:
+            state.release()
+    expectation(
+        failures,
+        "tolerant gs Font raising PdfParseError",
+        (state.seen, state.opacities, texts),
+        ([(True, True, 0)], [(1.0, 0.25)], ["After"]),
+    )
+
+    # Strict: every group runs, then the first group's error is raised.
+    class Strict(probe):  # type: ignore[misc, valid-type]
+        def reject(self, error: Exception, context: str, fallback: Any) -> Any:
+            raise error
+
+    data = page_pdf(
+        b"",
+        resources=b"/ExtGState << /GS1 6 0 R /GS2 7 0 R >>",
+        extra=(
+            b"<< /Type /ExtGState /D 5 /Font [8 0 R 20] /OP true >>",
+            b"<< /Type /ExtGState /ca 0.25 /Font 3 /OP true /OPM 1 >>",
+            HELVETICA,
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        for name, expected in (
+            ("GS1", ("Helvetica", 20.0, True, 0, "D must hold")),
+            ("GS2", (None, 0.0, True, 1, "Font must hold")),
+        ):
+            state = Strict(pdf)
+            try:
+                resources = pdf.pages[0].resources
+                state.resources = resources
+                extgstates: Any = pdf.resolver.resolve(resources["ExtGState"])
+                extgstate = pdf.resolver.resolve(extgstates[name])
+                raised = ""
+                try:
+                    state.apply_extgstate(extgstate)
+                except PdfParseError as error:
+                    raised = str(error)
+                graphics = state.graphics
+                got = (
+                    graphics.current_font if graphics.current_font != "F1" else None,
+                    graphics.font_size if graphics.current_font else 0.0,
+                    graphics.stroke_overprint,
+                    graphics.overprint_mode,
+                    raised[: len(expected[4])],
+                )
+            finally:
+                state.release()
+            expectation(failures, f"strict {name}", got, expected)
 
 
 def check_validate_profiles(failures: list[str]) -> None:
