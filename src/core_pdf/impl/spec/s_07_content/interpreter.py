@@ -1364,10 +1364,6 @@ class ContentInterpreter:
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
         self.apply_extgstate_line_style(extgstate)
-        if "Font" in extgstate:
-            self.apply_extgstate_font(extgstate["Font"])
-        if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
-            self.apply_extgstate_overprint(extgstate)
         intent = self.resolver.resolve(extgstate.get("RI"))
         if intent is not None:
             self.graphics.render_intent = parse_rendering_intent(self.named_value(intent))
@@ -1405,6 +1401,18 @@ class ContentInterpreter:
         soft_mask = self.resolver.resolve(extgstate.get("SMask"))
         if soft_mask is not None:
             self.graphics.soft_mask = self.resolve_soft_mask(soft_mask)
+        # After the entries above, and each declined alone, so that a malformed one leaves
+        # them applied.
+        if "Font" in extgstate:
+            try:
+                self.apply_extgstate_font(extgstate["Font"])
+            except (TypeError, ValueError, PdfParseError) as error:
+                self.reject(parse_error_from(error), "font-operands", None)
+        if "OP" in extgstate or "op" in extgstate or "OPM" in extgstate:
+            try:
+                self.apply_extgstate_overprint(extgstate)
+            except (TypeError, ValueError, PdfParseError) as error:
+                self.reject(parse_error_from(error), "overprint", None)
 
     @cites(
         "ISO 32000-2",
@@ -1471,7 +1479,9 @@ class ContentInterpreter:
         graphics.current_font = self.resolver.resolve_name(font.get("BaseFont")) or "Font"
         graphics.font_size = font_size
         graphics.current_decoder = self.decoder_for(font_reference, font, resources)
-        graphics.decoder_resources = resources
+        # No resources, so that the next Tf loads its font even when its resource name is
+        # this font's BaseFont, rather than keep this decoder.
+        graphics.decoder_resources = None
 
     @cites(
         "ISO 32000-2",
@@ -1486,19 +1496,20 @@ class ContentInterpreter:
         no separations, so they do not change what is painted."""
         resolve = self.resolver.resolve
         graphics = self.graphics
+        flags: dict[str, bool] = {}
         for key in ("OP", "op"):
             flag = resolve(extgstate.get(key))
             if flag is None:
                 continue
             if not isinstance(flag, bool):
+                # Declined, and taken as absent: an invalid op leaves OP to set both.
                 self.reject(PdfParseError(f"{key} must be a boolean"), "overprint", None)
                 continue
-            if key == "OP":
-                graphics.stroke_overprint = flag
-                if extgstate.get("op") is None:
-                    graphics.fill_overprint = flag
-            else:
-                graphics.fill_overprint = flag
+            flags[key] = flag
+        if "OP" in flags:
+            graphics.stroke_overprint = flags["OP"]
+        if "op" in flags or "OP" in flags:
+            graphics.fill_overprint = flags.get("op", flags.get("OP", False))
         mode = resolve(extgstate.get("OPM"))
         if mode is not None:
             if type(mode) is int and mode in (0, 1):

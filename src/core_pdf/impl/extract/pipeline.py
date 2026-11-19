@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from contextlib import suppress
 from copy import replace
 from functools import cache, cached_property
-from typing import TYPE_CHECKING, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 from core_pdf.impl.base.exceptions import ExtractionScope
 from core_pdf.impl.base.types import GeneratedRecord, Record
@@ -21,6 +21,7 @@ from core_pdf.impl.extract.contracts import PageAnalysis, PageFrame, PageState, 
 from core_pdf.impl.extract.emit import assemble_page
 from core_pdf.impl.extract.table_detection import NATIVE_TABLES, TableDetector
 from core_pdf.impl.output.model import Annotation, Figure, FormField, Link, Page
+from core_pdf.impl.spec.exceptions import PdfError
 lazy from core_pdf.impl.spec.s_07_document.fields import VARIABLE_TEXT_FIELD_TYPES, field_quadding
 lazy from core_pdf.impl.spec.s_07_document.markup_annotations import popup_link, reply_relation
 
@@ -46,6 +47,40 @@ def collected_records[Record, T](
         except TypeError, ValueError:
             continue
     return tuple(output)
+
+
+def link_annotations(
+    built: tuple[tuple[RawAnnotation, Annotation], ...], resolver: Any
+) -> tuple[Annotation, ...]:
+    """The annotations with their replies and pop-ups linked (ISO 32000-2 12.5.6.2,
+    12.5.6.14), as indexes in the annotations built, so that one whose build failed and was
+    dropped shifts none. A link to an annotation not among them, on another page or
+    dropped, is None, and so is the reply type of a reply whose target is."""
+    indexes = {id(record.dict): index for index, (record, _) in enumerate(built)}
+    linked: list[Annotation] = []
+    for record, built_annotation in built:
+        try:
+            reply = reply_relation(record.dict, resolver.resolve, resolver.resolve_name)
+            target = popup_link(record.dict, record.subtype, resolver.resolve)
+        except TypeError, ValueError, PdfError:
+            linked.append(built_annotation)
+            continue
+        reply_index = None if reply is None else indexes.get(id(reply[0]))
+        target_index = None if target is None else indexes.get(id(target))
+        is_popup = record.subtype == "Popup"
+        if reply_index is None and target_index is None:
+            linked.append(built_annotation)
+            continue
+        linked.append(
+            replace(
+                built_annotation,
+                in_reply_to=reply_index,
+                reply_type=None if reply is None or reply_index is None else reply[1],
+                popup=None if is_popup else target_index,
+                popup_parent=target_index if is_popup else None,
+            )
+        )
+    return tuple(linked)
 
 
 class Stage(Protocol):
@@ -209,29 +244,21 @@ class PageExtraction:
         resolver = self.page.document.resolver
         raw_annotations = capture.annotations or ()
         resolved_annotation_dicts = tuple(record.dict for record in raw_annotations)
-        annotation_indexes = {
-            id(annotation): index for index, annotation in enumerate(resolved_annotation_dicts)
-        }
 
-        def annotation_record(_index: int, record: RawAnnotation) -> Annotation:
-            reply = reply_relation(record.dict, resolver.resolve, resolver.resolve_name)
-            linked = popup_link(record.dict, record.subtype, resolver.resolve)
-            linked_index = None if linked is None else annotation_indexes.get(id(linked))
-            is_popup = record.subtype == "Popup"
-            return Annotation(
+        def annotation_record(
+            _index: int, record: RawAnnotation
+        ) -> tuple[RawAnnotation, Annotation]:
+            return record, Annotation(
                 subtype=record.subtype,
                 bbox=record.rect,
                 contents=record.contents,
                 destination=plain_pdf_value(
                     resolve_destination_references(resolver, record.dest or record.action)
                 ),
-                in_reply_to=None if reply is None else annotation_indexes.get(id(reply[0])),
-                reply_type=None if reply is None else reply[1],
-                popup=None if is_popup else linked_index,
-                popup_parent=linked_index if is_popup else None,
             )
 
-        annotations = collected_records(lambda: raw_annotations, annotation_record)
+        built = collected_records(lambda: raw_annotations, annotation_record)
+        annotations = link_annotations(built, resolver)
         links = collected_records(
             lambda: self.page.get_links(resolved_annotation_dicts),
             lambda _index, record: Link(
@@ -256,7 +283,7 @@ class PageExtraction:
                 no_export=record.no_export,
                 options=record.options,
                 alignment=(
-                    field_quadding(record.dict, acroform(), resolver.resolve)
+                    field_quadding(record.quadding, acroform(), resolver.resolve)
                     if record.type in VARIABLE_TEXT_FIELD_TYPES
                     else None
                 ),

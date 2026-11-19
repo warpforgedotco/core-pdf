@@ -6,17 +6,22 @@ package's profiles, on PDFs written here.
 
 - E (ISO 32000-2 14.9.5): a Span property list's E, and a structure element's E reached
   through its MCID, give the extracted span its expansion; JSON carries it and HTML marks
-  the span as an abbreviation. StructureElement.expansion reads it.
+  the span as an abbreviation, the space before it outside its markers.
+  StructureElement.expansion reads it.
 - Q (12.7.4.3): a text or choice field's alignment comes from its own Q, else the nearest
-  Parent's, else the AcroForm dictionary's, else left; a button has none.
+  ancestor's down the Kids (with or without a Parent entry), else the AcroForm
+  dictionary's, else left; a button has none.
 - IRT, RT and Popup (12.5.6.2, 12.5.6.14): an annotation records the one it replies to
   (RT R, the default) or is grouped with (RT Group), a markup annotation its pop-up, and a
   pop-up its markup annotation, as indexes in the page's annotations and ids in JSON.
+  An annotation dropped because its record cannot be built shifts none of them, and a
+  reply whose target is not among them has no reply type.
 - Font in a parameter dictionary (8.4.5) selects the font and size as Tf does: text shown
-  after gs with no Tf is extracted at that size, while the pdfminer facade, like
-  pdfminer.six, ignores it.
-- OP, op and OPM (8.6.7) are carried in the graphics state, op following OP when absent,
-  and restored by Q.
+  after gs with no Tf is extracted at that size, a later Tf loads its own font even
+  under the gs font's BaseFont, and the pdfminer facade, like pdfminer.six, ignores it.
+- OP, op and OPM (8.6.7) are carried in the graphics state, op following OP when absent
+  or invalid, and restored by Q. A Font or overprint entry whose handling fails leaves the
+  dictionary's other entries applied.
 - core-pdf-validate's veraPDF profiles take their editions from STANDARD_PROFILES and
   refuse an identifier that table lacks.
 
@@ -184,6 +189,27 @@ def check_quadding(failures: list[str]) -> None:
         )
 
 
+def check_quadding_down_kids(failures: list[str]) -> None:
+    """Q comes down Kids as FT does, to a widget with no Parent entry."""
+    data = page_pdf(
+        b"",
+        catalog=b"/AcroForm << /Fields [6 0 R] >> ",
+        page=b"/Annots [7 0 R] ",
+        extra=(
+            b"<< /T (top) /FT /Tx /Q 2 /Kids [7 0 R] >>",
+            b"<< /Type /Annot /Subtype /Widget /Rect [72 700 272 720] /P 3 0 R >>",
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        extracted = pdf.extract()
+    expectation(
+        failures,
+        "field alignment down Kids",
+        [(item.field_type, item.alignment) for item in extracted.pages[0].form_fields],
+        [("Tx", "right"), ("Tx", "right")],
+    )
+
+
 def annotation(entries: bytes, rect: bytes = b"72 700 92 720") -> bytes:
     return b"<< /Type /Annot /Rect [" + rect + b"] /P 3 0 R " + entries + b">>"
 
@@ -236,6 +262,55 @@ def check_replies(failures: list[str]) -> None:
     )
 
 
+def check_links_past_dropped(failures: list[str]) -> None:
+    """An annotation whose record cannot be built (a Dest of broken UTF-16) is dropped,
+    and the links of the others still name the right records; a reply whose target is
+    not among them has no reply type."""
+    data = page_pdf(
+        b"",
+        page=b"/Annots [6 0 R 7 0 R 8 0 R 9 0 R 10 0 R] ",
+        extra=(
+            annotation(b"/Subtype /Text /Contents (a) /Popup 9 0 R"),
+            annotation(b"/Subtype /Text /Contents (bad) /Dest <FEFF00>"),
+            annotation(b"/Subtype /Text /Contents (c) /IRT 6 0 R /Popup 9 0 R"),
+            annotation(b"/Subtype /Popup /Parent 6 0 R", b"100 600 300 700"),
+            annotation(b"/Subtype /Text /Contents (e) /IRT 7 0 R /RT /Group"),
+        ),
+    )
+    with PdfDocument(data) as pdf:
+        extracted = pdf.extract()
+    expectation(
+        failures,
+        "annotation links past a dropped record",
+        [
+            (item.contents, item.in_reply_to, item.reply_type, item.popup, item.popup_parent)
+            for item in extracted.pages[0].annotations
+        ],
+        [
+            ("a", None, None, 2, None),
+            ("c", 0, "R", 2, None),
+            ("", None, None, None, 0),
+            ("e", None, None, None, None),
+        ],
+    )
+
+
+def check_abbreviation_markup(failures: list[str]) -> None:
+    """The space before a bold abbreviation stays outside its abbr and bold markers."""
+    from core_pdf.impl.output.model import TextLine, TextSpan
+    from core_pdf.impl.output.serialize import markdown_line
+
+    line = TextLine(
+        "See CIA", spans=(TextSpan("See"), TextSpan(" CIA", bold=True, expansion="Central Agency"))
+    )
+    expectation(
+        failures,
+        "abbreviation markup",
+        markdown_line(line),
+        'See <abbr title="Central Agency">**CIA**</abbr>',
+    )
+
+
 def check_extgstate_font(failures: list[str]) -> None:
     data = page_pdf(
         b"BT /GS1 gs 72 700 Td (Hello) Tj ET BT /F1 10 Tf /GS1 gs 72 600 Td (World) Tj ET",
@@ -254,6 +329,19 @@ def check_extgstate_font(failures: list[str]) -> None:
             shown,
             [("Hello", 24.0, "Courier"), ("World", 24.0, "Courier")],
         )
+    # Tf after a gs font loads its own font, even under a name that is that font's BaseFont.
+    reused = page_pdf(
+        b"BT /GS1 gs 72 700 Td (AAA) Tj /Helvetica 12 Tf 0 -20 Td (AAA) Tj ET",
+        resources=b"/Font << /Helvetica 6 0 R >> /ExtGState << /GS1 7 0 R >>",
+        extra=(
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+            b"/Encoding << /Differences [65 /Z] >> >>",
+            b"<< /Type /ExtGState /Font [5 0 R 12] >>",
+        ),
+    )
+    with PdfDocument(reused) as pdf:
+        runs = pdf.pages[0].get_page_program().body.runs
+        expectation(failures, "Tf after gs Font", [run.text for run in runs], ["AAA", "ZZZ"])
     from core_pdf_compat import pdfplumber
 
     with pdfplumber.open(_bytes_path(data)) as plumbed:
@@ -279,6 +367,7 @@ def check_overprint(failures: list[str]) -> None:
         """Records the overprint state at each BMC."""
 
         seen: list[tuple[object, ...]]
+        opacities: list[tuple[float, float]]
 
         def op_BMC(self, operands: ContentOperands, depth: int) -> None:
             graphics = self.graphics
@@ -288,6 +377,7 @@ def check_overprint(failures: list[str]) -> None:
                     for name in ("stroke_overprint", "fill_overprint", "overprint_mode")
                 )
             )
+            self.opacities.append((graphics.stroke_opacity, graphics.fill_opacity))
             super().op_BMC(operands, depth)
 
     cases = (
@@ -295,6 +385,7 @@ def check_overprint(failures: list[str]) -> None:
         (b"/OP true /op false /OPM 1", (True, False, 1)),
         (b"/op true", (False, True, 0)),
         (b"/OPM 2", (False, False, 0)),
+        (b"/OP true /op 5", (True, True, 0)),
     )
     for entries, expected in cases:
         data = page_pdf(
@@ -305,6 +396,7 @@ def check_overprint(failures: list[str]) -> None:
         with PdfDocument(data) as pdf:
             state = Probe(pdf)
             state.seen = []
+            state.opacities = []
             try:
                 pdf.pages[0].consume_contents(state)
             finally:
@@ -314,6 +406,33 @@ def check_overprint(failures: list[str]) -> None:
             f"overprint with {entries!r}, then after Q",
             state.seen,
             [expected, (False, False, 0)],
+        )
+
+    # A Font or overprint entry whose handling fails, as a font that cannot be loaded
+    # would, is declined alone: the opacities beside it still apply.
+    class Failing(Probe):
+        def apply_extgstate_font(self, value: object) -> None:
+            raise ValueError("unloadable font")
+
+        def apply_extgstate_overprint(self, extgstate: dict[str, Any]) -> None:
+            raise ValueError("unreadable overprint")
+
+    for entries in (b"/Font [7 0 R 12]", b"/OP true /OPM 1"):
+        data = page_pdf(
+            b"/GS1 gs /P BMC EMC",
+            resources=b"/ExtGState << /GS1 6 0 R >>",
+            extra=(b"<< /Type /ExtGState /CA 0.5 /ca 0.25 " + entries + b" >>", HELVETICA),
+        )
+        with PdfDocument(data) as pdf:
+            state = Failing(pdf)
+            state.seen = []
+            state.opacities = []
+            try:
+                pdf.pages[0].consume_contents(state)
+            finally:
+                state.release()
+        expectation(
+            failures, f"opacity beside a failing {entries!r}", state.opacities, [(0.5, 0.25)]
         )
 
 
@@ -345,7 +464,10 @@ CHECKS: tuple[tuple[str, Callable[[list[str]], None]], ...] = (
     ("Span E", check_span_expansion),
     ("StructElem E", check_structure_expansion),
     ("field Q", check_quadding),
+    ("field Q down Kids", check_quadding_down_kids),
     ("annotation IRT, RT, Popup", check_replies),
+    ("annotation links past a dropped record", check_links_past_dropped),
+    ("abbreviation markup", check_abbreviation_markup),
     ("ExtGState Font", check_extgstate_font),
     ("ExtGState OP, op, OPM", check_overprint),
     ("validate profiles", check_validate_profiles),

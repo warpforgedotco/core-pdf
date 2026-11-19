@@ -61,7 +61,17 @@ class RawLink:
 
 
 class RawFormField:
-    __slots__ = ("name", "type", "value", "value_text", "rect", "dict", "kids", "widget")
+    __slots__ = (
+        "name",
+        "type",
+        "value",
+        "value_text",
+        "rect",
+        "dict",
+        "kids",
+        "widget",
+        "quadding",
+    )
 
     def __init__(
         self,
@@ -73,6 +83,7 @@ class RawFormField:
         dict_: PdfDict,
         kids: PdfArray | None = None,
         widget: PdfDict | None = None,
+        quadding: object = None,
     ) -> None:
         self.name = name
         self.type = type
@@ -82,6 +93,8 @@ class RawFormField:
         self.dict = dict_
         self.kids = kids if kids is not None else []
         self.widget = widget
+        # Q, the field's or the nearest ancestor's down the Kids, as stored; None if none.
+        self.quadding = quadding
 
     @property
     def flags(self) -> int:

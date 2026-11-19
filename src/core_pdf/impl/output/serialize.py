@@ -163,7 +163,7 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
             page_id,
             page_annotation_ids,
             page.annotations,
-            partial(annotation_to_json_dict, page_id=page_id),
+            partial(annotation_to_json_dict, ids=ids),
         )
         extend_records(form_fields, page_id, page_field_ids, page.form_fields, field_to_json_dict)
         pages.append(
@@ -375,13 +375,11 @@ def link_to_json_dict(link: Link) -> dict[str, JsonValue]:
     }
 
 
-def annotation_to_json_dict(
-    annotation: Annotation, *, page_id: str | None = None
-) -> dict[str, JsonValue]:
+def annotation_to_json_dict(annotation: Annotation, *, ids: PageIds) -> dict[str, JsonValue]:
+    """An annotation's record; ids, its page's, names the annotations it links to."""
+
     def reference(index: int | None) -> JsonValue:
-        if index is None or page_id is None:
-            return index
-        return f"{page_id}:annotation:{index}"
+        return None if index is None else ids.record("annotation", index)
 
     return {
         "subtype": annotation.subtype,
@@ -486,6 +484,10 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             if not text:
                 continue
         text = escape(text) if markup.escape_text else text
+        leading = ""
+        if span.expansion is not None:
+            body = text.lstrip()
+            leading, text = text[: len(text) - len(body)], body
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -502,10 +504,9 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             text = f"{markup.italic[0]}{text}{markup.italic[1]}"
         if span.expansion is not None:
             # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
-            # space joining it to the text before stays outside.
-            body = text.lstrip()
+            # space joining it to the text before stays outside it and its styles.
             title = escape(span.expansion, quote=True)
-            text = f'{text[: len(text) - len(body)]}<abbr title="{title}">{body}</abbr>'
+            text = f'{leading}<abbr title="{title}">{text}</abbr>'
         rendered.append(text)
     return "".join(rendered)
 

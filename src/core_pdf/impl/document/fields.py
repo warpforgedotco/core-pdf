@@ -30,7 +30,7 @@ class FieldResolver(PdfValueResolver, Protocol):
     def as_dict(self, value: object) -> PdfDict | None: ...
 
 
-FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, int]
+FieldTraversalNode: TypeAlias = tuple[Literal["node"], object, str, str, object, object, int]
 
 
 FieldTraversalRecord: TypeAlias = tuple[Literal["record"], RawFormField]
@@ -73,11 +73,14 @@ def field_record(
     malformed: MalformedFn,
     *,
     terminal_widget: bool = False,
+    parent_quadding: object = None,
 ) -> RawFormField:
     title = resolver.resolve_str(node.get("T"))
     name = qualified_field_name(parent_name, title)
     field_type = resolver.resolve_name_or_text(node.get("FT"), name_like=True) or parent_type
     value = inherited_dictionary_value(node, "V", parent_value, resolver.resolve)
+    # Q is inheritable (ISO 32000-2 12.7.4.3): it comes down the Kids as FT and V do.
+    quadding = inherited_dictionary_value(node, "Q", parent_quadding, resolver.resolve)
     value_text = field_value_text(resolver, value)
     try:
         kids = field_children(None if terminal_widget else node.get("Kids"))
@@ -94,6 +97,7 @@ def field_record(
         node,
         kids=kids,
         widget=node if is_widget else None,
+        quadding=quadding,
     )
 
 
@@ -102,13 +106,13 @@ def collect_field_records(
 ) -> list[RawFormField]:
     seen: set[int] = set()
     records: list[RawFormField] = []
-    stack: list[FieldTraversalEntry] = [("node", node, "", "", None, 0)]
+    stack: list[FieldTraversalEntry] = [("node", node, "", "", None, None, 0)]
     while stack:
         entry = stack.pop()
         if entry[0] == "record":
             records.append(entry[1])
             continue
-        _, current_node, parent_name, parent_type, parent_value, depth = entry
+        _, current_node, parent_name, parent_type, parent_value, parent_quadding, depth = entry
         if depth > 50:
             malformed("invalid AcroForm depth")
             continue
@@ -118,7 +122,13 @@ def collect_field_records(
             continue
         seen.add(id(current_node))
         record = field_record(
-            resolver, current_node, parent_name, parent_type, parent_value, malformed
+            resolver,
+            current_node,
+            parent_name,
+            parent_type,
+            parent_value,
+            malformed,
+            parent_quadding=parent_quadding,
         )
         records.append(record)
         for kid in reversed(record.kids):
@@ -138,12 +148,21 @@ def collect_field_records(
                             record.value,
                             malformed,
                             terminal_widget=True,
+                            parent_quadding=record.quadding,
                         ),
                     )
                 )
             else:
                 stack.append(
-                    ("node", resolved_kid, record.name, record.type, record.value, depth + 1)
+                    (
+                        "node",
+                        resolved_kid,
+                        record.name,
+                        record.type,
+                        record.value,
+                        record.quadding,
+                        depth + 1,
+                    )
                 )
     return records
 
