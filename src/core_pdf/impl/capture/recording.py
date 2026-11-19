@@ -296,6 +296,21 @@ class CaptureStreamExecutor(ContentStreamExecutor):
             raise error
 
 
+def colorimetric_space(space: ColorSpace | None) -> bool:
+    """Whether colour in space has a CIE 1931 Y to take as its luminosity: a CalGray or
+    CalRGB space, or an ICCBased one whose profile core reads; an ICCBased space whose
+    profile it cannot read converts through its Alternate, and has a Y if that does."""
+    for _ in range(8):
+        if space is None or not colorimetric_luminosity(space):
+            return False
+        if space.kind != "ICCBased" or readable_icc_profile(
+            space.icc_profile, len(space.component_ranges)
+        ):
+            return True
+        space = space.alternate
+    return False
+
+
 class TextState(RecoveringTextState):
     document: PdfDocument[Any]
     name_resolver: ObjectResolver
@@ -333,6 +348,9 @@ class TextState(RecoveringTextState):
     # values to restore when each group that changed them ends.
     capture_cmyk: bool
     capture_cmyk_profile: bytes | None
+    # Whether an isolated group whose space is CIE-based gray composites in sRGB rather than
+    # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
+    cie_gray_groups_in_srgb: bool
     capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
@@ -379,6 +397,7 @@ class TextState(RecoveringTextState):
         self.last_stroke_color: CaptureColorMemo | None = None
         self.capture_cmyk = False
         self.capture_cmyk_profile = None
+        self.cie_gray_groups_in_srgb = False
         self.capture_cmyk_frames = {}
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
@@ -540,6 +559,15 @@ class TextState(RecoveringTextState):
                 )
             )
             self.sequence += 1
+        if (
+            self.cie_gray_groups_in_srgb
+            and frame.group_color_space is not None
+            and blending_space_of(frame.group_color_space) == "DeviceGray"
+            and colorimetric_space(frame.group_color_space)
+        ):
+            # A CIE-based gray group keeps colour's Y, as converting to it would, where the
+            # gray its family's device group takes colours to would not.
+            frame.group_color_space = None
         if frame.group_alpha is not None and frame.group_color_space is not None:
             self.capture_cmyk_frames[id(frame)] = (self.capture_cmyk, self.capture_cmyk_profile)
             self.set_capture_cmyk(
@@ -738,11 +766,10 @@ class TextState(RecoveringTextState):
             if frame is None:
                 return None
             colorimetric = self.mask_is_colorimetric(mask)
-            if colorimetric and space == "DeviceGray":
-                # A CIE-based gray group composites in sRGB, as the mask's own passes do
-                # (raster_spaces.luminosity_mask_channel), not as the device gray its
-                # family's group would take colours to.
-                frame.group_color_space = None
+            # A colorimetric gray or RGB mask composites in sRGB (raster_spaces.
+            # luminosity_mask_channel), and so do its own group and each isolated CIE-based
+            # gray group inside it, rather than flattening colour to device gray first.
+            nested.cie_gray_groups_in_srgb = colorimetric and space != "DeviceCMYK"
             nested.stream_executor.consume_frame(frame)
             nested.run_accumulator.flush()
             if space is None:
@@ -768,16 +795,9 @@ class TextState(RecoveringTextState):
 
     @staticmethod
     def mask_is_colorimetric(mask: SoftMask) -> bool:
-        """Whether a Luminosity mask takes the CIE 1931 Y of its colour: its group's space is
-        CIE-based, and for ICCBased, has a profile core reads, not one that converts
-        through its Alternate."""
-        space = mask.color_space
-        if mask.subtype != "Luminosity" or not colorimetric_luminosity(space):
-            return False
-        assert space is not None
-        return space.kind != "ICCBased" or readable_icc_profile(
-            space.icc_profile, len(space.component_ranges)
-        )
+        """Whether a Luminosity mask takes the CIE 1931 Y of its colour: its group's space
+        is CIE-based (colorimetric_space)."""
+        return mask.subtype == "Luminosity" and colorimetric_space(mask.color_space)
 
     def soft_mask_backdrop(self, mask: SoftMask, space: BlendingSpace) -> tuple[float, ...]:
         """A Luminosity mask's BC colour as capture_color gives paint in its group: a device

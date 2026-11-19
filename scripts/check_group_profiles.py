@@ -262,6 +262,7 @@ def mask_case(
     profile_entries: bytes = b"",
     resources: bytes = b"",
     isolated: bool = False,
+    extra_objects: Sequence[bytes] = (),
     tolerance: float = 3,
 ) -> Case:
     """A page masked by a Luminosity mask whose group's CS is space (an isolated group with
@@ -287,6 +288,7 @@ def mask_case(
         transfer[0] if transfer is not None else b"<< /FunctionType 2 /Domain [0 1] /N 1 >>"
     )
     extra.append(stream(b"/N %d%s" % (profile_data[1], profile_entries), profile_data[0]))
+    extra.extend(extra_objects)
     page = (
         b"/Resources << /ExtGState << /M << /SMask << /S /Luminosity /G 5 0 R%s >> >> >> >> "
         b"/Contents 4 0 R" % entries
@@ -462,6 +464,31 @@ def mask_cases() -> list[Case]:
             profile_data=(b"not an ICC profile", 3),
             profile_entries=b" /Alternate /DeviceRGB",
             resources=icc_resources,
+        ),
+        mask_case(
+            "ICCBased RGB whose profile cannot be read, its Alternate CalRGB",
+            ICC,
+            (b"1 0 0 rg", icc_paint(first)),
+            (luminance(1, 0, 0), calrgb_y(first, 1.0)),
+            profile_data=(b"not an ICC profile", 3),
+            profile_entries=b" /Alternate %s" % calrgb(1.0),
+            resources=icc_resources,
+        ),
+        mask_case(
+            "CalRGB, gamma 1, with an isolated CalGray group inside painting RGB",
+            calrgb(1.0),
+            # The form paints FIRST; the fill of FIRST that follows is clipped away.
+            (b"/F Do q 0 0 0 0 re W n", b"Q 0 0 1 rg"),
+            (luminance(1, 0, 0), luminance(0, 0, 1)),
+            resources=b"/XObject << /F 8 0 R >>",
+            extra_objects=(
+                stream(
+                    b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S "
+                    b"/Transparency /I true /CS [/CalGray << /WhitePoint [0.9642 1 0.8249] "
+                    b"/Gamma 1 >>] >>",
+                    b"1 0 0 rg " + rectangle(FIRST),
+                ),
+            ),
         ),
         mask_case(
             "CalGray, gamma 1, an isolated group painting RGB",

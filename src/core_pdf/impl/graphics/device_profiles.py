@@ -200,7 +200,7 @@ def convert_cmyk_bytes(
     "ISO 32000-2",
     "11.5.3",
     introduced="1.4",
-    rule="a CIE-based group's luminosity is the CIE 1931 Y of its colour",
+    rule="a CMYK profile's luminosity is its Y, rescaled from its black to its white",
 )
 def cmyk_bytes_luminance(samples: ByteSamples, profile: bytes | None) -> numpy.ndarray:
     """The luminosity of each (n, 4) CMYK byte row of the ICC profile: its CIE 1931 Y through
