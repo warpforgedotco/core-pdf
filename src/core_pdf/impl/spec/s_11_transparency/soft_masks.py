@@ -17,7 +17,10 @@ Where the clauses leave a choice open:
   not a formula on its components. Core composites a CalGray, CalRGB or ICCBased gray or RGB
   group in sRGB, the colour every such colour converts to, and takes Y from that sRGB, which
   is the colour's own Y wherever sRGB holds it; an ICCBased CMYK group composites the CMYK of
-  its profile, whose Y the profile gives.
+  its profile, whose Y the profile gives, rescaled so that the space's black, 0 0 0 1, is 0
+  and its white 1: a printing profile's black reflects a few percent, and Note 2 has a black
+  backdrop leave zero luminosity outside the group's shape. An ICCBased space whose profile
+  core cannot read converts through its Alternate, and its luminosity is the device one.
 - BC's default is "the colour space's initial value, representing black": all components 0,
   which is black in an additive space, and for a CMYK space -- whose initial value under
   8.6.5.5 would be all components 0, white -- its black, 0 0 0 1, as DeviceCMYK's initial

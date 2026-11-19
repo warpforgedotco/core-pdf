@@ -46,6 +46,7 @@ from core_pdf.impl.graphics.device_profiles import (
     component_byte,
     srgb_bytes_to_cmyk,
 )
+from core_pdf.impl.graphics.icc_profiles import IccProfileError
 from core_pdf.impl.graphics.images import decode_cmyk_samples
 from core_pdf.impl.render.blend import color_rgba
 from core_pdf.impl.render.model import (
@@ -337,7 +338,11 @@ def colorimetric_luminosity_channel(
         cmyk = numpy.empty((height, width, 4), dtype=numpy.uint8)
         numpy.subtract(255, first[..., :3], out=cmyk[..., :3])
         numpy.subtract(255, views[1][..., 0], out=cmyk[..., 3])
-        luminance = cmyk_bytes_luminance(cmyk.reshape(-1, 4), profile).reshape(height, width)
+        try:
+            luminance = cmyk_bytes_luminance(cmyk.reshape(-1, 4), profile).reshape(height, width)
+        except IccProfileError:
+            # A profile whose Y cannot be found: the device formula, as for DeviceCMYK.
+            return luminosity_channel(first, views[1], LUMINOSITY_SPACES["DeviceCMYK"], presence)
     luminance *= 255.0
     numpy.rint(luminance, out=luminance)
     channel = numpy.clip(luminance, 0.0, 255.0, out=luminance).astype(numpy.uint8)

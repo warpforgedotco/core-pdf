@@ -161,6 +161,17 @@ def cms_transform_block(
     return numpy.asarray(converted, dtype=numpy.uint8).reshape(rows, 3)
 
 
+def readable_icc_profile(profile: bytes | None, channels: int) -> bool:
+    """Whether profile is an ICC profile core can read, of channels input channels: an
+    ICCBased space whose profile is not converts through its Alternate instead."""
+    if profile is None:
+        return False
+    try:
+        return parse_icc_transform(profile).input_channels == channels
+    except IccProfileError:
+        return False
+
+
 def parse_icc_transform(profile: bytes) -> IccTransform:
     return parse_icc_transform_cached(bytes(profile))
 

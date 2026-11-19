@@ -150,6 +150,9 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         initial_alpha_is_shape,
         initial_text_knockout,
         id(defaults),
+        # A tiling cell's colours are captured for the blending space it paints into.
+        self.capture_cmyk,
+        self.capture_cmyk_profile,
     )
     cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
     if not isinstance(cached, MissingObject):
@@ -172,6 +175,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         )
     elif isinstance(pattern, model.TilingPattern):
         nested = self.nested_capture_state()
+        nested.set_capture_cmyk(self.capture_cmyk, self.capture_cmyk_profile)
         try:
             result = self.capture_tiling_pattern(
                 nested, pattern, rendering, initial_alpha_is_shape, initial_text_knockout

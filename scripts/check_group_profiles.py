@@ -29,6 +29,7 @@ import itertools
 import struct
 import sys
 from collections.abc import Callable, Sequence
+from importlib import resources as package_resources
 from typing import NamedTuple
 
 import numpy
@@ -258,12 +259,15 @@ def mask_case(
     backdrop: tuple[bytes, float] | None = None,
     transfer: tuple[bytes, Callable[[float], float]] | None = None,
     profile_data: tuple[bytes, int] = (b"", 3),
+    profile_entries: bytes = b"",
     resources: bytes = b"",
+    isolated: bool = False,
     tolerance: float = 3,
 ) -> Case:
-    """A page masked by a Luminosity mask whose group's CS is space, painting FIRST and
-    SECOND with paint's operators, whose luminosities are expected; the rest of the group's
-    box and the strip outside it take BC (black, luminosity 0, by default)."""
+    """A page masked by a Luminosity mask whose group's CS is space (an isolated group with
+    isolated), painting FIRST and SECOND with paint's operators, whose luminosities are
+    expected; the rest of the group's box and the strip outside it take BC (black,
+    luminosity 0, by default)."""
     function = transfer[1] if transfer is not None else (lambda value: value)
     bc_luminosity = 0.0 if backdrop is None else backdrop[1]
     entries = b""
@@ -274,15 +278,15 @@ def mask_case(
         entries += b" /TR 6 0 R"
     group = stream(
         b"/Type /XObject /Subtype /Form /BBox %s "
-        b"/Group << /S /Transparency /CS %s >> /Resources << %s >>"
-        % (GROUP_BBOX, space, resources),
+        b"/Group << /S /Transparency /CS %s%s >> /Resources << %s >>"
+        % (GROUP_BBOX, space, b" /I true" if isolated else b"", resources),
         paint[0] + b" " + rectangle(FIRST) + b" " + paint[1] + b" " + rectangle(SECOND),
     )
     extra.append(group)
     extra.append(
         transfer[0] if transfer is not None else b"<< /FunctionType 2 /Domain [0 1] /N 1 >>"
     )
-    extra.append(stream(b"/N %d" % profile_data[1], profile_data[0]))
+    extra.append(stream(b"/N %d%s" % (profile_data[1], profile_entries), profile_data[0]))
     page = (
         b"/Resources << /ExtGState << /M << /SMask << /S /Luminosity /G 5 0 R%s >> >> >> >> "
         b"/Contents 4 0 R" % entries
@@ -303,6 +307,34 @@ def mask_case(
 
 # The ICC profile object is 7 0 R on mask pages (object 5 is the group, 6 the transfer).
 ICC = b"[/ICCBased 7 0 R]"
+
+
+def swop_profile() -> bytes:
+    """The built-in DeviceCMYK profile, a real printing profile whose black reflects."""
+    return (
+        package_resources.files("core_pdf.impl.data.icc")
+        .joinpath("SWOP2006_Coated5v2.icc")
+        .read_bytes()
+    )
+
+
+def flat_cmyk_profile() -> bytes:
+    """A CMYK profile every colour of which is the PCS's white: no luminosity to be had."""
+    white = [pcs_word(value) for value in D50]
+    return profile(b"prtr", b"CMYK", [(b"A2B0", lut16(4, 3, 2, white * 16))])
+
+
+def device_cmyk_luminosity(cmyk: Sequence[float]) -> float:
+    c, m, y, k = cmyk
+    return 1 - min(1.0, 0.3 * c + 0.59 * m + 0.11 * y + k)
+
+
+def device_rgb_luminosity(rgb: Sequence[float]) -> float:
+    return 0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2]
+
+
+def srgb_linear(value: float) -> float:
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
 
 
 def calrgb(gamma: float) -> bytes:
@@ -396,6 +428,55 @@ def mask_cases() -> list[Case]:
             (luminance(*first), luminance(*second)),
             profile_data=(linear, 3),
             resources=b"/ColorSpace << /DefaultRGB %s >>" % ICC,
+        ),
+        mask_case(
+            "ICCBased CMYK through the built-in DeviceCMYK profile: its black is 0",
+            ICC,
+            (icc_paint((0.0, 0.0, 0.0, 1.0)), icc_paint((1.0, 1.0, 1.0, 1.0))),
+            (0.0, 0.0),
+            profile_data=(swop_profile(), 4),
+            resources=icc_resources,
+        ),
+        mask_case(
+            "ICCBased CMYK through the built-in DeviceCMYK profile: its white is 1",
+            ICC,
+            (icc_paint((0.0, 0.0, 0.0, 0.0)), icc_paint((0.0, 0.0, 0.0, 0.0))),
+            (1.0, 1.0),
+            backdrop=(b"0 0 0 0", 1.0),
+            profile_data=(swop_profile(), 4),
+            resources=icc_resources,
+        ),
+        mask_case(
+            "ICCBased CMYK whose profile gives no luminosity: the device formula",
+            ICC,
+            (icc_paint(first_cmyk), icc_paint(second_cmyk)),
+            (device_cmyk_luminosity(first_cmyk), device_cmyk_luminosity(second_cmyk)),
+            profile_data=(flat_cmyk_profile(), 4),
+            resources=icc_resources,
+        ),
+        mask_case(
+            "ICCBased RGB whose profile cannot be read: its Alternate, a device space",
+            ICC,
+            (icc_paint(first), icc_paint(second)),
+            (device_rgb_luminosity(first), device_rgb_luminosity(second)),
+            profile_data=(b"not an ICC profile", 3),
+            profile_entries=b" /Alternate /DeviceRGB",
+            resources=icc_resources,
+        ),
+        mask_case(
+            "CalGray, gamma 1, an isolated group painting RGB",
+            b"[/CalGray << /WhitePoint [0.9642 1 0.8249] /Gamma 1 >>]",
+            (b"1 0 0 rg", b"0 0 1 rg"),
+            (luminance(1, 0, 0), luminance(0, 0, 1)),
+            isolated=True,
+        ),
+        mask_case(
+            "ICCBased gray, linear, an isolated group painting RGB",
+            ICC,
+            (b"0 1 0 rg", b"0.5 0.5 0.5 rg"),
+            (luminance(0, 1, 0), luminance(*([srgb_linear(0.5)] * 3))),
+            profile_data=(gray_profile(1.0), 1),
+            isolated=True,
         ),
         mask_case(
             "DeviceGray, as it was",
@@ -581,6 +662,66 @@ def group_cases() -> list[Case]:
     ]
 
 
+# A spot colour whose alternate is DeviceCMYK black alone.
+SPOT_K = (
+    b"[/Separation /Black /DeviceCMYK << /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] "
+    b"/C1 [0 0 0 1] /N 1 >>]"
+)
+
+
+def pattern_cases() -> list[Case]:
+    """Tiling patterns painting a Separation whose DeviceCMYK alternate is K-only black, under
+    Multiply in a DeviceCMYK group over cyan: a cell's colour comes down to the group's CMYK
+    as a fill's does, so K stays K (C 1, K 0.5), not a rich black of sRGB converted back."""
+    cell = stream(
+        b"/PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10 "
+        b"/Resources << /ColorSpace << /S %s >> >>" % SPOT_K,
+        b"/S cs 0.5 sc 0 0 10 10 re f",
+    )
+    uncoloured = stream(
+        b"/PatternType 1 /PaintType 2 /TilingType 1 /BBox [0 0 10 10] /XStep 10 /YStep 10 "
+        b"/Resources << >>",
+        b"0 0 10 10 re f",
+    )
+    group_resources = (
+        b"/ExtGState << /M << /BM /Multiply >> >> /Pattern << /T 5 0 R /U 6 0 R >> "
+        b"/ColorSpace << /UC [/Pattern %s] >>" % SPOT_K
+    )
+    body = (
+        b"1 0 0 0 k 0 0 200 200 re f /M gs "
+        b"/Pattern cs /T scn " + rectangle(FIRST) + b" /UC cs 0.5 /U scn " + rectangle(SECOND)
+    )
+    pdf = document(
+        b"/Resources << /XObject << /G 7 0 R >> >> /Contents 4 0 R",
+        b"/G Do",
+        [
+            cell,
+            uncoloured,
+            stream(
+                b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+                b"/Group << /S /Transparency /I true /CS /DeviceCMYK >> /Resources << %s >>"
+                % group_resources,
+                body,
+            ),
+        ],
+    )
+    # The colour C 1, K 0.5 has on the page, through the built-in DeviceCMYK profile.
+    reference = render(document(b"/Contents 4 0 R", b"1 0 0 0.5 k 0 0 200 200 re f", []))
+    red, green, blue = (float(value) for value in reference[100, 100])
+    expected = (red, green, blue)
+    return [
+        Case(
+            "tiling patterns painting K under Multiply in a DeviceCMYK group",
+            pdf,
+            (
+                Sample(FIRST, expected, "coloured pattern"),
+                Sample(SECOND, expected, "uncoloured pattern"),
+            ),
+            3,
+        )
+    ]
+
+
 def render(data: bytes) -> numpy.ndarray:
     """The page's pixels over white, as RGB."""
     with PdfDocument(data) as pdf:
@@ -613,7 +754,7 @@ def check(case: Case) -> list[str]:
 
 
 def main() -> int:
-    cases = [*mask_cases(), *group_cases()]
+    cases = [*mask_cases(), *group_cases(), *pattern_cases()]
     failures = [failure for case in cases for failure in check(case)]
     for failure in failures:
         print(failure)

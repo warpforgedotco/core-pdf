@@ -203,17 +203,22 @@ def convert_cmyk_bytes(
     rule="a CIE-based group's luminosity is the CIE 1931 Y of its colour",
 )
 def cmyk_bytes_luminance(samples: ByteSamples, profile: bytes | None) -> numpy.ndarray:
-    """The CIE 1931 Y, relative to the medium's white, of each (n, 4) CMYK byte row of the
-    ICC profile, through the profile's colorimetric transform to the PCS (no black point
-    compensation, so the profile's darkest black keeps its Y), each distinct colour once."""
+    """The luminosity of each (n, 4) CMYK byte row of the ICC profile: its CIE 1931 Y through
+    the profile's colorimetric transform to the PCS, rescaled so that the space's white,
+    0 0 0 0, is 1 and its black, 0 0 0 1 -- the black a mask's default backdrop is -- is 0,
+    as 11.5.3's black backdrop leaves no luminosity outside the group's shape (its Note 2),
+    though a printing profile's black reflects a few percent; anything darker is 0. Each
+    distinct colour is converted once."""
     rows = numpy.ascontiguousarray(samples, dtype=numpy.uint8).reshape(-1, 4)
     transform = cmyk_profile_transform(profile)
     if transform is None:
         raise IccProfileError("no CMYK profile")
     distinct, inverse = numpy.unique(rows.view(numpy.uint32).reshape(-1), return_inverse=True)
+    references = numpy.array([[0, 0, 0, 0], [0, 0, 0, 255]], dtype=numpy.uint8)
+    colors = numpy.concatenate((references, distinct.view(numpy.uint8).reshape(-1, 4)))
     try:
         xyz = imagecodecs.cms_transform(
-            numpy.ascontiguousarray(distinct.view(numpy.uint8).reshape(-1, 1, 4)),
+            numpy.ascontiguousarray(colors.reshape(-1, 1, 4)),
             transform.profile,
             xyz_profile(),
             colorspace="cmyk",
@@ -225,7 +230,11 @@ def cmyk_bytes_luminance(samples: ByteSamples, profile: bytes | None) -> numpy.n
     except imagecodecs.CmsError as error:
         raise IccProfileError("ICC profile cannot be converted to XYZ") from error
     luminance = numpy.asarray(xyz, dtype=numpy.float64).reshape(-1, 3)[:, 1]
-    return luminance[inverse.reshape(-1)]
+    white, black = float(luminance[0]), float(luminance[1])
+    if not white > black:
+        raise IccProfileError("ICC profile's white is not lighter than its black")
+    scaled = numpy.clip((luminance[2:] - black) / (white - black), 0.0, 1.0)
+    return scaled[inverse.reshape(-1)]
 
 
 @cache

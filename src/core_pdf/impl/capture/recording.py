@@ -47,6 +47,7 @@ from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
+lazy from core_pdf.impl.graphics.icc_profiles import readable_icc_profile
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_profile,
     blending_space_of,
@@ -736,6 +737,12 @@ class TextState(RecoveringTextState):
             frame = nested.append_form_xobject(mask.group, 0)
             if frame is None:
                 return None
+            colorimetric = self.mask_is_colorimetric(mask)
+            if colorimetric and space == "DeviceGray":
+                # A CIE-based gray group composites in sRGB, as the mask's own passes do
+                # (raster_spaces.luminosity_mask_channel), not as the device gray its
+                # family's group would take colours to.
+                frame.group_color_space = None
             nested.stream_executor.consume_frame(frame)
             nested.run_accumulator.flush()
             if space is None:
@@ -749,7 +756,7 @@ class TextState(RecoveringTextState):
                     blending_space=space,
                     blending_profile=blending_profile(mask.color_space),
                     backdrop=self.soft_mask_backdrop(mask, space),
-                    colorimetric=colorimetric_luminosity(mask.color_space),
+                    colorimetric=colorimetric,
                 )
             return caches.capture_soft_masks.put_key(mask, key, captured)
         except PdfParseError, TypeError, ValueError, ArithmeticError:
@@ -758,6 +765,19 @@ class TextState(RecoveringTextState):
             caches.capture_active_mask_groups.remove(group_key)
             if nested is not None:
                 nested.release()
+
+    @staticmethod
+    def mask_is_colorimetric(mask: SoftMask) -> bool:
+        """Whether a Luminosity mask takes the CIE 1931 Y of its colour: its group's space is
+        CIE-based, and for ICCBased, has a profile core reads, not one that converts
+        through its Alternate."""
+        space = mask.color_space
+        if mask.subtype != "Luminosity" or not colorimetric_luminosity(space):
+            return False
+        assert space is not None
+        return space.kind != "ICCBased" or readable_icc_profile(
+            space.icc_profile, len(space.component_ranges)
+        )
 
     def soft_mask_backdrop(self, mask: SoftMask, space: BlendingSpace) -> tuple[float, ...]:
         """A Luminosity mask's BC colour as capture_color gives paint in its group: a device
