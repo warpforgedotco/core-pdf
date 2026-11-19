@@ -4,6 +4,17 @@ from typing import Any
 
 import numpy
 
+def area_coverage_plane(
+    edges: numpy.ndarray[Any, Any],
+    crop_x0: float,
+    crop_y1: float,
+    scale: float,
+    ix0: float,
+    iy0: float,
+    width: int,
+    height: int,
+    mode: int = 0,
+) -> tuple[numpy.ndarray[Any, Any], int] | None: ...
 def signed_area_coverage(
     edges: numpy.ndarray[Any, Any], width: int, height: int
 ) -> numpy.ndarray[Any, Any]: ...

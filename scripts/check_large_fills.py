@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import math
 import sys
+import tracemalloc
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -39,7 +40,7 @@ import numpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
-from core_pdf_cythonized import supersampled_coverage_plane  # noqa: E402
+from core_pdf_cythonized import area_coverage_plane, supersampled_coverage_plane  # noqa: E402
 from scripts.check_patterns import document, numbers, stream  # noqa: E402
 
 type Point = tuple[float, float]
@@ -52,9 +53,15 @@ SIZE = 320
 ROWS = 64
 # Core's sample points per pixel along each axis.
 SAMPLES = 4
+# A nonzero fill's pixel row whose sums of signed areas stray more than MIXED_SLACK past 0..1
+# or 0..-1 is measured instead along AREA_FALLBACK_LINES lines.
+MIXED_SLACK = 1e-7
+AREA_FALLBACK_LINES = 16
 # A pixel may be off the reference by this much in a channel beyond what the 4x4 grid misses:
 # the rounding of its alpha and colour.
 SLACK = 2.0
+# A page of large fills may hold this much more memory at its peak than an empty page.
+MEMORY_ALLOWANCE = 16 * 2**20
 # Each page must have at least this many pixels its path covers in part.
 MIN_EDGE_PIXELS = 100
 COLOUR: Colour = (0.2, 0.4, 0.8)
@@ -198,6 +205,25 @@ SHAPES = {
         "nearly horizontal edges",
         [[(15.2, 40.1), (305.3, 41.6), (300.4, 280.2), (20.1, 278.9)]],
         "nonzero",
+    ),
+    "shared edge, opposite orientations": Shape(
+        "shared edge, opposite orientations",
+        [
+            [(10.3, 10.2), (150.4, 12.6), (150.4, 305.1), (12.2, 300.7)],
+            [(150.4, 12.6), (150.4, 305.1), (309.5, 298.2), (306.8, 15.3)],
+        ],
+        "nonzero",
+    ),
+    "small shared edge, opposite orientations": Shape(
+        "small shared edge, opposite orientations",
+        [
+            [(100.3, 100.2), (140.4, 101.6), (140.4, 149.1), (101.2, 148.7)],
+            [(140.4, 101.6), (140.4, 149.1), (180.5, 147.2), (179.8, 102.3)],
+        ],
+        "nonzero",
+    ),
+    "doubled heptagon": Shape(
+        "doubled heptagon", [regular(7, 140.0, 0.17), regular(7, 140.0, 0.17)], "nonzero"
     ),
     "far-off corners": Shape(
         "far-off corners", [[(-2.0e5, 160.3), (2.0e5, 140.7), (0.37, 3.0e5)]], "nonzero"
@@ -500,8 +526,8 @@ def check(case: Case, coverage: numpy.ndarray, missable: numpy.ndarray) -> int:
     if edges < MIN_EDGE_PIXELS:
         print(f"  {case.name}: only {edges} edge pixels")
         failed += 1
-    if failed:
-        row, column = numpy.argwhere(bad)[0] if bad.any() else (0, 0)
+    if bad.any():
+        row, column = numpy.argwhere(bad)[0]
         print(
             f"  {case.name}: {int(bad.sum())} pixels off the reference, the first at "
             f"{column},{row}: {rendered[row, column].round(1)} for coverage "
@@ -518,8 +544,9 @@ def reference_counts(
     scale: float,
     box: tuple[int, int, int, int],
     evenodd: bool,
-) -> tuple[numpy.ndarray, int] | None:
-    """supersampled_coverage_plane in Python, reading every edge at every sample row."""
+) -> tuple[numpy.ndarray, int, int] | None:
+    """supersampled_coverage_plane in Python, reading every edge at every sample row and
+    every column of the box."""
     ix0, iy0, ix1, iy1 = box
     width = ix1 - ix0
     height = iy1 - iy0
@@ -574,7 +601,8 @@ def reference_counts(
             rows.append(row)
     if not rows:
         return None
-    return counts[rows[0] : rows[-1] + 1], rows[0]
+    columns = numpy.flatnonzero(counts.any(axis=0))
+    return (counts[rows[0] : rows[-1] + 1, columns[0] : columns[-1] + 1], rows[0], int(columns[0]))
 
 
 def check_kernel(count: int = 300) -> int:
@@ -602,7 +630,7 @@ def check_kernel(count: int = 300) -> int:
             same = (got is None and want is None) or (
                 got is not None
                 and want is not None
-                and got[1] == want[1]
+                and got[1:] == want[1:]
                 and numpy.array_equal(got[0], want[0])
             )
             if not same:
@@ -615,9 +643,263 @@ def check_kernel(count: int = 300) -> int:
     return failed
 
 
+def py_max(a: float, b: float) -> float:
+    return max(a, b)
+
+
+def py_min(a: float, b: float) -> float:
+    return min(a, b)
+
+
+def area_crossings(active: list[tuple[float, ...]], y: float) -> list[tuple[float, int]]:
+    crossings = [
+        (edge[0] + (y - edge[1]) * edge[3], 1 if edge[4] > 0 else -1)
+        for edge in active
+        if edge[1] <= y < edge[2]
+    ]
+    crossings.sort(key=lambda crossing: crossing[0])
+    return crossings
+
+
+def area_fallback_row(active: list[tuple[float, ...]], row: int, width: int) -> list[float]:
+    full = [0] * (width + 1)
+    partial = [0.0] * (width + 1)
+    for line in range(AREA_FALLBACK_LINES):
+        crossings = area_crossings(active, row + (line + 0.5) / AREA_FALLBACK_LINES)
+        winding = 0
+        for index in range(len(crossings) - 1):
+            winding += crossings[index][1]
+            if winding == 0:
+                continue
+            start = crossings[index][0]
+            end = crossings[index + 1][0]
+            start = max(start, 0.0)
+            end = float(width) if end > width else end
+            if not end > start:
+                continue
+            first, last = math.floor(start), math.floor(end)
+            if first == last:
+                partial[first] += end - start
+            else:
+                partial[first] += (first + 1.0) - start
+                full[first + 1] += 1
+                full[last] -= 1
+                if last < width:
+                    partial[last] += end - last
+    out = []
+    running = 0
+    for column in range(width):
+        running += full[column]
+        out.append(py_min(1.0, (float(running) + partial[column]) / AREA_FALLBACK_LINES))
+    return out
+
+
+def reference_area(
+    edges: numpy.ndarray,
+    crop_x0: float,
+    crop_y1: float,
+    scale: float,
+    ix0: float,
+    iy0: float,
+    width: int,
+    height: int,
+) -> tuple[numpy.ndarray, int] | None:
+    """area_coverage_plane in Python: the dense sums of the signed areas of every edge's
+    pieces in every cell, and the fallback for the rows whose sums show mixed windings."""
+    kept = [row for row in edges.tolist() if row[1] != row[3]]
+    if not kept:
+        return None
+    table: list[tuple[float, ...]] = []
+    for x0, y0, x1, y1 in kept:
+        sx, sy = (x0 - crop_x0) * scale - ix0, (crop_y1 - y0) * scale - iy0
+        ex, ey = (x1 - crop_x0) * scale - ix0, (crop_y1 - y1) * scale - iy0
+        if sy == ey or not math.isfinite(sy) or not math.isfinite(ey):
+            continue
+        if ey > sy:
+            edge = (sx, sy, ey, (ex - sx) / (ey - sy), 1.0)
+        else:
+            edge = (ex, ey, sy, (sx - ex) / (sy - ey), -1.0)
+        first = int(py_min(py_max(float(math.floor(edge[1])), 0.0), float(height)))
+        last = int(py_max(py_min(float(math.ceil(edge[2])), float(height)), 0.0))
+        table.append((*edge, first, last))
+    plane = numpy.zeros((height, width))
+    fallback = 0
+    for row in range(height):
+        active = [edge for edge in table if edge[5] <= row < edge[6]]
+        if not active:
+            continue
+        cells = [0.0] * (width + 2)
+        rights: list[tuple[int, float]] = []
+        for top_x, top_y, bottom_y, slope, direction, _, _ in active:
+            row_top = py_max(float(row), top_y)
+            row_bottom = py_min(row + 1.0, bottom_y)
+            row_height = row_bottom - row_top
+            if row_height <= 0.0:
+                continue
+            entry_x = top_x + (row_top - top_y) * slope
+            exit_x = top_x + (row_bottom - top_y) * slope
+            left_x = py_min(exit_x, entry_x)
+            right_x = py_max(exit_x, entry_x)
+            walk_left = py_min(width + 1.0, py_max(-1.0, left_x))
+            walk_right = py_min(width + 1.0, py_max(-1.0, right_x))
+            floor_left = float(math.floor(walk_left))
+            column_count = int(float(math.floor(walk_right)) - floor_left + 1.0)
+            piece_span = right_x - left_x
+            vertical = piece_span <= 0.0
+            for offset in range(column_count):
+                column_start = floor_left + offset
+                fragment_left = left_x if offset == 0 else column_start
+                fragment_right = right_x if offset == column_count - 1 else column_start + 1.0
+                if not (vertical or fragment_right > fragment_left):
+                    continue
+                share = 1.0 if vertical else (fragment_right - fragment_left) / piece_span
+                fragment_height = row_height * share
+                midpoint = (fragment_left + fragment_right) * 0.5
+                column = int(py_min(float(width), py_max(0.0, float(math.floor(midpoint)))))
+                in_cell = py_min(1.0, py_max(0.0, midpoint - column))
+                signed_height = direction * fragment_height
+                cells[column] += signed_height * (1.0 - in_cell)
+                rights.append((column + 1, signed_height * in_cell))
+        for column, weight in rights:
+            cells[column] += weight
+        running = 0.0
+        sums = []
+        for column in range(width):
+            running += cells[column]
+            sums.append(running)
+        highest, lowest = max([0.0, *sums]), min([0.0, *sums])
+        if (
+            highest > 1.0 + MIXED_SLACK
+            or lowest < -1.0 - MIXED_SLACK
+            or (highest > MIXED_SLACK and lowest < -MIXED_SLACK)
+        ):
+            plane[row] = area_fallback_row(active, row, width)
+            fallback += 1
+            continue
+        plane[row] = [py_min(1.0, abs(value)) for value in sums]
+    return plane, fallback
+
+
+def check_area_kernel(count: int = 300) -> int:
+    """area_coverage_plane against reference_area, for equality, on random paths: random
+    corners, which cross themselves, and pairs of polygons of opposite orientation that
+    share an edge."""
+    rng = numpy.random.default_rng(20261119)
+    failed = fallback_paths = 0
+    for case in range(count):
+        size = int(rng.integers(3, 60))
+        if case % 3 == 0:
+            cut = float(rng.uniform(0.2, 0.8)) * size
+            left = [(0.3, 0.2), (cut, 0.4), (cut, size - 0.7), (0.6, size - 0.3)]
+            right = [(cut, 0.4), (cut, size - 0.7), (size - 0.2, size - 0.6), (size - 0.4, 0.1)]
+            loops = [numpy.array(left), numpy.array(right)]
+        else:
+            points = rng.normal(size / 2, size / 3, (int(rng.integers(3, 24)), 2))
+            if case % 4 == 1:
+                points = numpy.round(points * 2) / 2
+            loops = [points]
+        edges = numpy.array(
+            [(*loop[k], *loop[(k + 1) % len(loop)]) for loop in loops for k in range(len(loop))],
+            numpy.float64,
+        )
+        scale = float(rng.choice([1.0, 0.75, 2.0, 1.37]))
+        crop_y1 = float(size / scale + rng.normal(0, 2))
+        args = (edges, float(rng.normal(0, 2)), crop_y1, scale)
+        box = (float(rng.integers(0, 4)), float(rng.integers(0, 4)), size, size)
+        want = reference_area(*args, *box)
+        if want is not None and want[1]:
+            fallback_paths += 1
+        # The dense sums of a small window and the rows of a large one, each on every path.
+        for mode in (1, 2):
+            got = area_coverage_plane(*args, *box, mode)
+            same = (got is None and want is None) or (
+                got is not None
+                and want is not None
+                and got[1] == want[1]
+                and numpy.array_equal(got[0], want[0])
+            )
+            if not same:
+                failed += 1
+                if failed <= 3:
+                    print(f"  area_coverage_plane differs on random path {case}, {mode=}")
+    print(
+        f"{count} random paths ({fallback_paths} with rows measured along lines), summed "
+        f"densely and row by row: area_coverage_plane differs on {failed}"
+    )
+    return failed + (fallback_paths == 0)
+
+
+def memory_page(content: bytes) -> bytes:
+    """A US Letter page of content."""
+    return document(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>",
+            stream(b"", content),
+        ]
+    )
+
+
+def diagonals(count: int, paint: bytes) -> bytes:
+    """count slivers 0.6 wide that cross the page diagonally, each its own fill."""
+    out = []
+    for k in range(count):
+        x = -300 + k * 1212 / count
+        corners = numbers((x, 0, x + 0.6, 0, x + 300.6, 792, x + 300, 792)).split()
+        out.append(b"%s %s m %s %s l %s %s l %s %s l h %s" % (*corners, paint))
+    return b"\n".join(out)
+
+
+def page_fill(paint: bytes) -> bytes:
+    """A nonagon that covers most of the page."""
+    corners = [
+        (
+            306 + 330 * math.cos(0.3 + 2 * math.pi * k / 9),
+            396 + 420 * math.sin(0.3 + 2 * math.pi * k / 9),
+        )
+        for k in range(9)
+    ]
+    path = b"%s m " % numbers(corners[0]) + b" ".join(b"%s l" % numbers(c) for c in corners[1:])
+    return b"0.2 0.4 0.8 rg %s h %s" % (path, paint)
+
+
+def traced_peak(pdf: bytes, scale: float) -> int:
+    """The most memory Python's allocators held at once while rasterizing pdf at scale."""
+    with PdfDocument(pdf) as opened:
+        rendered = opened.pages[0].render()
+        tracemalloc.start()
+        try:
+            rendered.rasterize(scale=scale)
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+
+def check_memory() -> int:
+    """A fill's memory must not follow its pixel box: the peak while rasterizing a page of
+    large fills may exceed an empty page's by at most MEMORY_ALLOWANCE."""
+    failed = 0
+    for name, content, scale in (
+        ("a fill over the page at scale 8", page_fill(b"f"), 8.0),
+        ("an even-odd fill over the page at scale 8", page_fill(b"f*"), 8.0),
+        ("200 diagonal slivers at scale 4", diagonals(200, b"f"), 4.0),
+        ("200 even-odd diagonal slivers at scale 4", diagonals(200, b"f*"), 4.0),
+    ):
+        extra = traced_peak(memory_page(content), scale) - traced_peak(memory_page(b""), scale)
+        if extra > MEMORY_ALLOWANCE:
+            print(
+                f"  {name}: {extra / 2**20:.1f} MB beyond an empty page's peak, more than "
+                f"{MEMORY_ALLOWANCE / 2**20:.0f} MB"
+            )
+            failed += 1
+    print(f"4 pages of large fills: {failed} over the memory allowance")
+    return failed
+
+
 def main(argv: Sequence[str]) -> int:
     pdfs = Path(argv[argv.index("--pdfs") + 1]) if "--pdfs" in argv else None
-    failures = check_kernel()
+    failures = check_kernel() + check_area_kernel() + check_memory()
     references: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}
     selected = cases()
     for case in selected:

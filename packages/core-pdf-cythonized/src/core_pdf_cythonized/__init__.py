@@ -29,6 +29,7 @@ lazy from core_pdf_cythonized._composite import (
     composite_normal_group,
 )
 lazy from core_pdf_cythonized._coverage import (
+    area_coverage_plane,
     fill_glyph_coverage,
     fill_glyph_coverage_at,
     fill_glyph_knockout,
@@ -129,6 +130,7 @@ __all__ = (
     "function_values",
     "mesh_values",
     "patch_triangles",
+    "area_coverage_plane",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "bilinear_opaque_pixels",

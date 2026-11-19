@@ -847,9 +847,12 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
         bbox=data.bbox if data.edge_array is not None else None,
         edge_array=data.edge_array,
     )
+    # Only the coverage's alpha is kept, so the blank page is freed before the group's.
+    alpha = numpy.ascontiguousarray(view[..., 3])
+    del coverage, view
     # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
     isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
-    self.paint_pattern_through(pattern, data, box, data.fill_opacity, blend_mode, view, isolated)
+    self.paint_pattern_through(pattern, data, box, data.fill_opacity, blend_mode, alpha, isolated)
     return True
 
 
@@ -863,9 +866,9 @@ def paint_pattern_through(
     coverage: UInt8Array,
     isolated: bool,
 ) -> None:
-    """Paint pattern over box at opacity in a group masked by coverage's alpha, which blends
-    in blend_mode."""
-    mask = SoftMaskPlane(coverage[..., 3], None)
+    """Paint pattern over box at opacity in a group masked by coverage, an alpha plane of
+    the page, which blends in blend_mode."""
+    mask = SoftMaskPlane(coverage, None)
     self.push_group(
         bytearray(len(self.pixels)),
         None,
@@ -920,7 +923,9 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.miter_limit,
         data.stroke_matrix,
     )
-    self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, view, True)
+    alpha = numpy.ascontiguousarray(view[..., 3])
+    del coverage, view
+    self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, alpha, True)
     return True
 
 

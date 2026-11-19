@@ -7,6 +7,7 @@ from cython.cimports.core_pdf_cythonized._supersample import SAMPLES
 from cython.cimports.cpython.mem import PyMem_Free, PyMem_Malloc
 from cython.cimports.libc.math import ceil
 from cython.cimports.libc.stdlib import qsort
+from cython.cimports.libc.string import memset
 
 Crossing = cython.struct(x=cython.double, direction=cython.int)
 # An edge waiting to join the active list, by its high y.
@@ -54,7 +55,10 @@ def add_span(
     ix0: cython.Py_ssize_t,
     ix1: cython.Py_ssize_t,
     deltas: cython.p_int,
+    bounds: cython.p_Py_ssize_t,
 ) -> cython.int:
+    """Add the span's samples to deltas, and widen bounds, the first and last delta it
+    touched, to hold them."""
     span_start: cython.double = (start_x - crop_x0) * scale
     span_end: cython.double = (end_x - crop_x0) * scale
     offset: cython.double
@@ -78,6 +82,10 @@ def add_span(
         if end > start:
             deltas[start - ix0] += 1
             deltas[end - ix0] -= 1
+            if start - ix0 < bounds[0]:
+                bounds[0] = start - ix0
+            if end - ix0 > bounds[1]:
+                bounds[1] = end - ix0
     return 0
 
 
@@ -92,6 +100,7 @@ def add_sample_row(
     ix0: cython.Py_ssize_t,
     ix1: cython.Py_ssize_t,
     deltas: cython.p_int,
+    bounds: cython.p_Py_ssize_t,
 ) -> cython.int:
     first: cython.double
     second: cython.double
@@ -108,7 +117,7 @@ def add_sample_row(
         if second < first:
             first, second = second, first
         if second > first:
-            add_span(first, second, crop_x0, scale, ix0, ix1, deltas)
+            add_span(first, second, crop_x0, scale, ix0, ix1, deltas, bounds)
         return 0
     qsort(crossings, count, cython.sizeof(Crossing), compare_crossings)
     if evenodd:
@@ -116,7 +125,14 @@ def add_sample_row(
         while index + 1 < count:
             if crossings[index + 1].x > crossings[index].x:
                 add_span(
-                    crossings[index].x, crossings[index + 1].x, crop_x0, scale, ix0, ix1, deltas
+                    crossings[index].x,
+                    crossings[index + 1].x,
+                    crop_x0,
+                    scale,
+                    ix0,
+                    ix1,
+                    deltas,
+                    bounds,
                 )
             index += 2
         return 0
@@ -127,7 +143,7 @@ def add_sample_row(
     while index < count:
         first = crossings[index].x
         if started and winding != 0 and first > previous:
-            add_span(previous, first, crop_x0, scale, ix0, ix1, deltas)
+            add_span(previous, first, crop_x0, scale, ix0, ix1, deltas, bounds)
         delta = 0
         while index < count and crossings[index].x == first:
             delta += crossings[index].direction
@@ -150,7 +166,8 @@ def supersampled_coverage_plane(
     evenodd: cython.bint,
 ):
     """Each pixel's count of the 4x4 sample points of it inside the edges' path, over the
-    pixel box (ix0, iy0, ix1, iy1), cut to its rows with any; None when none has any.
+    pixel box (ix0, iy0, ix1, iy1), cut to the rows and columns with any, with the first of
+    each; None when none has any. A row costs the columns its spans reach, not the box's.
 
     A sample row's crossings are those of the edges active at it: the edges wait in order
     of their high y, join the active list once the rows fall below it, and leave it once
@@ -219,6 +236,9 @@ def supersampled_coverage_plane(
     running: cython.int
     covered: cython.bint
     spanned: cython.bint
+    bounds = cython.declare(cython.Py_ssize_t[2])
+    first_column: cython.Py_ssize_t = width
+    last_column: cython.Py_ssize_t = -1
     falling: cython.bint = scale > 0.0
     try:
         for i in range(total):
@@ -240,6 +260,9 @@ def supersampled_coverage_plane(
                 pending_count += 1
             kept_index += 1
         qsort(pending, pending_count, cython.sizeof(Pending), compare_pending)
+        memset(deltas, 0, (width + 1) * cython.sizeof(cython.int))
+        bounds[0] = width + 1
+        bounds[1] = -1
 
         for row in range(height):
             spanned = False
@@ -277,22 +300,31 @@ def supersampled_coverage_plane(
                 active_count = still_active
                 if crossing_count == 0:
                     continue
-                if not spanned:
-                    for column in range(width + 1):
-                        deltas[column] = 0
-                    spanned = True
-                add_sample_row(crossings, crossing_count, evenodd, crop_x0, scale, ix0, ix1, deltas)
+                spanned = True
+                add_sample_row(
+                    crossings, crossing_count, evenodd, crop_x0, scale, ix0, ix1, deltas, bounds
+                )
             if not spanned:
                 if falling and next_pending >= pending_count and active_count == 0:
                     break
                 continue
+            # The spans' deltas lie in bounds; the running count is 0 outside them.
             running = 0
             covered = False
-            for column in range(width):
+            for column in range(bounds[0], bounds[1]):
                 running += deltas[column]
+                deltas[column] = 0
                 out[row, column] = cython.cast(cython.uchar, running)
                 if running:
                     covered = True
+                    if column < first_column:
+                        first_column = column
+                    if column > last_column:
+                        last_column = column
+            if bounds[1] >= bounds[0]:
+                deltas[bounds[1]] = 0
+            bounds[0] = width + 1
+            bounds[1] = -1
             if covered:
                 if first_row < 0:
                     first_row = row
@@ -306,4 +338,8 @@ def supersampled_coverage_plane(
 
     if first_row < 0:
         return None
-    return counts[first_row : last_row + 1], first_row
+    return (
+        numpy.ascontiguousarray(counts[first_row : last_row + 1, first_column : last_column + 1]),
+        first_row,
+        first_column,
+    )

@@ -30,6 +30,11 @@ lazy from core_pdf_cythonized import (
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
+# The 4x4 route counts a band of at most this many pixels at a time, and at least this many
+# rows, so its planes stay bounded on a page of any size.
+SAMPLED_BAND_CELLS = 1 << 18
+SAMPLED_BAND_MIN_ROWS = 8
+
 
 def fill_rect(
     self: RasterTarget,
@@ -328,8 +333,10 @@ def fill_path(
 ) -> None:
     """Fill path antialiased, whatever its size: a pixel's alpha is the share of it the
     path covers. Under the nonzero rule, in the Normal blend mode and a rectangular clip,
-    that share is the signed area of the pixel inside the path; otherwise it is the share
-    of a 4x4 grid of sample points inside the path, under fill_rule."""
+    that share is the signed area of the pixel inside the path, measured along 16 lines
+    instead in a row where regions of opposite or doubled winding meet; otherwise it is the
+    share of a 4x4 grid of sample points inside the path, under fill_rule. Memory and work
+    follow the edges and the painted runs, not the pixel box."""
     clip = self.clip
     rect = path.axis_aligned_rect()
     if rect is not None:
@@ -376,30 +383,46 @@ def fill_path(
         if drawn is not None:
             self.extend_paint_box(iy0, iy1, ix0, ix1)
         return
-    sampled = supersampled_coverage_plane(
-        edge_array, crop_x0, crop_y1, scale, ix0, iy0, ix1, iy1, fill_rule == "evenodd"
-    )
-    if sampled is None:
-        return
-    counts, first_row = sampled
-    if normal_fast and rectangular_clip:
-        rows = slice(iy0 + first_row, iy0 + first_row + len(counts))
-        columns = slice(ix0, ix1)
-        coverage = counts.astype(numpy.float32)
-        alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
-        blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
-        self.record_source_alpha(rows, columns, alpha_plane)
-        if self.group_source_shape is not None:
-            self.record_source_shape(
-                rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
-            )
-        return
-    top = iy0 + first_row
-    self.blend_counts(
-        counts,
-        ix0,
-        top,
-        None if rectangular_clip else self.clip_pixel_mask(ix0, top, ix1, top + len(counts)),
-        rgba,
-        blend_mode,
-    )
+    # The 4x4 counts go a band of rows at a time, cut to the columns they reach, so their
+    # planes stay small however large the box; each band reads only the edges near it.
+    evenodd = fill_rule == "evenodd"
+    lows = numpy.minimum(edge_array[:, 1], edge_array[:, 3])
+    highs = numpy.maximum(edge_array[:, 1], edge_array[:, 3])
+    band = max(SAMPLED_BAND_MIN_ROWS, SAMPLED_BAND_CELLS // max(1, ix1 - ix0))
+    for band_top in range(iy0, iy1, band):
+        band_bottom = min(iy1, band_top + band)
+        near = (highs > crop_y1 - (band_bottom + 1) / scale) & (
+            lows < crop_y1 - (band_top - 1) / scale
+        )
+        if not near.any():
+            continue
+        sampled = supersampled_coverage_plane(
+            edge_array[near], crop_x0, crop_y1, scale, ix0, band_top, ix1, band_bottom, evenodd
+        )
+        if sampled is None:
+            continue
+        counts, first_row, first_column = sampled
+        top = band_top + first_row
+        left = ix0 + first_column
+        bottom = top + counts.shape[0]
+        right = left + counts.shape[1]
+        if normal_fast and rectangular_clip:
+            rows = slice(top, bottom)
+            columns = slice(left, right)
+            coverage = counts.astype(numpy.float32)
+            alpha_plane = numpy.rint(coverage * rgba[3] / 16).astype(numpy.uint8)
+            blend_normal_alpha_array_numpy(self.pixel_array[rows, columns], rgba, alpha_plane)
+            self.record_source_alpha(rows, columns, alpha_plane)
+            if self.group_source_shape is not None:
+                self.record_source_shape(
+                    rows, columns, numpy.rint(coverage * 255 / 16).astype(numpy.uint8)
+                )
+            continue
+        self.blend_counts(
+            counts,
+            left,
+            top,
+            None if rectangular_clip else self.clip_pixel_mask(left, top, right, bottom),
+            rgba,
+            blend_mode,
+        )
