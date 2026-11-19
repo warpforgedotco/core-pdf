@@ -30,6 +30,7 @@ uv run --all-packages python scripts/check_large_fills.py [--pdfs DIRECTORY]
 
 from __future__ import annotations
 
+import itertools
 import math
 import sys
 import tracemalloc
@@ -53,10 +54,11 @@ SIZE = 320
 ROWS = 64
 # Core's sample points per pixel along each axis.
 SAMPLES = 4
-# A nonzero fill's pixel row whose sums of signed areas stray more than MIXED_SLACK past 0..1
-# or 0..-1 is measured instead along AREA_FALLBACK_LINES lines.
-MIXED_SLACK = 1e-7
-AREA_FALLBACK_LINES = 16
+# A pixel of area_coverage_plane may be off span_coverage's measure by this much: a 64th of
+# its height for each of the few edges through it.
+SPAN_TOLERANCE = 0.05
+# The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
+TOUCH = 1e-7
 # A pixel may be off the reference by this much in a channel beyond what the 4x4 grid misses:
 # the rounding of its alpha and colour.
 SLACK = 2.0
@@ -644,53 +646,276 @@ def check_kernel(count: int = 300) -> int:
 
 
 def py_max(a: float, b: float) -> float:
-    return max(a, b)
+    return b if b > a else a  # noqa: FURB136 - the kernels' py_max, NaN and all
 
 
 def py_min(a: float, b: float) -> float:
-    return min(a, b)
+    return b if b < a else a  # noqa: FURB136 - the kernels' py_min, NaN and all
 
 
-def area_crossings(active: list[tuple[float, ...]], y: float) -> list[tuple[float, int]]:
-    crossings = [
-        (edge[0] + (y - edge[1]) * edge[3], 1 if edge[4] > 0 else -1)
-        for edge in active
-        if edge[1] <= y < edge[2]
-    ]
-    crossings.sort(key=lambda crossing: crossing[0])
-    return crossings
+type Edge = tuple[float, float, float, float, float, int, int, int]
 
 
-def area_fallback_row(active: list[tuple[float, ...]], row: int, width: int) -> list[float]:
-    full = [0] * (width + 1)
-    partial = [0.0] * (width + 1)
-    for line in range(AREA_FALLBACK_LINES):
-        crossings = area_crossings(active, row + (line + 0.5) / AREA_FALLBACK_LINES)
+def edge_table(
+    edges: numpy.ndarray,
+    crop_x0: float,
+    crop_y1: float,
+    scale: float,
+    ix0: float,
+    iy0: float,
+    height: int,
+) -> list[Edge]:
+    """The kernel's edges in device space: top x, top y, bottom y, slope, direction, first
+    row, last row and chain."""
+    table: list[Edge] = []
+    last = (0.0, 0.0, 0.0)
+    chain = -1
+    for x0, y0, x1, y1 in edges.tolist():
+        if y0 == y1:
+            continue
+        sx, sy = (x0 - crop_x0) * scale - ix0, (crop_y1 - y0) * scale - iy0
+        ex, ey = (x1 - crop_x0) * scale - ix0, (crop_y1 - y1) * scale - iy0
+        if sy == ey or not math.isfinite(sy) or not math.isfinite(ey):
+            continue
+        if ey > sy:
+            top_x, top_y, bottom_y, slope, direction = sx, sy, ey, (ex - sx) / (ey - sy), 1.0
+        else:
+            top_x, top_y, bottom_y, slope, direction = ex, ey, sy, (sx - ex) / (sy - ey), -1.0
+        first = int(py_min(py_max(float(math.floor(top_y)), 0.0), float(height)))
+        last_row = int(py_max(py_min(float(math.ceil(bottom_y)), float(height)), 0.0))
+        if not (table and (sx, sy, direction) == last):
+            chain += 1
+        last = (ex, ey, direction)
+        table.append((top_x, top_y, bottom_y, slope, direction, first, last_row, chain))
+    return table
+
+
+def mark_span(flags: list[int], height: int, y0: float, y1: float) -> None:
+    first = py_max(float(math.floor(y0)), 0.0)
+    last = py_min(float(math.ceil(y1)), float(height))
+    if not last > first:
+        return
+    for row in range(int(first), int(last)):
+        flags[row] = 1
+
+
+def mark_rows(table: list[Edge], height: int) -> list[int]:
+    """The kernel's _mark_rows: which rows to measure exactly."""
+    mixed = [0] * (height + 1)
+    positive = [0] * (height + 1)
+    negative = [0] * (height + 1)
+    chains: list[list[float]] = []  # first, last, direction, top, bottom
+    turns: list[float] = []
+    for i, edge in enumerate(table):
+        if chains and edge[7] == table[i - 1][7]:
+            chain = chains[-1]
+            chain[1] = i
+            chain[3] = py_min(chain[3], edge[1])
+            chain[4] = py_max(chain[4], edge[2])
+            before = table[i - 1][3]
+            if (edge[3] > 0.0 and before < 0.0) or (edge[3] < 0.0 and before > 0.0):
+                turns.append(edge[1] if edge[4] > 0.0 else edge[2])
+        else:
+            chains.append([i, i, 1 if edge[4] > 0.0 else -1, edge[1], edge[2]])
+    for chain in chains:
+        if chain[2] < 0:
+            chain[0], chain[1] = chain[1], chain[0]
+    cursors = [int(chain[0]) for chain in chains]
+    bottom_cursors = [int(chain[0]) for chain in chains]
+
+    def chain_x(index: int, cursor: list[int], y: float) -> float:
+        chain = chains[index]
+        edge = table[cursor[index]]
+        while edge[2] < y and cursor[index] != chain[1]:
+            cursor[index] += int(chain[2])
+            edge = table[cursor[index]]
+        return edge[0] + (y - edge[1]) * edge[3]
+
+    events = sorted([*turns, *(y for chain in chains for y in (chain[3], chain[4]))])
+    for low, high in itertools.pairwise(events):
+        if not high > low or high <= 0.0 or low >= height:
+            continue
+        ya = py_max(low, 0.0)
+        yb = py_min(high, float(height))
+        band = []
+        for i, chain in enumerate(chains):
+            if chain[3] <= low and chain[4] >= high:
+                band.append((chain_x(i, cursors, ya), chain_x(i, bottom_cursors, yb), i))
+        if not band:
+            continue
+        band.sort()
+        bad = False
+        sign = 0
         winding = 0
-        for index in range(len(crossings) - 1):
-            winding += crossings[index][1]
+        for i in range(len(band) - 1):
+            winding += int(chains[band[i][2]][2])
             if winding == 0:
                 continue
-            start = crossings[index][0]
-            end = crossings[index + 1][0]
-            start = max(start, 0.0)
-            end = float(width) if end > width else end
-            if not end > start:
+            if abs(winding) > 1 or sign not in {0, winding}:
+                bad = True
+                break
+            sign = winding
+        if bad:
+            mark_span(mixed, height, ya, yb)
+            continue
+        if sign > 0:
+            mark_span(positive, height, ya, yb)
+        elif sign < 0:
+            mark_span(negative, height, ya, yb)
+        previous_y = ya
+        y = float(math.floor(ya)) + 1.0
+        crossed = False
+        while y < yb and not crossed:
+            last_x = 0.0
+            for i, (_, _, index) in enumerate(band):
+                x = chain_x(index, cursors, y)
+                if i and x < last_x:
+                    mark_span(mixed, height, previous_y, yb)
+                    crossed = True
+                    break
+                last_x = x
+            previous_y = y
+            y += 1.0
+        if not crossed and any(band[i][1] < band[i - 1][1] for i in range(1, len(band))):
+            mark_span(mixed, height, previous_y, yb)
+    for row in range(height):
+        if positive[row] and negative[row]:
+            mixed[row] = 1
+    return mixed
+
+
+def add_piece(
+    edge: Edge,
+    top: float,
+    bottom: float,
+    direction: float,
+    width: int,
+    cells: list[float],
+    rights: list[tuple[int, float]],
+) -> None:
+    top_x, top_y, _, slope = edge[0], edge[1], edge[2], edge[3]
+    row_height = bottom - top
+    if row_height <= 0.0:
+        return
+    entry_x = top_x + (top - top_y) * slope
+    exit_x = top_x + (bottom - top_y) * slope
+    left_x = py_min(exit_x, entry_x)
+    right_x = py_max(exit_x, entry_x)
+    walk_left = py_min(width + 1.0, py_max(-1.0, left_x))
+    walk_right = py_min(width + 1.0, py_max(-1.0, right_x))
+    floor_left = float(math.floor(walk_left))
+    column_count = int(float(math.floor(walk_right)) - floor_left + 1.0)
+    piece_span = right_x - left_x
+    vertical = piece_span <= 0.0
+    for offset in range(column_count):
+        column_start = floor_left + offset
+        fragment_left = left_x if offset == 0 else column_start
+        fragment_right = right_x if offset == column_count - 1 else column_start + 1.0
+        if not (vertical or fragment_right > fragment_left):
+            continue
+        share = 1.0 if vertical else (fragment_right - fragment_left) / piece_span
+        fragment_height = row_height * share
+        midpoint = (fragment_left + fragment_right) * 0.5
+        column = int(py_min(float(width), py_max(0.0, float(math.floor(midpoint)))))
+        in_cell = py_min(1.0, py_max(0.0, midpoint - column))
+        signed_height = direction * fragment_height
+        cells[column] += signed_height * (1.0 - in_cell)
+        rights.append((column + 1, signed_height * in_cell))
+
+
+def exact_row(active: list[Edge], row: int, width: int) -> list[float]:
+    """The kernel's _exact_row: the row's stretches, split into bands at their ends and at
+    crossings of edges of different stretches, and the pieces of the outline's edges alone."""
+    top, bottom = float(row), row + 1.0
+    stretches: list[list[float]] = []  # first, count, top, bottom, direction, chain
+    spans: list[tuple[float, float, int, int]] = []  # low x, high x, position, stretch
+    for position, edge in enumerate(active):
+        ya = py_max(top, edge[1])
+        yb = py_min(bottom, edge[2])
+        xa = edge[0] + (ya - edge[1]) * edge[3]
+        xb = edge[0] + (yb - edge[1]) * edge[3]
+        if stretches and stretches[-1][5] == edge[7]:
+            stretch = stretches[-1]
+            stretch[2] = py_min(stretch[2], ya)
+            stretch[3] = py_max(stretch[3], yb)
+            stretch[1] += 1
+        else:
+            stretches.append([position, 1, ya, yb, 1 if edge[4] > 0.0 else -1, edge[7]])
+        spans.append((py_min(xa, xb), py_max(xa, xb), position, len(stretches) - 1))
+    ys = [top, bottom]
+    for stretch in stretches:
+        if stretch[2] > top:
+            ys.append(stretch[2])
+        if stretch[3] < bottom:
+            ys.append(stretch[3])
+    spans.sort(key=lambda span: (span[0], span[1], span[2]))
+    for a in range(len(spans)):
+        ei = active[spans[a][2]]
+        for j in range(a + 1, len(spans)):
+            if spans[j][0] > spans[a][1]:
+                break
+            if spans[j][3] == spans[a][3]:
                 continue
-            first, last = math.floor(start), math.floor(end)
-            if first == last:
-                partial[first] += end - start
-            else:
-                partial[first] += (first + 1.0) - start
-                full[first + 1] += 1
-                full[last] -= 1
-                if last < width:
-                    partial[last] += end - last
+            ej = active[spans[j][2]]
+            if ei[3] == ej[3]:
+                continue
+            y = (ej[0] - ei[0] + ei[1] * ei[3] - ej[1] * ej[3]) / (ei[3] - ej[3])
+            low_y, high_y = py_max(ei[1], ej[1]), py_min(ei[2], ej[2])
+            if low_y - TOUCH <= y < low_y:
+                y = low_y
+            elif high_y < y <= high_y + TOUCH:
+                y = high_y
+            if top < y < bottom and low_y <= y <= high_y:
+                ys.append(y)
+    ys.sort()
+    cells = [0.0] * (width + 2)
+    rights: list[tuple[int, float]] = []
+    for ya, yb in itertools.pairwise(ys):
+        if not yb > ya:
+            continue
+        middle = (ya + yb) * 0.5
+        present = []
+        for stretch in stretches:
+            if stretch[2] <= ya and stretch[3] >= yb:
+                first, count = int(stretch[0]), int(stretch[1])
+                x = None
+                for edge in active[first : first + count]:
+                    if edge[1] <= middle <= edge[2]:
+                        x = edge[0] + (middle - edge[1]) * edge[3]
+                        break
+                if x is None:
+                    edge = active[first]
+                    x = edge[0] + (middle - edge[1]) * edge[3]
+                present.append((x, int(stretch[5]), stretch))
+        present.sort(key=lambda item: (item[0], item[1]))
+        winding = 0
+        for _, _, stretch in present:
+            inside = winding != 0
+            winding += int(stretch[4])
+            if (winding != 0) == inside:
+                continue
+            first, count = int(stretch[0]), int(stretch[1])
+            for edge in active[first : first + count]:
+                add_piece(
+                    edge,
+                    py_max(ya, edge[1]),
+                    py_min(yb, edge[2]),
+                    -1.0 if inside else 1.0,
+                    width,
+                    cells,
+                    rights,
+                )
+    return finish_row(cells, rights, width)
+
+
+def finish_row(cells: list[float], rights: list[tuple[int, float]], width: int) -> list[float]:
+    for column, weight in rights:
+        cells[column] += weight
     out = []
-    running = 0
+    running = 0.0
     for column in range(width):
-        running += full[column]
-        out.append(py_min(1.0, (float(running) + partial[column]) / AREA_FALLBACK_LINES))
+        running += cells[column]
+        out.append(py_min(1.0, abs(running)))
     return out
 
 
@@ -704,114 +929,137 @@ def reference_area(
     width: int,
     height: int,
 ) -> tuple[numpy.ndarray, int] | None:
-    """area_coverage_plane in Python: the dense sums of the signed areas of every edge's
-    pieces in every cell, and the fallback for the rows whose sums show mixed windings."""
-    kept = [row for row in edges.tolist() if row[1] != row[3]]
-    if not kept:
+    """area_coverage_plane in Python, line by line: each row's sums of its edges' pieces, or
+    the outline's pieces alone in the rows mark_rows marks."""
+    if not any(row[1] != row[3] for row in edges.tolist()):
         return None
-    table: list[tuple[float, ...]] = []
-    for x0, y0, x1, y1 in kept:
-        sx, sy = (x0 - crop_x0) * scale - ix0, (crop_y1 - y0) * scale - iy0
-        ex, ey = (x1 - crop_x0) * scale - ix0, (crop_y1 - y1) * scale - iy0
-        if sy == ey or not math.isfinite(sy) or not math.isfinite(ey):
-            continue
-        if ey > sy:
-            edge = (sx, sy, ey, (ex - sx) / (ey - sy), 1.0)
-        else:
-            edge = (ex, ey, sy, (sx - ex) / (sy - ey), -1.0)
-        first = int(py_min(py_max(float(math.floor(edge[1])), 0.0), float(height)))
-        last = int(py_max(py_min(float(math.ceil(edge[2])), float(height)), 0.0))
-        table.append((*edge, first, last))
+    table = edge_table(edges, crop_x0, crop_y1, scale, ix0, iy0, height)
     plane = numpy.zeros((height, width))
-    fallback = 0
+    exact = 0
+    flags = mark_rows(table, height)
     for row in range(height):
-        active = [edge for edge in table if edge[5] <= row < edge[6]]
+        indices = [i for i, edge in enumerate(table) if edge[5] <= row < edge[6]]
+        active = [table[i] for i in indices]
         if not active:
+            continue
+        if flags[row]:
+            plane[row] = exact_row(active, row, width)
+            exact += 1
             continue
         cells = [0.0] * (width + 2)
         rights: list[tuple[int, float]] = []
-        for top_x, top_y, bottom_y, slope, direction, _, _ in active:
-            row_top = py_max(float(row), top_y)
-            row_bottom = py_min(row + 1.0, bottom_y)
-            row_height = row_bottom - row_top
-            if row_height <= 0.0:
-                continue
-            entry_x = top_x + (row_top - top_y) * slope
-            exit_x = top_x + (row_bottom - top_y) * slope
-            left_x = py_min(exit_x, entry_x)
-            right_x = py_max(exit_x, entry_x)
-            walk_left = py_min(width + 1.0, py_max(-1.0, left_x))
-            walk_right = py_min(width + 1.0, py_max(-1.0, right_x))
-            floor_left = float(math.floor(walk_left))
-            column_count = int(float(math.floor(walk_right)) - floor_left + 1.0)
-            piece_span = right_x - left_x
-            vertical = piece_span <= 0.0
-            for offset in range(column_count):
-                column_start = floor_left + offset
-                fragment_left = left_x if offset == 0 else column_start
-                fragment_right = right_x if offset == column_count - 1 else column_start + 1.0
-                if not (vertical or fragment_right > fragment_left):
-                    continue
-                share = 1.0 if vertical else (fragment_right - fragment_left) / piece_span
-                fragment_height = row_height * share
-                midpoint = (fragment_left + fragment_right) * 0.5
-                column = int(py_min(float(width), py_max(0.0, float(math.floor(midpoint)))))
-                in_cell = py_min(1.0, py_max(0.0, midpoint - column))
-                signed_height = direction * fragment_height
-                cells[column] += signed_height * (1.0 - in_cell)
-                rights.append((column + 1, signed_height * in_cell))
-        for column, weight in rights:
-            cells[column] += weight
-        running = 0.0
-        sums = []
-        for column in range(width):
-            running += cells[column]
-            sums.append(running)
-        highest, lowest = max([0.0, *sums]), min([0.0, *sums])
-        if (
-            highest > 1.0 + MIXED_SLACK
-            or lowest < -1.0 - MIXED_SLACK
-            or (highest > MIXED_SLACK and lowest < -MIXED_SLACK)
-        ):
-            plane[row] = area_fallback_row(active, row, width)
-            fallback += 1
-            continue
-        plane[row] = [py_min(1.0, abs(value)) for value in sums]
-    return plane, fallback
+        for edge in active:
+            add_piece(
+                edge,
+                py_max(float(row), edge[1]),
+                py_min(row + 1.0, edge[2]),
+                edge[4],
+                width,
+                cells,
+                rights,
+            )
+        plane[row] = finish_row(cells, rights, width)
+    return plane, exact
+
+
+def span_coverage(
+    loops: list[list[Point]], crop_y1: float, width: int, height: int, rows: int = ROWS
+) -> numpy.ndarray:
+    """Nonzero coverage of the loops (page space, scale 1, crop x 0) measured along rows lines
+    of each pixel, each span's length exact: independent of the kernel."""
+    device = [[(x, crop_y1 - y) for x, y in loop] for loop in loops]
+    segments = [
+        (x0, y0, x1, y1)
+        for loop in device
+        for (x0, y0), (x1, y1) in zip(loop, loop[1:] + loop[:1], strict=True)
+        if y0 != y1
+    ]
+    plane = numpy.zeros((height, width))
+    lefts = numpy.arange(width, dtype=numpy.float64)
+    for line in range(height * rows):
+        y = (line + 0.5) / rows
+        crossings = sorted(
+            (x0 + (y - y0) / (y1 - y0) * (x1 - x0), 1 if y1 > y0 else -1)
+            for x0, y0, x1, y1 in segments
+            if min(y0, y1) <= y < max(y0, y1)
+        )
+        winding = 0
+        for (x, direction), (following, _) in itertools.pairwise(crossings):
+            winding += direction
+            if winding:
+                plane[line // rows] += (
+                    numpy.clip(numpy.minimum(following, lefts + 1) - numpy.maximum(x, lefts), 0, 1)
+                    / rows
+                )
+    return numpy.minimum(plane, 1.0)
+
+
+def rectangle(x0: float, y0: float, x1: float, y1: float, *, reverse: bool = False) -> list[Point]:
+    loop = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return loop[::-1] if reverse else loop
+
+
+# Paths whose windings meet inside a pixel, with a pixel to check: its row and column, and
+# its coverage.
+MIXED_CASES: list[tuple[str, list[list[Point]], int, int, float]] = [
+    (
+        "rectangles of opposite orientation stacked on a shared edge",
+        [rectangle(10, 19.5, 20, 30), rectangle(10, 10, 20, 19.5, reverse=True)],
+        20,
+        15,
+        1.0,
+    ),
+    (
+        "slivers of opposite orientation in one pixel",
+        [rectangle(10.1, 10, 10.4, 30), rectangle(10.6, 10, 10.9, 30, reverse=True)],
+        20,
+        10,
+        0.6,
+    ),
+    (
+        "a sliver drawn twice",
+        [rectangle(10.2, 10, 10.5, 30), rectangle(10.2, 10, 10.5, 30)],
+        20,
+        10,
+        0.3,
+    ),
+]
+
+
+def loop_edges(loops: list[list[Point]]) -> numpy.ndarray:
+    return numpy.array(
+        [(*a, *b) for loop in loops for a, b in zip(loop, loop[1:] + loop[:1], strict=True)],
+        numpy.float64,
+    )
 
 
 def check_area_kernel(count: int = 300) -> int:
-    """area_coverage_plane against reference_area, for equality, on random paths: random
-    corners, which cross themselves, and pairs of polygons of opposite orientation that
-    share an edge."""
+    """area_coverage_plane, summed densely and row by row, against reference_area for
+    equality on random paths: random corners, which cross themselves, and pairs of polygons
+    of opposite orientation that share an edge. Then against span_coverage, which measures
+    the path independently, within SPAN_TOLERANCE: on those paths and on MIXED_CASES, whose
+    named pixel must have its coverage."""
     rng = numpy.random.default_rng(20261119)
-    failed = fallback_paths = 0
+    failed = exact_paths = 0
     for case in range(count):
-        size = int(rng.integers(3, 60))
+        size = int(rng.integers(3, 48))
         if case % 3 == 0:
             cut = float(rng.uniform(0.2, 0.8)) * size
             left = [(0.3, 0.2), (cut, 0.4), (cut, size - 0.7), (0.6, size - 0.3)]
             right = [(cut, 0.4), (cut, size - 0.7), (size - 0.2, size - 0.6), (size - 0.4, 0.1)]
-            loops = [numpy.array(left), numpy.array(right)]
+            loops = [left, right]
         else:
-            points = rng.normal(size / 2, size / 3, (int(rng.integers(3, 24)), 2))
+            points = rng.normal(size / 2, size / 3, (int(rng.integers(3, 16)), 2))
             if case % 4 == 1:
                 points = numpy.round(points * 2) / 2
-            loops = [points]
-        edges = numpy.array(
-            [(*loop[k], *loop[(k + 1) % len(loop)]) for loop in loops for k in range(len(loop))],
-            numpy.float64,
-        )
-        scale = float(rng.choice([1.0, 0.75, 2.0, 1.37]))
-        crop_y1 = float(size / scale + rng.normal(0, 2))
-        args = (edges, float(rng.normal(0, 2)), crop_y1, scale)
-        box = (float(rng.integers(0, 4)), float(rng.integers(0, 4)), size, size)
-        want = reference_area(*args, *box)
+            loops = [[(float(x), float(y)) for x, y in points]]
+        edges = loop_edges(loops)
+        crop_y1 = float(size)
+        want = reference_area(edges, 0.0, crop_y1, 1.0, 0.0, 0.0, size, size)
         if want is not None and want[1]:
-            fallback_paths += 1
-        # The dense sums of a small window and the rows of a large one, each on every path.
+            exact_paths += 1
         for mode in (1, 2):
-            got = area_coverage_plane(*args, *box, mode)
+            got = area_coverage_plane(edges, 0.0, crop_y1, 1.0, 0.0, 0.0, size, size, mode)
             same = (got is None and want is None) or (
                 got is not None
                 and want is not None
@@ -822,11 +1070,36 @@ def check_area_kernel(count: int = 300) -> int:
                 failed += 1
                 if failed <= 3:
                     print(f"  area_coverage_plane differs on random path {case}, {mode=}")
+        if want is not None:
+            spans = span_coverage(loops, crop_y1, size, size)
+            off = numpy.abs(want[0] - spans) > SPAN_TOLERANCE
+            if off.any():
+                failed += 1
+                if failed <= 3:
+                    row, column = numpy.argwhere(off)[0]
+                    print(
+                        f"  random path {case}: {want[0][row, column]:.4f} at {column},{row}, "
+                        f"measured {spans[row, column]:.4f}"
+                    )
+    for name, loops, row, column, expected in MIXED_CASES:
+        edges = loop_edges(loops)
+        spans = span_coverage(loops, 40.0, 40, 40)
+        for mode in (1, 2):
+            got = area_coverage_plane(edges, 0.0, 40.0, 1.0, 0.0, 0.0, 40, 40, mode)
+            assert got is not None
+            off = numpy.abs(got[0] - spans) > SPAN_TOLERANCE
+            if abs(got[0][row, column] - expected) > SPAN_TOLERANCE or off.any():
+                failed += 1
+                print(
+                    f"  {name}, {mode=}: {got[0][row, column]:.4f} at {column},{row}, not "
+                    f"{expected}; {int(off.sum())} pixels off the measured coverage"
+                )
     print(
-        f"{count} random paths ({fallback_paths} with rows measured along lines), summed "
-        f"densely and row by row: area_coverage_plane differs on {failed}"
+        f"{count} random paths ({exact_paths} with rows measured exactly) and "
+        f"{len(MIXED_CASES)} mixed windings, summed densely and row by row: "
+        f"area_coverage_plane fails on {failed}"
     )
-    return failed + (fallback_paths == 0)
+    return failed + (exact_paths == 0)
 
 
 def memory_page(content: bytes) -> bytes:

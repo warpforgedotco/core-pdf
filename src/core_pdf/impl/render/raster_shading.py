@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from copy import replace
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -162,11 +163,16 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
             (ix0, top),
             painted,
             ordered,
-            lambda positions, ordered=ordered: ordered[positions].tolist(),
+            partial(positions_of, ordered),
             allowed if background is not None else None,
             background,
             many_colors=True,
         )
+
+
+def positions_of(values: Any, positions: Any) -> list[Any]:
+    """values at positions, as a list."""
+    return values[positions].tolist()
 
 
 @cites(

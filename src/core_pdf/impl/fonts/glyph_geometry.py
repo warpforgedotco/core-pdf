@@ -13,7 +13,7 @@ from core_pdf.impl.fonts.metrics import FontMetricsModel
 from core_pdf.impl.fonts.program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.spec.s_09_fonts.descriptor_flags import NO_DESCRIPTOR_STYLE, FontDescriptorStyle
 lazy from core_pdf.impl.fonts.raster_kernel import Contours
-lazy from core_pdf_cythonized import outline_coordinate_arrays
+lazy from core_pdf_cythonized import glyph_outline_edges, outline_coordinate_arrays, windings_mix
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
@@ -23,7 +23,7 @@ class GlyphOutlineArrays:
     """A glyph outline's point columns and each contour's span in them, which
     core_pdf_cythonized.glyph_outline_edges places under a glyph's matrix."""
 
-    __slots__ = ("spans", "xs", "ys")
+    __slots__ = ("simple", "spans", "xs", "ys")
 
     def __init__(
         self,
@@ -34,6 +34,10 @@ class GlyphOutlineArrays:
         self.xs = xs
         self.ys = ys
         self.spans = spans
+        # Whether the outline's windings are 0 or one sign of 1 everywhere, which no
+        # invertible placement changes: its fills need not look for rows where they mix.
+        edges = glyph_outline_edges(xs, ys, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, spans)
+        self.simple = edges[2] is not None and not edges[4] and not windings_mix(edges[2])
 
 
 def outline_arrays(

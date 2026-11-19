@@ -384,20 +384,33 @@ def fill_path(
             self.extend_paint_box(iy0, iy1, ix0, ix1)
         return
     # The 4x4 counts go a band of rows at a time, cut to the columns they reach, so their
-    # planes stay small however large the box; each band reads only the edges near it.
+    # planes stay small however large the box. The edges are sorted once by their high y, so
+    # a band finds the edges that reach down to it as a prefix and keeps those reaching up to
+    # it; the counts do not depend on the edges' order.
     evenodd = fill_rule == "evenodd"
+    band = max(SAMPLED_BAND_MIN_ROWS, SAMPLED_BAND_CELLS // max(1, ix1 - ix0))
+    if not scale > 0:
+        # Rows rise up the page only for a positive scale: one band takes every edge.
+        band = max(1, iy1 - iy0)
     lows = numpy.minimum(edge_array[:, 1], edge_array[:, 3])
     highs = numpy.maximum(edge_array[:, 1], edge_array[:, 3])
-    band = max(SAMPLED_BAND_MIN_ROWS, SAMPLED_BAND_CELLS // max(1, ix1 - ix0))
+    by_high = numpy.argsort(-highs, kind="stable")
+    sorted_edges = edge_array[by_high]
+    sorted_lows = lows[by_high]
+    falling_highs = -highs[by_high]
     for band_top in range(iy0, iy1, band):
         band_bottom = min(iy1, band_top + band)
-        near = (highs > crop_y1 - (band_bottom + 1) / scale) & (
-            lows < crop_y1 - (band_top - 1) / scale
-        )
-        if not near.any():
+        if scale > 0:
+            reach = int(
+                numpy.searchsorted(falling_highs, -(crop_y1 - (band_bottom + 1) / scale), "left")
+            )
+            near = sorted_edges[:reach][sorted_lows[:reach] < crop_y1 - (band_top - 1) / scale]
+        else:
+            near = sorted_edges
+        if len(near) == 0:
             continue
         sampled = supersampled_coverage_plane(
-            edge_array[near], crop_x0, crop_y1, scale, ix0, band_top, ix1, band_bottom, evenodd
+            near, crop_x0, crop_y1, scale, ix0, band_top, ix1, band_bottom, evenodd
         )
         if sampled is None:
             continue

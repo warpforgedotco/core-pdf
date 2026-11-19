@@ -4,6 +4,9 @@ from typing import Any
 
 import numpy
 
+class SimpleEdges(numpy.ndarray[Any, Any]): ...
+
+def windings_mix(edges: numpy.ndarray[Any, Any]) -> bool: ...
 def area_coverage_plane(
     edges: numpy.ndarray[Any, Any],
     crop_x0: float,
