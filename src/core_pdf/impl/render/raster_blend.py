@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+lazy import numpy
+
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.render.blend import (
     BLACK_BLEND_OPS,
@@ -126,6 +128,11 @@ def clip_pixel_mask(self: RasterTarget, ix0: int, iy0: int, ix1: int, iy1: int) 
             end = min(ix1, span_end)
             if end > start:
                 allowed[row_start + start : row_start + end] = ones[: end - start]
+    limit = self.paint_limit
+    if limit is not None:
+        # Paint a masked group's mask leaves out would never show: it is not worked out.
+        plane = numpy.frombuffer(allowed, dtype=numpy.uint8).reshape(iy1 - iy0, box_width)
+        plane &= limit[iy0:iy1, ix0:ix1] != 0
     return allowed
 
 

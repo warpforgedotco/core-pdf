@@ -63,6 +63,8 @@ if TYPE_CHECKING:
 
 # Cells one pattern paints at most, so a tiny cell over a large area stays bounded.
 MAX_TILING_CELLS = 10000
+# An axial or radial shading is worked out a band of at most this many pixels at a time.
+SHADING_BAND_CELLS = 1 << 20
 # Cells from which a pattern paints one cell and copies its pixels to the rest.
 MIN_STAMPED_CELLS = 16
 
@@ -124,42 +126,47 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     ix0, iy0, ix1, iy1 = clipped_box[1]
     mode = kernel_blend_code(self.resolved_blend(blend_mode))
     domain = shading.domain
-    allowed = numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8).reshape(
-        iy1 - iy0, ix1 - ix0
-    )
-    values, painted = shading_values(
-        shading.shading_type,
-        shading.coords,
-        self.crop_x0,
-        self.crop_y1,
-        self.scale,
-        ix0,
-        iy0,
-        ix1,
-        iy1,
-        allowed,
-        bool(shading.extend_start),
-        bool(shading.extend_end),
-        domain[0],
-        domain[1] - domain[0],
-        0.5,
-        to_shading,
-        shading_bbox,
-    )
-    ordered = values[painted.view(numpy.bool_)]
-    blend_shading_colors(
-        self,
-        item,
-        shading,
-        mode,
-        (ix0, iy0),
-        painted,
-        ordered,
-        lambda positions: ordered[positions].tolist(),
-        allowed if background is not None else None,
-        background,
-        many_colors=True,
-    )
+    # A band of rows at a time: each pixel's value depends on its centre alone, and the
+    # bands paint in row order, so a colour that fails stops where it would over the box.
+    band = max(1, SHADING_BAND_CELLS // max(1, ix1 - ix0))
+    for top in range(iy0, iy1, band):
+        bottom = min(iy1, top + band)
+        allowed = numpy.frombuffer(
+            self.clip_pixel_mask(ix0, top, ix1, bottom), dtype=numpy.uint8
+        ).reshape(bottom - top, ix1 - ix0)
+        values, painted = shading_values(
+            shading.shading_type,
+            shading.coords,
+            self.crop_x0,
+            self.crop_y1,
+            self.scale,
+            ix0,
+            top,
+            ix1,
+            bottom,
+            allowed,
+            bool(shading.extend_start),
+            bool(shading.extend_end),
+            domain[0],
+            domain[1] - domain[0],
+            0.5,
+            to_shading,
+            shading_bbox,
+        )
+        ordered = values[painted.view(numpy.bool_)]
+        blend_shading_colors(
+            self,
+            item,
+            shading,
+            mode,
+            (ix0, top),
+            painted,
+            ordered,
+            lambda positions, ordered=ordered: ordered[positions].tolist(),
+            allowed if background is not None else None,
+            background,
+            many_colors=True,
+        )
 
 
 @cites(
@@ -834,25 +841,45 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     if type(path) is not CapturedPath or not path.has_segments() or box is None:
         self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
         return True
-    if clip_state.clipped_pixel_box(box) is None:
+    clipped = clip_state.clipped_pixel_box(box)
+    if clipped is None:
         return True
     # The fill's coverage, drawn opaque on a blank page of its own under the same clip and
-    # in the same blend mode, which choose how a plain fill antialiases.
-    coverage, view = self.blank_sibling(clip_state)
-    coverage.fill_path(
-        path,
-        (255, 255, 255, 255),
-        blend_mode,
-        data.fill_rule or "nonzero",
-        bbox=data.bbox if data.edge_array is not None else None,
-        edge_array=data.edge_array,
-    )
-    # Only the coverage's alpha is kept, so the blank page is freed before the group's.
-    alpha = numpy.ascontiguousarray(view[..., 3])
+    # in the same blend mode, which choose how a plain fill antialiases. The page, the
+    # coverage's alpha and the pattern's group are kept zero between pattern fills at this
+    # depth, so a fill costs its pixel box, not the page.
+    scratch = self.pattern_scratch_for()
+    ix0, iy0, ix1, iy1 = clipped[1]
+    rows, columns = slice(iy0, iy1), slice(ix0, ix1)
+    coverage, view = self.blank_sibling(clip_state, scratch.page)
+    try:
+        coverage.fill_path(
+            path,
+            (255, 255, 255, 255),
+            blend_mode,
+            data.fill_rule or "nonzero",
+            bbox=data.bbox if data.edge_array is not None else None,
+            edge_array=data.edge_array,
+        )
+        scratch.alpha[rows, columns] = view[rows, columns, 3]
+    finally:
+        view[rows, columns] = 0
     del coverage, view
     # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
     isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
-    self.paint_pattern_through(pattern, data, box, data.fill_opacity, blend_mode, alpha, isolated)
+    try:
+        self.paint_pattern_through(
+            pattern,
+            data,
+            box,
+            data.fill_opacity,
+            blend_mode,
+            scratch.alpha,
+            isolated,
+            scratch if isolated else None,
+        )
+    finally:
+        scratch.alpha[rows, columns] = 0
     return True
 
 
@@ -865,20 +892,24 @@ def paint_pattern_through(
     blend_mode: str | None,
     coverage: UInt8Array,
     isolated: bool,
+    scratch: PatternScratch | None = None,
 ) -> None:
     """Paint pattern over box at opacity in a group masked by coverage, an alpha plane of
-    the page, which blends in blend_mode."""
+    the page, which blends in blend_mode. An isolated group may take scratch's zeroed page,
+    which it leaves zero again."""
     mask = SoftMaskPlane(coverage, None)
     self.push_group(
-        bytearray(len(self.pixels)),
+        bytearray(len(self.pixels)) if scratch is None else scratch.page,
         None,
         blend_mode,
         isolated=isolated,
         alpha_is_shape=data.alpha_is_shape,
         mask_alpha=mask,
     )
+    group = self.buffer_stack[-1]
+    limit = self.paint_limit
+    self.paint_limit = coverage
     try:
-        group = self.buffer_stack[-1]
         self.paint_pattern_over(pattern, data, box, opacity)
         shape = group.source_shape
         window = group.paint_window.slices()
@@ -888,7 +919,15 @@ def paint_pattern_through(
             rows, columns = window
             shape[rows, columns] *= mask[rows, columns]
     finally:
-        self.composite_group(self.pop_group())
+        self.paint_limit = limit
+        try:
+            self.composite_group(self.pop_group())
+        finally:
+            if scratch is not None:
+                # Every paint widens the group's window, so zeroing it leaves the page blank.
+                window = group.paint_window.slices()
+                if window is not None:
+                    group.view[window] = 0
 
 
 @cites(
@@ -923,7 +962,10 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.miter_limit,
         data.stroke_matrix,
     )
-    alpha = numpy.ascontiguousarray(view[..., 3])
+    stroke_box = self.clip.clipped_pixel_box(box)
+    if stroke_box is None:
+        return True
+    alpha = coverage_alpha(view, stroke_box[1])
     del coverage, view
     self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, alpha, True)
     return True
@@ -955,11 +997,42 @@ def paint_pattern_over(
     self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), blend_mode)
 
 
+def coverage_alpha(view: UInt8Array, pixel_box: tuple[int, int, int, int]) -> UInt8Array:
+    """The alpha of a blank page that coverage was drawn on within pixel_box, as a plane of
+    the page whose memory is touched only there; the page can then be freed."""
+    ix0, iy0, ix1, iy1 = pixel_box
+    alpha = numpy.zeros(view.shape[:2], dtype=numpy.uint8)
+    alpha[iy0:iy1, ix0:ix1] = view[iy0:iy1, ix0:ix1, 3]
+    return alpha
+
+
+class PatternScratch:
+    """Zeroed planes a pattern fill at one depth of the group stack draws on and leaves zero:
+    page, the blank page its coverage is drawn on and then the pattern's group, which never
+    live at once, and alpha, the coverage's alpha."""
+
+    __slots__ = ("alpha", "page")
+
+    def __init__(self, width: int, height: int) -> None:
+        self.page = bytearray(width * height * 4)
+        self.alpha = numpy.zeros((height, width), dtype=numpy.uint8)
+
+
+def pattern_scratch_for(self: RasterTarget) -> PatternScratch:
+    depth = len(self.buffer_stack)
+    scratch = self.pattern_scratch.get(depth)
+    if scratch is None:
+        scratch = self.pattern_scratch[depth] = PatternScratch(self.width, self.height)
+    return scratch
+
+
 def blank_sibling(
-    self: RasterTarget, clip: ClipState | None = None
+    self: RasterTarget, clip: ClipState | None = None, pixels: bytearray | None = None
 ) -> tuple[RasterTarget, UInt8Array]:
-    """A blank target of the same page, unclipped or sharing clip, which it must not change."""
-    pixels = bytearray(self.width * self.height * 4)
+    """A blank target of the same page, unclipped or sharing clip, which it must not change,
+    on pixels (zero) or a new page."""
+    if pixels is None:
+        pixels = bytearray(self.width * self.height * 4)
     view = uint8_image_view(pixels, (self.height, self.width, 4))
     sibling = type(self)(
         pixels,
