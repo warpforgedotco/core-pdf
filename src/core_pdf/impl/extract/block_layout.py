@@ -28,11 +28,13 @@ from core_pdf.impl.extract.contracts import (
     ParsedBlock,
     ParsedLine,
     TextReference,
+    run_expansion,
 )
 from core_pdf.impl.extract.layout_rules import LAYOUT_RULES
 from core_pdf.impl.extract.xy_cut import row_order_indexes, xy_cut_regions
 from core_pdf.impl.layout.lines import LayoutLine
 from core_pdf.impl.output.model import TextLine, TextSpan
+from core_pdf.impl.spec.s_07_content.model import Expansion
 
 NATIVE_SOURCE = int(ObservationSource.NATIVE)
 
@@ -278,6 +280,7 @@ def build_lines(observations: ObservationBatch, hooks: LayoutHooks | None = None
         )
         span_values: list[TextSpan] = []
         pending_space = False
+        last_expansion: Expansion | None = None
         for reference, (reference_bold, reference_italic) in zip(
             native_references, reference_styles, strict=True
         ):
@@ -293,16 +296,24 @@ def build_lines(observations: ObservationBatch, hooks: LayoutHooks | None = None
                 and not reference_text.startswith(SPAN_JOIN_NO_SPACE_BEFORE)
             ):
                 prefix = " "
-            span_values.append(
-                TextSpan(
-                    prefix + reference_text,
-                    reference_bold,
-                    reference_italic,
-                    False,
-                    False,
-                    emphasis_mark(getattr(reference, "fill_color", None)),
+            expansion = run_expansion(reference) if type(reference) is TextRun else None
+            if expansion is not None and expansion is last_expansion:
+                # The runs of one abbreviation make one span carrying its expansion.
+                previous = span_values[-1]
+                span_values[-1] = replace(previous, text=previous.text + prefix + reference_text)
+            else:
+                span_values.append(
+                    TextSpan(
+                        prefix + reference_text,
+                        reference_bold,
+                        reference_italic,
+                        False,
+                        False,
+                        emphasis_mark(getattr(reference, "fill_color", None)),
+                        expansion=None if expansion is None else expansion.text,
+                    )
                 )
-            )
+            last_expansion = expansion
             pending_space = reference.text.endswith(SPAN_TRAILING_SPACE)
         group_box = group_boxes[group_index]
         output.append(

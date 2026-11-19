@@ -15,32 +15,51 @@ from xml.etree import ElementTree
 import defusedxml.ElementTree
 from defusedxml.common import DefusedXmlException
 
+from core_pdf.impl.spec.standards import STANDARD_PROFILES, StandardProfile
 from core_pdf_validate.models import ExecutionStatus, ProfileResult, ProfileSupport, RuleResult
 from core_records import GeneratedRecord
 
 __all__ = ["VeraPdfBackend"]
 
-PROFILES: dict[str, tuple[str, str, str]] = {
-    "pdfa-1a": ("1a", "PDF/A-1a validation profile", "ISO 19005-1:2005"),
-    "pdfa-1b": ("1b", "PDF/A-1b validation profile", "ISO 19005-1:2005"),
-    "pdfa-2a": ("2a", "PDF/A-2a validation profile", "ISO 19005-2:2011"),
-    "pdfa-2b": ("2b", "PDF/A-2b validation profile", "ISO 19005-2:2011"),
-    "pdfa-2u": ("2u", "PDF/A-2u validation profile", "ISO 19005-2:2011"),
-    "pdfa-3a": ("3a", "PDF/A-3a validation profile", "ISO 19005-3:2012"),
-    "pdfa-3b": ("3b", "PDF/A-3b validation profile", "ISO 19005-3:2012"),
-    "pdfa-3u": ("3u", "PDF/A-3u validation profile", "ISO 19005-3:2012"),
-    "pdfa-4": ("4", "PDF/A-4 validation profile", "ISO 19005-4:2020"),
-    "pdfa-4e": ("4e", "PDF/A-4e validation profile", "ISO 19005-4:2020"),
-    "pdfa-4f": ("4f", "PDF/A-4f validation profile", "ISO 19005-4:2020"),
-    "pdfua-1": ("ua1", "PDF/UA-1 validation profile", "ISO 14289-1:2014"),
-    "pdfua-2": ("ua2", "PDF/UA-2 + Tagged PDF validation profile", "ISO 14289-2:2024"),
-    "wtpdf-1.0-reuse": ("wt1r", "WTPDF 1.0 Reuse validation profile", "WTPDF 1.0:2024"),
-    "wtpdf-1.0-accessibility": (
-        "wt1a",
-        "WTPDF 1.0 Accessibility validation profile",
-        "WTPDF 1.0:2024",
-    ),
+# veraPDF's flavour and report profileName for each profile it checks, by the identifier
+# core's STANDARD_PROFILES gives it; the edition is core's.
+VERAPDF_FLAVOURS: dict[str, tuple[str, str]] = {
+    "pdfa-1a": ("1a", "PDF/A-1a validation profile"),
+    "pdfa-1b": ("1b", "PDF/A-1b validation profile"),
+    "pdfa-2a": ("2a", "PDF/A-2a validation profile"),
+    "pdfa-2b": ("2b", "PDF/A-2b validation profile"),
+    "pdfa-2u": ("2u", "PDF/A-2u validation profile"),
+    "pdfa-3a": ("3a", "PDF/A-3a validation profile"),
+    "pdfa-3b": ("3b", "PDF/A-3b validation profile"),
+    "pdfa-3u": ("3u", "PDF/A-3u validation profile"),
+    "pdfa-4": ("4", "PDF/A-4 validation profile"),
+    "pdfa-4e": ("4e", "PDF/A-4e validation profile"),
+    "pdfa-4f": ("4f", "PDF/A-4f validation profile"),
+    "pdfua-1": ("ua1", "PDF/UA-1 validation profile"),
+    "pdfua-2": ("ua2", "PDF/UA-2 + Tagged PDF validation profile"),
+    "wtpdf-1.0-reuse": ("wt1r", "WTPDF 1.0 Reuse validation profile"),
+    "wtpdf-1.0-accessibility": ("wt1a", "WTPDF 1.0 Accessibility validation profile"),
 }
+
+
+def verapdf_profiles(
+    flavours: dict[str, tuple[str, str]], profiles: tuple[StandardProfile, ...]
+) -> dict[str, tuple[str, str, str]]:
+    """Each profile veraPDF checks: its flavour, profileName and the edition core's
+    STANDARD_PROFILES records, in that table's order. A flavour for an identifier the table
+    lacks is an error, so the two cannot drift apart."""
+    editions = {profile.identifier: profile.edition for profile in profiles}
+    unknown = sorted(set(flavours) - set(editions))
+    if unknown:
+        raise ValueError(f"veraPDF profiles missing from STANDARD_PROFILES: {', '.join(unknown)}")
+    return {
+        profile.identifier: (*flavours[profile.identifier], profile.edition)
+        for profile in profiles
+        if profile.identifier in flavours
+    }
+
+
+PROFILES: dict[str, tuple[str, str, str]] = verapdf_profiles(VERAPDF_FLAVOURS, STANDARD_PROFILES)
 VERSION = "1.30.2"
 RULE_STATUSES: dict[str, Literal["passed", "failed"]] = {"passed": "passed", "failed": "failed"}
 MACHINE_LIMIT = "Only the pinned engine's machine-checkable profile rules were evaluated."

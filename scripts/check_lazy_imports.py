@@ -37,7 +37,9 @@ DEFERRED = (
     "core_pdf.impl.render.target",
     "core_pdf.impl.spec.s_07_document.file_specification",
     "core_pdf.impl.spec.s_11_transparency.blend",
+    "core_pdf.impl.spec.s_07_document.markup_annotations",
     "core_pdf.impl.spec.s_14_structure.associated_files",
+    "core_pdf.impl.spec.s_14_structure.expansions",
 )
 
 WORKLOADS = {

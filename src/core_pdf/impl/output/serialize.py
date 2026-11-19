@@ -6,6 +6,7 @@ import json
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
+from functools import partial
 from html import escape
 from io import StringIO
 from typing import Protocol
@@ -33,6 +34,7 @@ from core_pdf.impl.output.model import (
     TableColumnBand,
     TableRowBand,
     TextLine,
+    TextSpan,
 )
 
 LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•▪◦]|(?:\d+|[^\W_])[.)])[ \t]*")
@@ -157,7 +159,11 @@ def document_to_json_dict(document: Document) -> dict[str, JsonValue]:
         page_field_ids = ids.records("form-field", len(page.form_fields))
         extend_records(links, page_id, page_link_ids, page.links, link_to_json_dict)
         extend_records(
-            annotations, page_id, page_annotation_ids, page.annotations, annotation_to_json_dict
+            annotations,
+            page_id,
+            page_annotation_ids,
+            page.annotations,
+            partial(annotation_to_json_dict, ids=ids),
         )
         extend_records(form_fields, page_id, page_field_ids, page.form_fields, field_to_json_dict)
         pages.append(
@@ -274,6 +280,13 @@ def block_payload(block: Block) -> dict[str, JsonValue]:
     }
 
 
+def span_to_json_dict(span: TextSpan) -> dict[str, JsonValue]:
+    payload: dict[str, JsonValue] = {"text": span.text, **span.style_dict()}
+    if span.expansion is not None:
+        payload["expansion"] = span.expansion
+    return payload
+
+
 def line_to_json_dict(line: TextLine) -> dict[str, JsonValue]:
     return {
         "text": line.text,
@@ -285,7 +298,7 @@ def line_to_json_dict(line: TextLine) -> dict[str, JsonValue]:
         "source": line.source,
         "confidence": line.confidence,
         **line.style_dict(),
-        "spans": [{"text": span.text, **span.style_dict()} for span in line.styled_spans()],
+        "spans": [span_to_json_dict(span) for span in line.styled_spans()],
         "baseline": bbox_to_json(line.baseline),
         "contributing_sources": list(line.contributing_sources),
     }
@@ -362,12 +375,26 @@ def link_to_json_dict(link: Link) -> dict[str, JsonValue]:
     }
 
 
-def annotation_to_json_dict(annotation: Annotation) -> dict[str, JsonValue]:
+def annotation_to_json_dict(
+    annotation: Annotation, *, ids: PageIds | None = None
+) -> dict[str, JsonValue]:
+    """An annotation's record. The annotations it links to are named by their ids on its
+    page, ids, or without them by their indexes in Page.annotations."""
+
+    def reference(index: int | None) -> JsonValue:
+        if index is None or ids is None:
+            return index
+        return ids.record("annotation", index)
+
     return {
         "subtype": annotation.subtype,
         "bbox": bbox_to_json(annotation.bbox),
         "contents": annotation.contents,
         "destination": json_safe(annotation.destination),
+        "in_reply_to": reference(annotation.in_reply_to),
+        "reply_type": annotation.reply_type,
+        "popup": reference(annotation.popup),
+        "popup_parent": reference(annotation.popup_parent),
     }
 
 
@@ -382,6 +409,7 @@ def field_to_json_dict(field: FormField) -> dict[str, JsonValue]:
         "read_only": field.read_only,
         "no_export": field.no_export,
         "options": list(field.options),
+        "alignment": field.alignment,
     }
 
 
@@ -461,6 +489,16 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             if not text:
                 continue
         text = escape(text) if markup.escape_text else text
+        # Spaces at either end stay outside the markers: Markdown emphasis does not open
+        # before or close after whitespace. A span of spaces only, a fill-in blank say, keeps
+        # them inside its tags, and gets no Markdown emphasis, which cannot hold only spaces.
+        body = text.strip()
+        leading = trailing = ""
+        if body:
+            start_at = text.index(body)
+            leading, trailing = text[:start_at], text[start_at + len(body) :]
+            text = body
+        emphasis = bool(body) or markup.escape_text
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -469,13 +507,18 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             text = f"<mark>{text}</mark>"
         if span.underline:
             text = f"<u>{text}</u>"
-        if span.strikeout:
+        if span.strikeout and emphasis:
             text = f"{markup.strikeout[0]}{text}{markup.strikeout[1]}"
-        if span.bold:
+        if span.bold and emphasis:
             text = f"{markup.bold[0]}{text}{markup.bold[1]}"
-        if span.italic:
+        if span.italic and emphasis:
             text = f"{markup.italic[0]}{text}{markup.italic[1]}"
-        rendered.append(text)
+        if span.expansion is not None:
+            # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
+            # space joining it to the text before stays outside it and its styles.
+            title = escape(span.expansion, quote=True)
+            text = f'<abbr title="{title}">{text}</abbr>'
+        rendered.append(f"{leading}{text}{trailing}")
     return "".join(rendered)
 
 

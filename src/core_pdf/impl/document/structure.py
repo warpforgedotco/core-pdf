@@ -15,6 +15,7 @@ from core_pdf.impl.spec.s_14_structure.dictionaries import (
     marked_content_id,
     parse_role_map,
 )
+from core_pdf.impl.spec.s_14_structure.expansions import expansion_text
 from core_pdf.impl.spec.s_14_structure.roles import StructureRole, resolve_structure_role
 from core_pdf.impl.spec.standards import recognized_version
 
@@ -149,6 +150,7 @@ class StructureElement(StructureNode):
         "attributes_value",
         "class_name_value",
         "element_cache",
+        "expansion_value",
         "language_value",
         "parent_value",
         "role_resolution_value",
@@ -173,6 +175,7 @@ class StructureElement(StructureNode):
         self.title_value: Any = MISSING
         self.language_value: Any = MISSING
         self.actual_text_value: Any = MISSING
+        self.expansion_value: Any = MISSING
         self.attributes_value: Any = MISSING
         self.class_name_value: Any = MISSING
         self.parent_value: Any = MISSING
@@ -253,6 +256,13 @@ class StructureElement(StructureNode):
                 self.props.get("ActualText")
             )
         return self.actual_text_value
+
+    @property
+    def expansion(self) -> str | None:
+        """The expanded form of the abbreviation or acronym the element holds (E)."""
+        if self.expansion_value is MISSING:
+            self.expansion_value = expansion_text(self.props, self.document.resolver.resolve_str)
+        return self.expansion_value
 
     @property
     def attributes(self) -> StructureAttributes | None:

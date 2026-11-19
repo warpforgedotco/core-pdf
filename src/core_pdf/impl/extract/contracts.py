@@ -14,6 +14,7 @@ from core_pdf.impl.base.runs import TextRun
 from core_pdf.impl.base.types import GeneratedRecord, field
 from core_pdf.impl.capture.program import PageProgram
 from core_pdf.impl.output.model import Table, TextLine
+from core_pdf.impl.spec.s_07_content.model import Expansion
 
 if TYPE_CHECKING:
     from core_pdf.impl.base.raw_records import RawAnnotation, RawFormField
@@ -26,6 +27,15 @@ type BoolArray = numpy.ndarray[Any, numpy.dtype[numpy.bool_]]
 
 
 FULL_PAGE_IMAGE_COVERAGE = 0.90
+
+
+def run_expansion(run: TextRun) -> Expansion | None:
+    """The expansion of the abbreviation run shows, from a Span's or structure element's E
+    (ISO 32000-2 14.9.5), or None."""
+    for key, value in run.provenance:
+        if key == "expansion" and type(value) is Expansion:
+            return value
+    return None
 
 
 class ObservationSource(IntEnum):

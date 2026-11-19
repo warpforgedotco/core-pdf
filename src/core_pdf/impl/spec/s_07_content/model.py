@@ -123,10 +123,34 @@ class TilingPattern(FrozenFields, PickleFields, ReprFields, ReplaceFields, metac
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern
 
 
+class Expansion:
+    """The expansion text of an abbreviation (ISO 32000-2 14.9.5), one object for each
+    marked-content sequence or structure element that gives it: the runs of one abbreviation
+    share it, and the next abbreviation, even with the same text, has its own."""
+
+    __slots__ = ("text",)
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is Expansion and other.text == self.text
+
+    def __hash__(self) -> int:
+        return hash(self.text)
+
+    def __repr__(self) -> str:
+        return f"Expansion({self.text!r})"
+
+    def __reduce__(self) -> tuple[type[Expansion], tuple[str]]:
+        return (Expansion, (self.text,))
+
+
 class MarkedContentEntry(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     layer: str | None = None
     actual_text: str | None = None
     mcid: int | None = None
+    expansion: Expansion | None = field(default=None, kw_only=True)
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -163,6 +187,10 @@ class GraphicsState(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fals
     alpha_is_shape: bool = field(default=False, kw_only=True)
     text_knockout: bool = field(default=True, kw_only=True)
     soft_mask: SoftMask | None = field(default=None, kw_only=True)
+    # OP, op and OPM (ISO 32000-2 8.6.7), carried: nothing paints separations.
+    stroke_overprint: bool = field(default=False, kw_only=True)
+    fill_overprint: bool = field(default=False, kw_only=True)
+    overprint_mode: int = field(default=0, kw_only=True)
 
     __match_args__ = (
         "ctm",
@@ -234,6 +262,9 @@ class GraphicsState(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fals
         new.alpha_is_shape = self.alpha_is_shape
         new.text_knockout = self.text_knockout
         new.soft_mask = self.soft_mask
+        new.stroke_overprint = self.stroke_overprint
+        new.fill_overprint = self.fill_overprint
+        new.overprint_mode = self.overprint_mode
         return new
 
 

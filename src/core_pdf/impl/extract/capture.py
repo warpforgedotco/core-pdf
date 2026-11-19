@@ -31,7 +31,9 @@ from core_pdf.impl.extract.contracts import (
     PageEvidence,
     RunSelection,
     TextQualityStats,
+    run_expansion,
 )
+from core_pdf.impl.spec.s_07_content.model import Expansion
 
 
 class TextAnalysis(GeneratedRecord):
@@ -295,6 +297,29 @@ def structure_actual_text_owner(element: Any) -> tuple[int, str] | None:
     return owner
 
 
+def structure_expansion(element: Any, shared: dict[int, Expansion]) -> Expansion | None:
+    """The expansion (E) of the nearest of element and its ancestors that gives one, one
+    Expansion for each element so that its runs share it (ISO 32000-2 14.9.5)."""
+    visited: set[int] = set()
+    while element is not None:
+        try:
+            props = getattr(element, "props", None)
+            marker = id(props if isinstance(props, dict) else element)
+            if marker in visited:
+                break
+            visited.add(marker)
+            text = getattr(element, "expansion", None)
+            if isinstance(text, str):
+                expansion = shared.get(marker)
+                if expansion is None:
+                    expansion = shared[marker] = Expansion(text)
+                return expansion
+            element = getattr(element, "parent", None)
+        except IndexError, TypeError, ValueError:
+            break
+    return None
+
+
 def apply_structure_actual_text(
     page: Any, runs: tuple[TextRun, ...], structure: Any = STRUCTURE_UNSET
 ) -> tuple[TextRun, ...]:
@@ -311,6 +336,8 @@ def apply_structure_actual_text(
     replacement_clusters: dict[int, list[tuple[GlyphClusterLike, ...]]] = {}
     output: list[TextRun] = []
     owners: dict[int, tuple[int, str] | None] = {}
+    expansions: dict[int, Expansion | None] = {}
+    shared_expansions: dict[int, Expansion] = {}
     for run in runs:
         mcid = run_mcid(run)
         if mcid is None:
@@ -318,12 +345,17 @@ def apply_structure_actual_text(
             continue
         if mcid in owners:
             owner = owners[mcid]
+            expansion = expansions[mcid]
         else:
             try:
                 element = structure[mcid] if 0 <= mcid < len(structure) else None
             except IndexError, TypeError, ValueError:
                 element = None
             owner = owners[mcid] = structure_actual_text_owner(element)
+            expansion = expansions[mcid] = structure_expansion(element, shared_expansions)
+        if expansion is not None and run_expansion(run) is None:
+            # A Span's own E, nearer the content, wins over the structure element's.
+            run = run.replace(provenance=(*run.provenance, ("expansion", expansion)))
         if owner is None:
             output.append(run)
             continue

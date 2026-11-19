@@ -216,6 +216,11 @@ def new_text_layout(
     layout.style = None
     layout.width_source = glyph_width_source(font_decoder.glyph_width)
     mcid = self.current_marked_content_mcid()
+    expansion = None
+    for entry in reversed(self.marked_content_stack):
+        if entry.expansion is not None:
+            expansion = entry.expansion
+            break
     layout.run_provenance = (
         ("font_name", graphics.current_font),
         ("stream_order", self.stream_order),
@@ -226,6 +231,7 @@ def new_text_layout(
         ("layout_form_bbox", self.layout_form_bbox),
         ("layout_form_id", self.layout_form_id),
         *((("mcid", mcid),) if mcid is not None else ()),
+        *((("expansion", expansion),) if expansion is not None else ()),
     )
     return layout
 
