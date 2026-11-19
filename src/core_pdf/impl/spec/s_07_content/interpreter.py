@@ -1361,13 +1361,19 @@ class ContentInterpreter:
             self.apply_extgstate(extgstate)
         except (TypeError, ValueError) as error:
             self.reject(parse_error_from(error), "extended-graphics-state", None)
+        except PdfParseError as error:
+            # Declined as the others are, rather than ending the content stream; a strict
+            # interpreter's reject raises it.
+            self.reject(error, "extended-graphics-state", None)
 
     def apply_extgstate(self, extgstate: dict[str, Any]) -> None:
         # Three groups, each applied whatever happens to the others: the older entries,
-        # where the first to fail ends the rest as it always has; Font; and the overprint
-        # entries. Font and overprint failures are declined through reject; whatever a group
-        # raises (a strict reject's error, unchanged) is held until all three have run, and
-        # the first is raised then, for op_gs to decline or pass on.
+        # where the first to fail ends the rest, as it always has; Font; and the overprint
+        # entries. A TypeError or ValueError from Font or overprint goes through reject with
+        # the group's context. Every error a group ends with (a PdfParseError, raised by a
+        # strict reject or by reading the entries, or the older entries' TypeError or
+        # ValueError) is held, unchanged, until all three have run; the first is raised
+        # then, and op_gs declines it through reject, which a strict interpreter raises.
         failures: list[Exception] = []
         try:
             self.apply_extgstate_entries(extgstate)
@@ -1387,18 +1393,19 @@ class ContentInterpreter:
     def apply_extgstate_group(
         self, apply: Callable[[], None], context: str, failures: list[Exception]
     ) -> None:
-        """Apply one group of a parameter dictionary's entries, declining its failure: a
-        PdfParseError as raised, so a reject inside keeps its own context, anything else as
-        a PdfParseError of context. What the decline raises is added to failures."""
+        """Apply one group of a parameter dictionary's entries. A TypeError or ValueError
+        is declined through reject as a PdfParseError of context; a PdfParseError, which a
+        strict reject inside may already have raised, is added to failures as it is, as is
+        whatever the decline raises."""
         try:
-            try:
-                apply()
-            except (TypeError, ValueError) as error:
-                self.reject(parse_error_from(error), context, None)
-            except PdfParseError as error:
-                self.reject(error, context, None)
-        except (TypeError, ValueError, PdfParseError) as error:
+            apply()
+        except PdfParseError as error:
             failures.append(error)
+        except (TypeError, ValueError) as error:
+            try:
+                self.reject(parse_error_from(error), context, None)
+            except PdfParseError as raised:
+                failures.append(raised)
 
     def apply_extgstate_entries(self, extgstate: dict[str, Any]) -> None:
         self.apply_extgstate_line_style(extgstate)
@@ -1486,7 +1493,9 @@ class ContentInterpreter:
         """A parameter dictionary's Font: an indirect reference to a font dictionary and a
         size, which select the text font and size as Tf does with a Font resource's name
         (Table 57). The font is named by the reference, so the state names it by its
-        BaseFont. A facade mirroring a reader that ignores it overrides this."""
+        BaseFont. A facade mirroring a reader that ignores it overrides this. Loading the
+        font may fail as it may for Tf: apply_extgstate declines a TypeError, ValueError or
+        PdfParseError, and anything else Tf would let through passes on here too."""
         resolve = self.resolver.resolve
         entry = resolve(value)
         if not isinstance(entry, (list, tuple)) or len(entry) != 2:

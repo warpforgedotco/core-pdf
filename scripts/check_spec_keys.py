@@ -405,7 +405,24 @@ def check_span_markup_spaces(failures: list[str]) -> None:
         "word next", spans=(TextSpan("word"), TextSpan(" ", bold=True), TextSpan("next"))
     )
     expectation(failures, "Markdown span of spaces", markdown_line(spaces), "word next")
-    expectation(failures, "HTML span of spaces", html_line(spaces), "word next")
+    expectation(failures, "HTML span of spaces", html_line(spaces), "word<strong> </strong>next")
+    # An underlined blank keeps its tag, and a blank abbreviation its abbr, in both.
+    blank = TextLine(
+        "Name:    ", spans=(TextSpan("Name:"), TextSpan("    ", underline=True, bold=True))
+    )
+    expectation(failures, "Markdown underlined blank", markdown_line(blank), "Name:<u>    </u>")
+    expectation(
+        failures, "HTML underlined blank", html_line(blank), "Name:<strong><u>    </u></strong>"
+    )
+    abbreviated = TextLine(
+        "a  b", spans=(TextSpan("a"), TextSpan("  ", expansion="x"), TextSpan("b"))
+    )
+    expectation(
+        failures,
+        "Markdown blank abbreviation",
+        markdown_line(abbreviated),
+        'a<abbr title="x">  </abbr>b',
+    )
 
 
 def check_extgstate_font(failures: list[str]) -> None:
@@ -619,6 +636,36 @@ def check_extgstate_parse_errors(failures: list[str], probe: Any) -> None:
     expectation(
         failures,
         "tolerant gs Font raising PdfParseError",
+        (state.seen, state.opacities, texts),
+        ([(True, True, 0)], [(1.0, 0.25)], ["After"]),
+    )
+
+    # Tolerant: a PdfParseError from the older entries (a soft mask that raises it) is
+    # declined by op_gs; the entries before it and the page's content go on.
+    class BadMask(probe):  # type: ignore[misc, valid-type]
+        def resolve_soft_mask(self, value: object) -> Any:
+            raise PdfParseError("broken soft mask")
+
+    data = page_pdf(
+        b"/GS1 gs /P BMC EMC BT /F1 12 Tf 72 700 Td (After) Tj ET",
+        resources=b"/Font << /F1 5 0 R >> /ExtGState << /GS1 6 0 R >>",
+        extra=(b"<< /Type /ExtGState /ca 0.25 /SMask << /S /Luminosity /G 7 0 R >> /OP true >>",),
+    )
+    with PdfDocument(data) as pdf:
+        state = BadMask(pdf)
+        state.seen = []
+        state.opacities = []
+        try:
+            pdf.pages[0].consume_contents(state)
+            state.run_accumulator.flush()
+            texts = [run.text for run in state.runs]
+        except PdfParseError as error:
+            texts = [f"raised {error}"]
+        finally:
+            state.release()
+    expectation(
+        failures,
+        "tolerant soft mask raising PdfParseError",
         (state.seen, state.opacities, texts),
         ([(True, True, 0)], [(1.0, 0.25)], ["After"]),
     )

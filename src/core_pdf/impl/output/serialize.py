@@ -490,15 +490,15 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
                 continue
         text = escape(text) if markup.escape_text else text
         # Spaces at either end stay outside the markers: Markdown emphasis does not open
-        # before or close after whitespace.
+        # before or close after whitespace. A span of spaces only, a fill-in blank say, keeps
+        # them inside its tags, and gets no Markdown emphasis, which cannot hold only spaces.
         body = text.strip()
-        if not body:
-            # Only spaces: nothing for markers to mark.
-            rendered.append(text)
-            continue
-        start_at = text.index(body)
-        leading, trailing = text[:start_at], text[start_at + len(body) :]
-        text = body
+        leading = trailing = ""
+        if body:
+            start_at = text.index(body)
+            leading, trailing = text[:start_at], text[start_at + len(body) :]
+            text = body
+        emphasis = bool(body) or markup.escape_text
         if span.superscript:
             text = f"<sup>{text}</sup>"
         elif span.subscript:
@@ -507,11 +507,11 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             text = f"<mark>{text}</mark>"
         if span.underline:
             text = f"<u>{text}</u>"
-        if span.strikeout:
+        if span.strikeout and emphasis:
             text = f"{markup.strikeout[0]}{text}{markup.strikeout[1]}"
-        if span.bold:
+        if span.bold and emphasis:
             text = f"{markup.bold[0]}{text}{markup.bold[1]}"
-        if span.italic:
+        if span.italic and emphasis:
             text = f"{markup.italic[0]}{text}{markup.italic[1]}"
         if span.expansion is not None:
             # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
