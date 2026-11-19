@@ -283,6 +283,9 @@ Rows = cython.struct(
     sampled=cython.pointer[Span],
     sampled_count=cython.Py_ssize_t,
     sampled_y=cython.double,
+    # How _rows_next measured the last row: 0 by the sums, 1 exactly, 2 supersampled past
+    # the budget, 3 supersampled for its many edges.
+    kind=cython.int,
     block_bytes=cython.Py_ssize_t,
     acc_cells=cython.Py_ssize_t,
     heap_cells=cython.Py_ssize_t,
@@ -1341,7 +1344,8 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
         if earliest < yb:
             _mark_span(rows.mixed, height, earliest, yb)
         if work > budget:
-            _mark_span(rows.mixed, height, ya, cython.cast(cython.double, height), SAMPLED_ROW)
+            # This band is finished, its marks kept; the rows below it are not checked.
+            _mark_span(rows.mixed, height, yb, cython.cast(cython.double, height), SAMPLED_ROW)
             rows.exhausted = True
             break
     for i in range(height):
@@ -1740,6 +1744,10 @@ def _sampled_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int
     for line in range(ROW_SAMPLES):
         y = r + (line + 0.5) / samples
         previous = rows.sampled_y
+        # The last line's order helps only when it is the line directly above.
+        if y - previous > 1.25 / samples:
+            rows.sampled_count = 0
+            previous = -INFINITY
         count = 0
         for a in range(rows.sampled_count):
             edge = edges + spans[a].index
@@ -1801,6 +1809,7 @@ def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bi
     """Row r's runs in rows.runs, rows rising, and 0; or 1 when emit is false and the row is
     the dense sums', in rows.cells, for the caller to read."""
     rows.run_count = 0
+    rows.kind = 0
     if rows.mixed[r] or not rows.dense:
         # Only these rows read the active list, which catches up with the rows skipped.
         _order_edges(rows)
@@ -1808,9 +1817,14 @@ def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bi
             return 0
         # A row of many edges is supersampled too: its exact measure looks for crossings
         # among every pair of them.
-        if rows.mixed[r] == SAMPLED_ROW or (rows.mixed[r] and rows.active_count > EXACT_EDGES):
+        if rows.mixed[r] == SAMPLED_ROW:
+            rows.kind = 2
+            return _sampled_row(rows, r)
+        if rows.mixed[r] and rows.active_count > EXACT_EDGES:
+            rows.kind = 3
             return _sampled_row(rows, r)
         if rows.mixed[r]:
+            rows.kind = 1
             return _exact_row(rows, r)
         return _sum_row(rows, r)
     if not emit:
@@ -1880,15 +1894,21 @@ def area_coverage_plane(
     height: cython.int,
     mode: cython.int = 0,
 ):
-    """The coverage fill_glyph_coverage paints, as a height x width plane of doubles, and the
-    number of rows measured exactly; None when no edge slopes. mode 1 sums the window
+    """The coverage fill_glyph_coverage paints, as a height x width plane of doubles, the
+    number of rows measured exactly, and how each row was measured (rows.kind: 0 by the
+    sums, 1 exactly, 2 supersampled past the budget, 3 for its many edges); None when no
+    edge slopes. mode 1 sums the window
     densely and 2 row by row, as a small and a large window are, where each can be had."""
     rows_array = edge_rows(edges)
     kept: cython.Py_ssize_t = _sloped_edge_count(rows_array)
     if kept == 0:
         return None
     if height <= 0 or width <= 0:
-        return numpy.zeros((max(height, 0), max(width, 0)), numpy.float64), 0
+        return (
+            numpy.zeros((max(height, 0), max(width, 0)), numpy.float64),
+            0,
+            numpy.zeros(max(height, 0), numpy.uint8),
+        )
     device: cython.p_double = _device_edges(rows_array, kept, crop_x0, crop_y1, scale, ix0, iy0)
     try:
         return _engine_plane(device, kept, width, height, mode)
@@ -1911,18 +1931,21 @@ def _engine_plane(
     k: cython.Py_ssize_t
     c: cython.Py_ssize_t
     exact: cython.Py_ssize_t = 0
+    kinds = numpy.zeros(height, numpy.uint8)
+    kind: cython.uchar[::1] = kinds
     _rows_clear(cython.address(rows))
     try:
         _rows_begin(cython.address(rows), device, kept, width, height, cython.NULL, 0, mode)
         for r in range(height):
             _rows_next(cython.address(rows), r, True)
+            kind[r] = rows.kind
             for k in range(rows.run_count):
                 for c in range(rows.runs[k].start, rows.runs[k].end):
                     out[r, c] = rows.runs[k].coverage
         exact = rows.exact_rows
     finally:
         _rows_free(cython.address(rows))
-    return plane, exact
+    return plane, exact, kinds
 
 
 def fill_glyph_coverage(

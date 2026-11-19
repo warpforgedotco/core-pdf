@@ -250,10 +250,15 @@ Nothing checks the result on the platforms that build wheels.
 signed areas for a small window and row-by-row sums for a large one, each cell's sum added in
 the same order, and an exact measure, from the outline's pieces alone, for the rows whose
 windings meet inside a pixel (+1 against -1, or beyond 1), where those sums cancel or count
-twice. Rows the search for those runs out of work before, and such rows with more than 256
-active edges, are supersampled 4x4 by winding instead, at a cost bounded by their edges.
+twice. Rows the search for those runs out of work before (unknown, so taken as mixed), and
+mixed rows with more than 256 active edges, are supersampled 4x4 by winding instead, at a
+cost bounded by their edges: a trade of their antialiasing, no finer than main's 4x4 route
+gave such fills, for time, which an exact measure of such a row would spend on crossings
+among every pair of its edges. Unmixed rows are summed however many edges they have.
 `scripts/check_large_fills.py` checks `area_coverage_plane` against a Python reference
-of the engine for equality and against an independent span measure. Core reaches the engine
+of the engine, supersampled rows included, for equality (the reference has no budget, so it
+takes the rows the kernel left unchecked from the kernel) and against an independent span
+measure. Core reaches the engine
 through the fused entry points only.
 
 Together the two render kernels took full `render().rasterize()` down by

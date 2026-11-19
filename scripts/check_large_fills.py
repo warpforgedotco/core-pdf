@@ -72,6 +72,10 @@ SAMPLED_TOLERANCE = 0.3
 TOUCH = 1e-7
 # The kernel's CROSS_SLACK: chains closer than this, relative to x, meet rather than cross.
 CROSS_SLACK = 1e-9
+# The kernel's EXACT_EDGES and ROW_SAMPLES: a row to measure exactly with more active edges is
+# supersampled, ROW_SAMPLES x ROW_SAMPLES per pixel, as are the rows past the sweep's budget.
+EXACT_EDGES = 256
+ROW_SAMPLES = 4
 
 # A pixel may be off the reference by this much in a channel beyond what the 4x4 grid misses:
 # the rounding of its alpha and colour.
@@ -951,6 +955,31 @@ def finish_row(cells: list[float], rights: list[tuple[int, float]], width: int) 
     return out
 
 
+def sampled_row(active: list[Edge], row: int, width: int) -> list[float]:
+    """The kernel's _sampled_row: the share of a ROW_SAMPLES x ROW_SAMPLES grid of samples
+    per pixel inside the path by nonzero winding, the crossings of each line taken in order
+    of x. Sixteenths add exactly, so the order the kernel adds them in does not matter."""
+    columns = width * ROW_SAMPLES
+    counts = [0] * width
+    for line in range(ROW_SAMPLES):
+        y = row + (line + 0.5) / ROW_SAMPLES
+        crossings = sorted(
+            (edge[0] + (y - edge[1]) * edge[3], int(edge[4]))
+            for edge in active
+            if edge[1] <= y < edge[2]
+        )
+        winding = 0
+        for (x, direction), (following, _) in itertools.pairwise(crossings):
+            winding += direction
+            if winding == 0:
+                continue
+            first = int(py_max(py_min(math.ceil(x * ROW_SAMPLES - 0.5), columns), 0.0))
+            end = int(py_max(py_min(math.ceil(following * ROW_SAMPLES - 0.5), columns), 0.0))
+            for column in range(first, end):
+                counts[column // ROW_SAMPLES] += 1
+    return [py_min(1.0, count / ROW_SAMPLES**2) for count in counts]
+
+
 def reference_area(
     edges: numpy.ndarray,
     crop_x0: float,
@@ -960,23 +989,33 @@ def reference_area(
     iy0: float,
     width: int,
     height: int,
-) -> tuple[numpy.ndarray, int] | None:
+    unchecked: frozenset[int] = frozenset(),
+) -> tuple[numpy.ndarray, int, list[int]] | None:
     """area_coverage_plane in Python, line by line: each row's sums of its edges' pieces, or
-    the outline's pieces alone in the rows mark_rows marks."""
+    the outline's pieces alone in the rows mark_rows marks, supersampled when such a row has
+    more than EXACT_EDGES edges; and the rows in unchecked, which the kernel's sweep ran out
+    of budget before (the reference has none), supersampled. Also each row's kind, as the
+    kernel numbers them."""
     if not any(row[1] != row[3] for row in edges.tolist()):
         return None
     table = edge_table(edges, crop_x0, crop_y1, scale, ix0, iy0, height)
     plane = numpy.zeros((height, width))
     exact = 0
+    kinds = [0] * height
     flags = mark_rows(table, height)
     for row in range(height):
         indices = [i for i, edge in enumerate(table) if edge[5] <= row < edge[6]]
         active = [table[i] for i in indices]
         if not active:
             continue
+        if row in unchecked or (flags[row] and len(active) > EXACT_EDGES):
+            plane[row] = sampled_row(active, row, width)
+            kinds[row] = 2 if row in unchecked else 3
+            continue
         if flags[row]:
             plane[row] = exact_row(active, row, width)
             exact += 1
+            kinds[row] = 1
             continue
         cells = [0.0] * (width + 2)
         rights: list[tuple[int, float]] = []
@@ -991,7 +1030,7 @@ def reference_area(
                 rights,
             )
         plane[row] = finish_row(cells, rights, width)
-    return plane, exact
+    return plane, exact, kinds
 
 
 def span_coverage(
@@ -1222,6 +1261,34 @@ def check_glyph_outlines() -> int:
     return failed
 
 
+def check_sampled(name: str, loops: list[list[Point]], width: int, height: int, kind: int) -> int:
+    """Whether area_coverage_plane supersamples at least a third of the rows of the loops
+    with kind (2 past the budget, 3 for many edges), and gives reference_area's coverage and
+    kinds exactly, taking the rows it left unchecked from the kernel, and the span measure's
+    within SAMPLED_TOLERANCE."""
+    failed = 0
+    edges = loop_edges(loops)
+    spans = span_coverage(loops, float(height), width, height, rows=16)
+    for mode in (1, 2):
+        found = area_coverage_plane(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, mode)
+        assert found is not None
+        kinds = found[2].tolist()
+        unchecked = frozenset(row for row, value in enumerate(kinds) if value == 2)
+        want = reference_area(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, unchecked)
+        assert want is not None
+        error = numpy.abs(found[0] - spans)
+        if kinds.count(kind) < height // 3:
+            print(f"  {name}, {mode=}: {kinds.count(kind)} rows of kind {kind}, too few")
+            failed += 1
+        elif kinds != want[2] or not numpy.array_equal(found[0], want[0]):
+            print(f"  {name}, {mode=}: not the reference's coverage")
+            failed += 1
+        elif error.max() > SAMPLED_TOLERANCE:
+            print(f"  {name}, {mode=}: off the span measure by up to {error.max():.4f}")
+            failed += 1
+    return failed
+
+
 def check_engine_edges() -> int:
     """Cases the review of the row engine raised: a tall path whose few edges once spent the
     sweep's budget in its first band, edges whose x overflows to infinity among more than 16
@@ -1269,42 +1336,20 @@ def check_engine_edges() -> int:
         ):
             print(f"  edges that overflow to infinity, {mode=}: not the reference's coverage")
             failed += 1
-    # A path past the sweep's budget: 160 staggered bars of alternating orientation, each
+    # A path far past the sweep's budget: 240 staggered bars of alternating orientation, each
     # overlapping the next, whose unchecked rows are supersampled, by winding, 4x4.
     loops = [
-        rectangle(1.0 + 1.5 * k, 1.0 + 0.3 * k, 3.2 + 1.5 * k, 150.0 + 0.3 * k, reverse=k % 2 == 1)
-        for k in range(160)
+        rectangle(1.0 + 1.0 * k, 1.0 + 0.2 * k, 2.6 + 1.0 * k, 150.0 + 0.2 * k, reverse=k % 2 == 1)
+        for k in range(240)
     ]
-    edges = loop_edges(loops)
-    spans = span_coverage(loops, 200.0, 245, 200, rows=16)
-    for mode in (1, 2):
-        found = area_coverage_plane(edges, 0.0, 200.0, 1.0, 0.0, 0.0, 245, 200, mode)
-        assert found is not None
-        error = numpy.abs(found[0] - spans)
-        if error.max() > SAMPLED_TOLERANCE or error.mean() > SAMPLED_TOLERANCE / 10:
-            print(
-                f"  staggered bars past the budget, {mode=}: off by up to {error.max():.4f}, "
-                f"{error.mean():.4f} on average"
-            )
-            failed += 1
+    failed += check_sampled("staggered bars past the budget", loops, 245, 200, 2)
     # Rows with windings meeting and more than 256 active edges, which are supersampled
     # rather than measured exactly: 140 bars crossed by 20 near-horizontal hatches.
     loops = [rectangle(1.0 + 1.5 * k, 5.0, 2.0 + 1.5 * k, 195.0) for k in range(140)] + [
         [(0.5, 10.0 + 9 * j), (215.0, 16.0 + 9 * j), (215.0, 17.0 + 9 * j), (0.5, 11.0 + 9 * j)]
         for j in range(20)
     ]
-    edges = loop_edges(loops)
-    spans = span_coverage(loops, 200.0, 216, 200, rows=16)
-    for mode in (1, 2):
-        found = area_coverage_plane(edges, 0.0, 200.0, 1.0, 0.0, 0.0, 216, 200, mode)
-        assert found is not None
-        error = numpy.abs(found[0] - spans)
-        if error.max() > SAMPLED_TOLERANCE or error.mean() > SAMPLED_TOLERANCE / 10:
-            print(
-                f"  hatched bars, {mode=}: off by up to {error.max():.4f}, "
-                f"{error.mean():.4f} on average"
-            )
-            failed += 1
+    failed += check_sampled("hatched bars", loops, 216, 200, 3)
     # An outline with an edge whose x is finite but whose slope is not, taken as SimpleEdges:
     # the dense path must drop it as the engine's table does.
     arrays = outline_arrays(

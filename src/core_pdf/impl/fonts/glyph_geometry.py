@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -42,34 +44,43 @@ class GlyphOutlineArrays:
 # outline_simple's answers by an outline's point columns and spans, least recently used
 # first: a font's glyph cache keeps one outline per code, and the same glyph programs recur
 # across codes, fonts and documents. Looking one up (0.6 us for a text glyph) costs a third
-# of the check. Held to SIMPLE_OUTLINE_LIMIT entries and SIMPLE_OUTLINE_BYTES of keys; an
-# outline past SIMPLE_OUTLINE_LARGEST bytes is checked each time instead.
-SIMPLE_OUTLINES: dict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = {}
+# of the check. Held to SIMPLE_OUTLINE_LIMIT entries and SIMPLE_OUTLINE_BYTES of keys, under
+# SIMPLE_OUTLINES_LOCK as threads may render at once; an outline past SIMPLE_OUTLINE_LARGEST
+# bytes is checked each time instead.
+SIMPLE_OUTLINES: OrderedDict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = OrderedDict()
+SIMPLE_OUTLINES_LOCK = threading.Lock()
 SIMPLE_OUTLINE_LIMIT = 4096
 SIMPLE_OUTLINE_BYTES = 16 * 2**20
 SIMPLE_OUTLINE_LARGEST = 64 * 2**10
-simple_outline_bytes = [0]
+simple_outline_bytes = 0
 
 
 def cached_outline_simple(
     xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: tuple[tuple[int, int], ...]
 ) -> bool:
+    global simple_outline_bytes
     size = xs.nbytes + ys.nbytes
     if size > SIMPLE_OUTLINE_LARGEST:
         return outline_simple(xs, ys, spans)
     key = (xs.tobytes(), ys.tobytes(), spans)
-    simple = SIMPLE_OUTLINES.pop(key, None)
-    if simple is None:
-        simple = outline_simple(xs, ys, spans)
-        simple_outline_bytes[0] += size
+    with SIMPLE_OUTLINES_LOCK:
+        cached = SIMPLE_OUTLINES.get(key)
+        if cached is not None:
+            SIMPLE_OUTLINES.move_to_end(key)
+            return cached
+    simple = outline_simple(xs, ys, spans)
+    with SIMPLE_OUTLINES_LOCK:
+        if key in SIMPLE_OUTLINES:
+            SIMPLE_OUTLINES.move_to_end(key)
+            return SIMPLE_OUTLINES[key]
         while SIMPLE_OUTLINES and (
             len(SIMPLE_OUTLINES) >= SIMPLE_OUTLINE_LIMIT
-            or simple_outline_bytes[0] > SIMPLE_OUTLINE_BYTES
+            or simple_outline_bytes + size > SIMPLE_OUTLINE_BYTES
         ):
-            oldest = next(iter(SIMPLE_OUTLINES))
-            del SIMPLE_OUTLINES[oldest]
-            simple_outline_bytes[0] -= len(oldest[0]) + len(oldest[1])
-    SIMPLE_OUTLINES[key] = simple
+            (oldest_xs, oldest_ys, _), _ = SIMPLE_OUTLINES.popitem(last=False)
+            simple_outline_bytes -= len(oldest_xs) + len(oldest_ys)
+        SIMPLE_OUTLINES[key] = simple
+        simple_outline_bytes += size
     return simple
 
 
