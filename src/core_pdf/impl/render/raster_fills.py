@@ -333,10 +333,11 @@ def fill_path(
 ) -> None:
     """Fill path antialiased, whatever its size: a pixel's alpha is the share of it the
     path covers. Under the nonzero rule, in the Normal blend mode and a rectangular clip,
-    that share is the signed area of the pixel inside the path, measured along 16 lines
-    instead in a row where regions of opposite or doubled winding meet; otherwise it is the
-    share of a 4x4 grid of sample points inside the path, under fill_rule. Memory and work
-    follow the edges and the painted runs, not the pixel box."""
+    that share is the signed area of the pixel inside the path; a row where regions of
+    opposite or doubled winding meet is measured exactly instead, from the area of the
+    outline's pieces alone between bands cut at its edges' ends and crossings. Otherwise it
+    is the share of a 4x4 grid of sample points inside the path, under fill_rule. Memory and
+    work follow the edges and the painted runs, not the pixel box."""
     clip = self.clip
     rect = path.axis_aligned_rect()
     if rect is not None:

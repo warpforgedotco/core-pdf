@@ -130,6 +130,12 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     # A band of rows at a time: each pixel's value depends on its centre alone, and the
     # bands paint in row order, so a colour that fails stops where it would over the box.
     band = max(1, SHADING_BAND_CELLS // max(1, ix1 - ix0))
+    # Each colour is found once for the box: the bands share what they find.
+    known: list[Any] | None = (
+        [numpy.zeros(0, dtype=numpy.float64), numpy.zeros((0, 4), dtype=numpy.int32)]
+        if iy1 - iy0 > band
+        else None
+    )
     for top in range(iy0, iy1, band):
         bottom = min(iy1, top + band)
         allowed = numpy.frombuffer(
@@ -167,6 +173,7 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
             allowed if background is not None else None,
             background,
             many_colors=True,
+            known=known,
         )
 
 
@@ -206,13 +213,16 @@ def blend_shading_colors(
     background: tuple[float, ...] | None,
     *,
     many_colors: bool = False,
+    known: list[Any] | None = None,
 ) -> None:
     """Paint each pixel the shading paints in its colour, and with a background, the rest of
     area in the background colour. keys holds one entry per painted pixel, in row order, the
     same for pixels of one colour; arguments gives the evaluator's input (a number, or a tuple
     of them) at the given positions of keys. Colours are found in the order they first
     appear; when one fails, the pixels before it are painted and its error raised. With
-    many_colors, the colours of a device colour model are converted in one pass."""
+    many_colors, the colours of a device colour model are converted in one pass. known holds
+    the inputs (sorted) and colours earlier bands of the same shading found, as two arrays,
+    and gains this band's."""
     ix0, iy0 = origin
     soft_mask_alpha = item.soft_mask_alpha
     fill_opacity = item.fill_opacity
@@ -236,8 +246,24 @@ def blend_shading_colors(
     reached = len(keys)
     color_error: Exception | None = None
     evaluate = shading.evaluator
-    order = by_first.tolist()
-    inputs = arguments(first[by_first]) if len(first) else []
+    all_inputs = arguments(first[by_first]) if len(first) else []
+    # The colours an earlier band found are taken as they were; the others are found here, in
+    # the order they first appear, so a failing one stops where it would over the whole box.
+    if known is not None and len(first):
+        values = numpy.asarray(keys)[first[by_first]]
+        known_keys, known_colors = known
+        hit = numpy.zeros(len(values), dtype=numpy.bool_)
+        if len(known_keys):
+            slots = numpy.minimum(numpy.searchsorted(known_keys, values), len(known_keys) - 1)
+            hit = known_keys[slots] == values
+            colors[by_first[hit]] = known_colors[slots[hit]]
+        todo = numpy.flatnonzero(~hit).tolist()
+        order = by_first[todo].tolist()
+        inputs = [all_inputs[step] for step in todo]
+    else:
+        todo = list(range(len(all_inputs)))
+        order = by_first.tolist()
+        inputs = all_inputs
     # A colour space other than a device one converts every colour in one pass.
     batch = evaluate.many(inputs) if isinstance(evaluate, SpaceEvaluator) and inputs else None
     palette = (
@@ -246,8 +272,11 @@ def blend_shading_colors(
         else None
     )
     if palette is not None:
-        colors[by_first] = palette
+        colors[order] = palette
+        evaluated = len(order)
         order = []
+    else:
+        evaluated = 0
     for step, unique_index in enumerate(order):
         position = int(first[unique_index])
         try:
@@ -260,10 +289,18 @@ def blend_shading_colors(
             if in_space:
                 rgba = self.shading_space_color(color_model, components, rgba)
             colors[unique_index] = rgba
+            evaluated = step + 1
         except Exception as error:
             color_error = error
             reached = position
             break
+    if known is not None and evaluated:
+        found = todo[:evaluated]
+        merged_keys = numpy.concatenate((known[0], values[found]))
+        merged_colors = numpy.concatenate((known[1], colors[by_first[found]]))
+        by_key = numpy.argsort(merged_keys, kind="stable")
+        known[0] = merged_keys[by_key]
+        known[1] = merged_colors[by_key]
     color_index = inverse.reshape(-1)[:reached]
     if fill is not None:
         # The background's pixels join the shading's, in row order, with the last colour.

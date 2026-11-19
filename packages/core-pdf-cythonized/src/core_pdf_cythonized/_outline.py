@@ -22,7 +22,9 @@ def outline_edges(xs: cython.double[::1], ys: cython.double[::1], spans):
 
 
 @cython.cfunc
-def _outline_edges(xs: cython.p_const_double, ys: cython.p_const_double, spans) -> tuple:
+def _outline_edges(
+    xs: cython.p_const_double, ys: cython.p_const_double, spans, subtype=None
+) -> tuple:
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
     i: cython.Py_ssize_t
@@ -46,7 +48,15 @@ def _outline_edges(xs: cython.p_const_double, ys: cython.p_const_double, spans) 
     if not kept:
         return None, kept, dropped
 
-    edges = empty_float64_rows(total, 4)
+    dims = cython.declare(cnp.npy_intp[2])
+    dims[0] = total
+    dims[1] = 4
+    if subtype is not None and not dropped:
+        edges = cnp.PyArray_New(
+            subtype, 2, dims, cnp.NPY_FLOAT64, cython.NULL, cython.NULL, 0, 0, None
+        )
+    else:
+        edges = empty_float64_rows(total, 4)
     out: cython.p_double = float64_data(edges)
     for span in kept:
         start = span[0]
@@ -128,6 +138,43 @@ def column_extreme(
     return bound
 
 
+SIMPLE_EDGES = None
+
+
+@cython.cfunc
+def _simple_edges() -> object:
+    """_coverage's SimpleEdges, looked up once."""
+    global SIMPLE_EDGES
+    if SIMPLE_EDGES is None:
+        from core_pdf_cythonized._coverage import SimpleEdges  # noqa: PLC0415
+
+        SIMPLE_EDGES = SimpleEdges
+    return SIMPLE_EDGES
+
+
+WINDINGS_MIX = None
+
+
+def outline_simple(xs, ys, spans) -> bool:
+    """Whether an outline's windings are 0 or one sign of 1 everywhere: its edges, as
+    outline_edges gives them with none dropped, and windings_mix finding none mixed."""
+    global WINDINGS_MIX
+    if not (is_float64_vector(xs) and is_float64_vector(ys)):
+        edges, _, dropped = outline_edges(xs, ys, spans)
+    else:
+        count: cython.Py_ssize_t = min(vector_length(xs), vector_length(ys))
+        if not _spans_inside(spans, count):
+            raise IndexError("outline span outside the columns")
+        edges, _, dropped = _outline_edges(float64_data(xs), float64_data(ys), spans)
+    if edges is None or dropped:
+        return False
+    if WINDINGS_MIX is None:
+        from core_pdf_cythonized._coverage import windings_mix  # noqa: PLC0415
+
+        WINDINGS_MIX = windings_mix
+    return not WINDINGS_MIX(edges)
+
+
 def glyph_outline_edges(
     xs,
     ys,
@@ -138,17 +185,22 @@ def glyph_outline_edges(
     e: cython.double,
     f: cython.double,
     spans,
+    simple: cython.bint = False,
 ):
     """A glyph outline's points under the matrix (a, b, c, d, e, f): its x and y columns,
     each point x * a + y * c + e, x * b + y * d + f, rounded after each operation as numpy's
     (xs * a + ys * c) + e rounds; its edges, the spans it kept and whether it dropped one,
-    as outline_edges gives them; and its bounds, None without edges."""
+    as outline_edges gives them, made a SimpleEdges array when simple and none was dropped;
+    and its bounds, None without edges."""
+    subtype = _simple_edges() if simple else None
     if not (is_float64_vector(xs) and is_float64_vector(ys)):
-        return glyph_outline_edges_view(xs, ys, a, b, c, d, e, f, spans)
+        return glyph_outline_edges_view(xs, ys, a, b, c, d, e, f, spans, subtype)
     count: cython.Py_ssize_t = vector_length(xs)
     if vector_length(ys) != count:
         raise ValueError("columns differ in length")
-    return _glyph_outline_edges(float64_data(xs), float64_data(ys), count, a, b, c, d, e, f, spans)
+    return _glyph_outline_edges(
+        float64_data(xs), float64_data(ys), count, a, b, c, d, e, f, spans, subtype
+    )
 
 
 def glyph_outline_edges_view(
@@ -161,12 +213,13 @@ def glyph_outline_edges_view(
     e: cython.double,
     f: cython.double,
     spans,
+    subtype=None,
 ):
     count: cython.Py_ssize_t = xs.shape[0]
     if ys.shape[0] != count:
         raise ValueError("columns differ in length")
     return _glyph_outline_edges(
-        cython.address(xs[0]), cython.address(ys[0]), count, a, b, c, d, e, f, spans
+        cython.address(xs[0]), cython.address(ys[0]), count, a, b, c, d, e, f, spans, subtype
     )
 
 
@@ -182,6 +235,7 @@ def _glyph_outline_edges(
     e: cython.double,
     f: cython.double,
     spans,
+    subtype,
 ) -> tuple:
     i: cython.Py_ssize_t
     x: cython.double
@@ -198,7 +252,7 @@ def _glyph_outline_edges(
         ys[i] = (x * b + y * d) + f
     if not _spans_inside(spans, count):
         raise IndexError("outline span outside the columns")
-    edges, kept, dropped = _outline_edges(xs, ys, spans)
+    edges, kept, dropped = _outline_edges(xs, ys, spans, subtype)
     if edges is None:
         return column_x, column_y, None, kept, dropped, None
     low_x = cython.declare(cython.double)

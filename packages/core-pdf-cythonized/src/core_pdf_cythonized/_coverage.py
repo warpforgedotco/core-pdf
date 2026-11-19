@@ -310,7 +310,12 @@ class SimpleEdges(numpy.ndarray):
 # The dense sums take a window's edges only when every y is within this, as a cast of a
 # row from a larger one would not be defined.
 DENSE_REACH = cython.declare(cython.double, 1e15)
-OUTLINE_ROWS = cython.declare(cython.Py_ssize_t, 64)
+# Past this many items, the sorts go to qsort rather than insertion.
+SORT_SMALL = cython.declare(cython.Py_ssize_t, 16)
+# _mark_rows stops looking past this much work per edge, leaving the rest of the window's
+# rows to the sums, as a path of tens of thousands of edges crossing each row would cost.
+SWEEP_WORK_PER_EDGE = cython.declare(cython.Py_ssize_t, 64)
+OUTLINE_ROWS = cython.declare(cython.Py_ssize_t, 1)
 # How far outside two edges a worked-out crossing may fall and still be taken at their end.
 TOUCH = cython.declare(cython.double, 1e-7)
 
@@ -459,6 +464,169 @@ def _accumulate_edges(
 
 
 @cython.cfunc
+@cython.exceptval(-1, check=False)
+def _accumulate_device(
+    e: cython.p_const_double,
+    count: cython.Py_ssize_t,
+    width: cython.int,
+    height: cython.int,
+    acc: cython.p_double,
+) -> cython.int:
+    """The dense sums of the device edges' pieces over a width x height window, in acc,
+    as _accumulate_edges gives them from the edge table: for an outline known simple, which
+    needs no table."""
+    stride: cython.Py_ssize_t = width + 2
+
+    # Each piece adds its left weight to its cell now and its right weight to the
+    # next cell after every left weight is in, the order the sums were defined in.
+    # The right weights wait in stack buffers, moved to the heap past STACK_PIECES.
+    idx_stack = cython.declare(cython.Py_ssize_t[STACK_PIECES])
+    right_stack = cython.declare(cython.double[STACK_PIECES])
+    capacity: cython.Py_ssize_t = STACK_PIECES
+    pieces: cython.Py_ssize_t = 0
+    idx: cython.p_Py_ssize_t = idx_stack
+    right_w: cython.p_double = right_stack
+
+    i: cython.Py_ssize_t
+    r: cython.Py_ssize_t
+    first_row: cython.Py_ssize_t
+    last_row: cython.Py_ssize_t
+    column: cython.Py_ssize_t
+    column_count: cython.Py_ssize_t
+    column_offset: cython.Py_ssize_t
+    sx: cython.double
+    sy: cython.double
+    ex: cython.double
+    ey: cython.double
+    direction: cython.double
+    top_x: cython.double
+    top_y: cython.double
+    bottom_x: cython.double
+    bottom_y: cython.double
+    slope: cython.double
+    row_top: cython.double
+    row_bottom: cython.double
+    row_height: cython.double
+    entry_x: cython.double
+    exit_x: cython.double
+    left_x: cython.double
+    right_x: cython.double
+    walk_left: cython.double
+    walk_right: cython.double
+    floor_left: cython.double
+    column_start: cython.double
+    fragment_left: cython.double
+    fragment_right: cython.double
+    piece_span: cython.double
+    share: cython.double
+    fragment_height: cython.double
+    midpoint: cython.double
+    offset_in_cell: cython.double
+    signed_height: cython.double
+    vertical: cython.bint
+    new_idx: cython.p_Py_ssize_t
+    new_right: cython.p_double
+
+    try:
+        for i in range(count):
+            sx = e[i * 4]
+            sy = e[i * 4 + 1]
+            ex = e[i * 4 + 2]
+            ey = e[i * 4 + 3]
+            if sy == ey:
+                continue
+            if ey > sy:
+                direction = 1.0
+                top_x = sx
+                top_y = sy
+                bottom_x = ex
+                bottom_y = ey
+            else:
+                direction = -1.0
+                top_x = ex
+                top_y = ey
+                bottom_x = sx
+                bottom_y = sy
+            slope = (bottom_x - top_x) / (bottom_y - top_y)
+
+            first_row = cython.cast(cython.Py_ssize_t, py_max(floor(top_y), 0.0))
+            last_row = cython.cast(
+                cython.Py_ssize_t, py_min(ceil(bottom_y), cython.cast(cython.double, height))
+            )
+
+            for r in range(first_row, last_row):
+                row_top = py_max(cython.cast(cython.double, r), top_y)
+                row_bottom = py_min(r + 1.0, bottom_y)
+                row_height = row_bottom - row_top
+                if row_height <= 0.0:
+                    continue
+                entry_x = top_x + (row_top - top_y) * slope
+                exit_x = top_x + (row_bottom - top_y) * slope
+                left_x = py_min(exit_x, entry_x)
+                right_x = py_max(exit_x, entry_x)
+                walk_left = py_min(width + 1.0, py_max(-1.0, left_x))
+                walk_right = py_min(width + 1.0, py_max(-1.0, right_x))
+                floor_left = floor(walk_left)
+                column_count = cython.cast(cython.Py_ssize_t, floor(walk_right) - floor_left + 1.0)
+                piece_span = right_x - left_x
+                vertical = piece_span <= 0.0
+
+                for column_offset in range(column_count):
+                    column_start = floor_left + column_offset
+                    fragment_left = left_x if column_offset == 0 else column_start
+                    fragment_right = (
+                        right_x if column_offset == column_count - 1 else column_start + 1.0
+                    )
+                    if not (vertical or fragment_right > fragment_left):
+                        continue
+                    share = 1.0 if vertical else (fragment_right - fragment_left) / piece_span
+                    fragment_height = row_height * share
+                    midpoint = (fragment_left + fragment_right) * 0.5
+                    column = cython.cast(
+                        cython.Py_ssize_t,
+                        py_min(cython.cast(cython.double, width), py_max(0.0, floor(midpoint))),
+                    )
+                    offset_in_cell = py_min(1.0, py_max(0.0, midpoint - column))
+                    signed_height = direction * fragment_height
+
+                    if pieces == capacity:
+                        new_idx = cython.cast(
+                            cython.p_Py_ssize_t,
+                            PyMem_Malloc(2 * capacity * cython.sizeof(cython.Py_ssize_t)),
+                        )
+                        new_right = cython.cast(
+                            cython.p_double,
+                            PyMem_Malloc(2 * capacity * cython.sizeof(cython.double)),
+                        )
+                        if new_idx == cython.NULL or new_right == cython.NULL:
+                            PyMem_Free(new_idx)
+                            PyMem_Free(new_right)
+                            raise MemoryError
+                        memcpy(new_idx, idx, capacity * cython.sizeof(cython.Py_ssize_t))
+                        memcpy(new_right, right_w, capacity * cython.sizeof(cython.double))
+                        if idx != idx_stack:
+                            PyMem_Free(idx)
+                            PyMem_Free(right_w)
+                        idx = new_idx
+                        right_w = new_right
+                        capacity *= 2
+                    column = r * stride + column
+                    acc[column] += signed_height * (1.0 - offset_in_cell)
+                    idx[pieces] = column
+                    right_w[pieces] = signed_height * offset_in_cell
+                    pieces += 1
+
+        with cython.nogil:
+            for i in range(pieces):
+                acc[idx[i] + 1] += right_w[i]
+    finally:
+        if idx != idx_stack:
+            PyMem_Free(idx)
+            PyMem_Free(right_w)
+    return 0
+
+
+@cython.cfunc
 @cython.exceptval(check=False)
 def _rows_clear(rows: cython.pointer[Rows]) -> cython.void:
     """rows with no blocks, so _rows_free can run whatever _rows_begin reached."""
@@ -496,22 +664,22 @@ def _rows_free(rows: cython.pointer[Rows]) -> cython.void:
         SPARE_BLOCK_BYTES = rows.block_bytes
     else:
         PyMem_Free(rows.block)
-    if SPARE_YS == cython.NULL:
+    if SPARE_YS == cython.NULL and rows.ys_capacity * 8 <= SPARE_LIMIT:
         SPARE_YS = rows.ys
         SPARE_YS_CAPACITY = rows.ys_capacity
     else:
         PyMem_Free(rows.ys)
-    if SPARE_ENTRIES == cython.NULL:
+    if SPARE_ENTRIES == cython.NULL and rows.entry_capacity * cython.sizeof(Entry) <= SPARE_LIMIT:
         SPARE_ENTRIES = rows.entries
         SPARE_ENTRY_CAPACITY = rows.entry_capacity
     else:
         PyMem_Free(rows.entries)
-    if SPARE_RUNS == cython.NULL:
+    if SPARE_RUNS == cython.NULL and rows.run_capacity * cython.sizeof(Run) <= SPARE_LIMIT:
         SPARE_RUNS = rows.runs
         SPARE_RUN_CAPACITY = rows.run_capacity
     else:
         PyMem_Free(rows.runs)
-    if SPARE_ACC == cython.NULL:
+    if SPARE_ACC == cython.NULL and rows.acc_cells * 8 <= SPARE_LIMIT:
         SPARE_ACC = rows.acc
         SPARE_ACC_CELLS = rows.acc_cells
     else:
@@ -824,12 +992,33 @@ def _sort_doubles(values: cython.p_double, count: cython.Py_ssize_t) -> cython.v
 
 
 @cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def _compare_spans(
+    left: cython.pointer[cython.const[cython.void]],
+    right: cython.pointer[cython.const[cython.void]],
+) -> cython.int:
+    """By xa, then xb, then index: the order _sort_spans gives."""
+    a: cython.pointer[cython.const[Span]] = cython.cast(cython.pointer[cython.const[Span]], left)
+    b: cython.pointer[cython.const[Span]] = cython.cast(cython.pointer[cython.const[Span]], right)
+    if a.xa != b.xa:
+        return -1 if a.xa < b.xa else 1
+    if a.xb != b.xb:
+        return -1 if a.xb < b.xb else 1
+    return (a.index > b.index) - (a.index < b.index)
+
+
+@cython.cfunc
 @cython.exceptval(check=False)
 def _sort_spans(spans: cython.pointer[Span], count: cython.Py_ssize_t) -> cython.void:
-    """By xa, then xb, then index: stable, and the same on every platform."""
+    """By xa, then xb, then index: a total order, so the same on every platform; qsort past
+    SORT_SMALL spans."""
     a: cython.Py_ssize_t
     k: cython.Py_ssize_t
     span: Span
+    if count > SORT_SMALL:
+        qsort(spans, count, cython.sizeof(Span), _compare_spans)
+        return
     for a in range(1, count):
         span = spans[a]
         k = a
@@ -957,12 +1146,17 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
     # The chains in order of their top: they join the band list as the sweep reaches them,
     # and leave it at their bottom; the list keeps the last band's order.
     by_top: cython.p_Py_ssize_t = rows.order
+    spans: cython.pointer[Span] = rows.spans
     for i in range(count):
-        j = i
-        while j > 0 and chains[by_top[j - 1]].top > chains[i].top:
-            by_top[j] = by_top[j - 1]
-            j -= 1
-        by_top[j] = i
+        spans[i].xa = chains[i].top
+        spans[i].xb = 0.0
+        spans[i].index = i
+    _sort_spans(spans, count)
+    for i in range(count):
+        by_top[i] = spans[i].index
+    work: cython.Py_ssize_t = 0
+    budget: cython.Py_ssize_t = SWEEP_WORK_PER_EDGE * rows.count + 4096
+    added: cython.Py_ssize_t
     next_top: cython.Py_ssize_t = 0
     m = 0
     for e in range(event_count - 1):
@@ -974,13 +1168,18 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
                 band[k] = band[i]
                 k += 1
         m = k
+        added = 0
         while next_top < count and chains[by_top[next_top]].top <= events[e]:
             if chains[by_top[next_top]].bottom > events[e]:
                 band[m] = by_top[next_top]
                 m += 1
+                added += 1
             next_top += 1
         if m == 0 or events[e + 1] <= 0.0 or events[e] >= height:
             continue
+        work += m
+        if work > budget:
+            break
         # Only the band's part over the window matters.
         ya = py_max(events[e], 0.0)
         yb = py_min(events[e + 1], cython.cast(cython.double, height))
@@ -988,7 +1187,16 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
             chain = chains + band[i]
             chain.xa = _chain_x(rows, chain, cython.address(chain.cursor), ya)
             chain.xb = _chain_x(rows, chain, cython.address(chain.bottom_cursor), yb)
-        # The band's chains in order of x at its top, then at its bottom, then of index.
+        # The band's chains in order of x at its top, then at its bottom, then of index: the
+        # last band's order with the new chains slotted in, or a fresh sort for many new ones.
+        if added > SORT_SMALL:
+            for i in range(m):
+                spans[i].xa = chains[band[i]].xa
+                spans[i].xb = chains[band[i]].xb
+                spans[i].index = band[i]
+            qsort(spans, m, cython.sizeof(Span), _compare_spans)
+            for i in range(m):
+                band[i] = spans[i].index
         for i in range(1, m):
             k = band[i]
             j = i
@@ -1036,6 +1244,7 @@ def _mark_rows(rows: cython.pointer[Rows]) -> cython.void:
         crossed = False
         while y < yb and not crossed:
             last_x = 0.0
+            work += m
             for i in range(m):
                 x = _chain_x(rows, chains + band[i], cython.address(chains[band[i]].cursor), y)
                 if i and x < last_x:
@@ -1315,19 +1524,28 @@ def _exact_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int:
                 stretch.xa = _stretch_middle(rows, stretch, middle)
                 order[m] = a
                 m += 1
-        for i in range(1, m):
-            k = order[i]
-            j = i
-            while j > 0 and (
-                stretches[order[j - 1]].xa > stretches[k].xa
-                or (
-                    stretches[order[j - 1]].xa == stretches[k].xa
-                    and stretches[order[j - 1]].index > stretches[k].index
-                )
-            ):
-                order[j] = order[j - 1]
-                j -= 1
-            order[j] = k
+        if m > SORT_SMALL:
+            for i in range(m):
+                spans[i].xa = stretches[order[i]].xa
+                spans[i].xb = cython.cast(cython.double, stretches[order[i]].index)
+                spans[i].index = order[i]
+            qsort(spans, m, cython.sizeof(Span), _compare_spans)
+            for i in range(m):
+                order[i] = spans[i].index
+        else:
+            for i in range(1, m):
+                k = order[i]
+                j = i
+                while j > 0 and (
+                    stretches[order[j - 1]].xa > stretches[k].xa
+                    or (
+                        stretches[order[j - 1]].xa == stretches[k].xa
+                        and stretches[order[j - 1]].index > stretches[k].index
+                    )
+                ):
+                    order[j] = order[j - 1]
+                    j -= 1
+                order[j] = k
         winding = 0
         for i in range(m):
             stretch = stretches + order[i]
@@ -1431,8 +1649,10 @@ def _rows_next(rows: cython.pointer[Rows], r: cython.Py_ssize_t, emit: cython.bi
 
 
 def windings_mix(edges) -> bool:
-    """Whether the path of these edges has regions of winding beyond 1, or of both signs,
-    or edges that cross: read over 64 rows of its height, as _mark_rows reads a window."""
+    """Whether the path of these edges has, anywhere, regions of winding beyond 1 or of both
+    signs, or edges that cross, as _mark_rows finds them over one row the outline's height:
+    its chains' order is read at every chain end and turn. False means the windings are 0
+    or one sign of 1 everywhere, which no invertible placement changes."""
     array = edge_rows(edges)
     kept: cython.Py_ssize_t = _sloped_edge_count(array)
     if kept == 0:
@@ -1453,12 +1673,19 @@ def windings_mix(edges) -> bool:
     r: cython.Py_ssize_t
     mixed: cython.bint = False
     _rows_clear(cython.address(rows))
+    positive: cython.bint = False
+    negative: cython.bint = False
     try:
         _rows_begin(cython.address(rows), device, kept, 1, OUTLINE_ROWS, cython.NULL, 0, 2)
+        # One sign over the whole outline, not only within a row: placed rotated, regions
+        # in different rows here may share a pixel.
         for r in range(OUTLINE_ROWS):
             if rows.mixed[r]:
                 mixed = True
                 break
+            positive = positive or rows.positive[r] != 0
+            negative = negative or rows.negative[r] != 0
+        mixed = mixed or (positive and negative)
     finally:
         _rows_free(cython.address(rows))
         PyMem_Free(device)
@@ -1763,48 +1990,86 @@ def _coverage_fill(
     coverage: cython.double
     raw: cython.uchar
     shape: cython.uchar
-    _rows_clear(cython.address(engine))
+    channel: cython.Py_ssize_t = pixels.channel
+    pixel: cython.p_uchar
+    cell: cython.p_float
+    simple: cython.bint = type(rows) is SimpleEdges
+    acc: cython.p_double = cython.NULL
+    i: cython.Py_ssize_t
+    if simple and (width + 2) * height <= DENSE_CELLS:
+        # An outline whose windings never mix needs no edge table: the dense sums, from the
+        # device edges, as main summed them, when every y is near enough to cast.
+        for i in range(kept):
+            if not (
+                -DENSE_REACH <= device[i * 4 + 1] <= DENSE_REACH
+                and -DENSE_REACH <= device[i * 4 + 3] <= DENSE_REACH
+            ):
+                simple = False
+                break
+    else:
+        simple = False
+    if not simple:
+        _rows_clear(cython.address(engine))
     try:
-        _rows_begin(
-            cython.address(engine),
-            device,
-            kept,
-            width,
-            height,
-            cells_stack,
-            STACK_CELLS,
-            SIMPLE_OUTLINE if type(rows) is SimpleEdges else 0,
-        )
+        if simple:
+            acc = _zeroed_cells((width + 2) * height, cells_stack, STACK_CELLS)
+            _accumulate_device(device, kept, width, height, acc)
+        else:
+            _rows_begin(
+                cython.address(engine),
+                device,
+                kept,
+                width,
+                height,
+                cells_stack,
+                STACK_CELLS,
+                SIMPLE_OUTLINE if type(rows) is SimpleEdges else 0,
+            )
         for r in range(height):
-            if _rows_next(cython.address(engine), r, False):
-                row_cells = engine.cells + r * (width + 2)
+            if simple or _rows_next(cython.address(engine), r, False):
+                row_cells = (acc if simple else engine.cells) + r * (width + 2)
                 running = 0.0
+                # The per-pixel loop main ran over the dense sums.
                 for c in range(width):
                     running += row_cells[c]
                     coverage = py_min(1.0, fabs(running))
                     raw = cython.cast(cython.uchar, rint(coverage * alpha))
-                    shape = cython.cast(cython.uchar, rint(coverage * 255.0)) if has_shape else 0
-                    if raw != 0 or shape != 0:
-                        _paint_coverage(
-                            pixels,
-                            alpha_plane,
-                            shape_plane,
-                            r,
-                            c,
-                            raw,
-                            shape,
-                            cap,
-                            opaque_from,
-                            red,
-                            green,
-                            blue,
-                            opaque_red,
-                            opaque_green,
-                            opaque_blue,
-                            has_alpha,
-                            has_shape,
-                            shape_scale,
+                    if raw != 0:
+                        pixel = pixels.data + r * pixels.row + c * pixels.column
+                        if raw >= opaque_from:
+                            pixel[0] = opaque_red
+                            pixel[channel] = opaque_green
+                            pixel[2 * channel] = opaque_blue
+                            pixel[3 * channel] = 255
+                        else:
+                            blend_one(
+                                cython.address(pixel[0]),
+                                cython.address(pixel[channel]),
+                                cython.address(pixel[2 * channel]),
+                                cython.address(pixel[3 * channel]),
+                                raw,
+                                cap,
+                                red,
+                                green,
+                                blue,
+                            )
+                    if has_alpha:
+                        cell = cython.cast(
+                            cython.p_float,
+                            cython.cast(cython.p_char, alpha_plane.data)
+                            + r * alpha_plane.row
+                            + c * alpha_plane.column,
                         )
+                        cell[0] = accumulate_plane(cell[0], raw, 1.0)
+                    if has_shape:
+                        shape = cython.cast(cython.uchar, rint(coverage * 255.0))
+                        cell = cython.cast(
+                            cython.p_float,
+                            cython.cast(cython.p_char, shape_plane.data)
+                            + r * shape_plane.row
+                            + c * shape_plane.column,
+                        )
+                        cell[0] = accumulate_plane(cell[0], shape, shape_scale)
                 continue
             for k in range(engine.run_count):
                 coverage = engine.runs[k].coverage
@@ -1837,7 +2102,10 @@ def _coverage_fill(
     finally:
         if device != device_stack:
             PyMem_Free(device)
-        _rows_free(cython.address(engine))
+        if acc != cells_stack:
+            PyMem_Free(acc)
+        if not simple:
+            _rows_free(cython.address(engine))
     return 0
 
 

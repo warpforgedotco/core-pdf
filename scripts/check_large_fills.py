@@ -41,7 +41,13 @@ import numpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
-from core_pdf_cythonized import area_coverage_plane, supersampled_coverage_plane  # noqa: E402
+from core_pdf.impl.fonts.glyph_geometry import outline_arrays  # noqa: E402
+from core_pdf_cythonized import (  # noqa: E402
+    area_coverage_plane,
+    fill_glyph_coverage_at,
+    glyph_outline_edges,
+    supersampled_coverage_plane,
+)
 from scripts.check_patterns import document, numbers, stream  # noqa: E402
 
 type Point = tuple[float, float]
@@ -59,6 +65,8 @@ SAMPLES = 4
 SPAN_TOLERANCE = 0.05
 # The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
 TOUCH = 1e-7
+# The kernel's SWEEP_WORK_PER_EDGE: mark_rows stops past this much work per edge.
+SWEEP_WORK_PER_EDGE = 64
 # A pixel may be off the reference by this much in a channel beyond what the 4x4 grid misses:
 # the rounding of its alpha and colour.
 SLACK = 2.0
@@ -732,6 +740,8 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
         return edge[0] + (y - edge[1]) * edge[3]
 
     events = sorted([*turns, *(y for chain in chains for y in (chain[3], chain[4]))])
+    work = 0
+    budget = SWEEP_WORK_PER_EDGE * len(table) + 4096
     for low, high in itertools.pairwise(events):
         if not high > low or high <= 0.0 or low >= height:
             continue
@@ -743,6 +753,9 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
                 band.append((chain_x(i, cursors, ya), chain_x(i, bottom_cursors, yb), i))
         if not band:
             continue
+        work += len(band)
+        if work > budget:
+            break
         band.sort()
         bad = False
         sign = 0
@@ -767,6 +780,7 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
         crossed = False
         while y < yb and not crossed:
             last_x = 0.0
+            work += len(band)
             for i, (_, _, index) in enumerate(band):
                 x = chain_x(index, cursors, y)
                 if i and x < last_x:
@@ -1102,6 +1116,77 @@ def check_area_kernel(count: int = 300) -> int:
     return failed + (exact_paths == 0)
 
 
+# Glyph outlines whose windings mix somewhere, in font units: a stem with a reversed dot just
+# above it, and a composite whose top half is flipped and meets the bottom on an edge. Placed
+# rotated, their regions share pixels, so they must not be taken as simple.
+MIXED_GLYPHS: list[tuple[str, tuple[tuple[Point, ...], ...]]] = [
+    (
+        "a stem with a reversed dot",
+        (
+            ((0.0, 0.0), (10.0, 0.0), (10.0, 30.0), (0.0, 30.0)),
+            ((0.0, 30.4), (0.0, 40.0), (10.0, 40.0), (10.0, 30.4)),
+        ),
+    ),
+    (
+        "a composite with its top half flipped",
+        (
+            ((0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)),
+            ((0.0, 20.0), (0.0, 40.0), (20.0, 40.0), (20.0, 20.0)),
+        ),
+    ),
+]
+# A plain glyph, an O: an outer contour and a reversed hole, which is simple.
+SIMPLE_GLYPH: tuple[tuple[Point, ...], ...] = (
+    ((0.0, 0.0), (20.0, 0.0), (20.0, 40.0), (0.0, 40.0)),
+    ((5.0, 5.0), (5.0, 35.0), (15.0, 35.0), (15.0, 5.0)),
+)
+
+
+def check_glyph_outlines() -> int:
+    """A glyph outline counts as simple only when its windings are 0 or one sign of 1
+    everywhere; placed rotated, a mixed one's coverage must match span_coverage."""
+    failed = 0
+    simple_arrays = outline_arrays(SIMPLE_GLYPH)
+    if simple_arrays is None or not simple_arrays.simple:
+        print("  an O is not taken as simple")
+        failed += 1
+    angle = math.radians(33.0)
+    a, b = math.cos(angle) * 1.37, math.sin(angle) * 1.37
+    transform = (a, b, -b, a, 30.3, 12.6)
+    size = 80
+    for name, contours in MIXED_GLYPHS:
+        arrays = outline_arrays(contours)
+        assert arrays is not None
+        if arrays.simple:
+            print(f"  {name} is taken as simple")
+            failed += 1
+        # Placed as rendering places glyphs: SimpleEdges when the outline counts as simple.
+        edges = glyph_outline_edges(arrays.xs, arrays.ys, *transform, arrays.spans, arrays.simple)[
+            2
+        ]
+        assert edges is not None
+        target = numpy.zeros((size, size, 4), numpy.uint8)
+        fill_glyph_coverage_at(
+            edges, 0.0, float(size), 1.0, 0, 0, size, size, (0, 0, 0, 255), target, None, None, 1.0
+        )
+        loops = [
+            [(a * x - b * y + transform[4], b * x + a * y + transform[5]) for x, y in contour]
+            for contour in contours
+        ]
+        expected = span_coverage(loops, float(size), size, size) * 255
+        bad = numpy.abs(target[..., 3] - expected) > SPAN_TOLERANCE * 255 + 1
+        if bad.any():
+            row, column = numpy.argwhere(bad)[0]
+            print(
+                f"  {name}, placed rotated: {int(bad.sum())} pixels off the measured coverage, "
+                f"the first at {column},{row}: {target[row, column, 3]} != "
+                f"{expected[row, column]:.1f}"
+            )
+            failed += int(bad.sum())
+    print(f"{len(MIXED_GLYPHS) + 1} glyph outlines: {failed} failures")
+    return failed
+
+
 def memory_page(content: bytes) -> bytes:
     """A US Letter page of content."""
     return document(
@@ -1172,7 +1257,7 @@ def check_memory() -> int:
 
 def main(argv: Sequence[str]) -> int:
     pdfs = Path(argv[argv.index("--pdfs") + 1]) if "--pdfs" in argv else None
-    failures = check_kernel() + check_area_kernel() + check_memory()
+    failures = check_kernel() + check_area_kernel() + check_glyph_outlines() + check_memory()
     references: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}
     selected = cases()
     for case in selected:

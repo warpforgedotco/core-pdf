@@ -61,6 +61,7 @@ lazy from core_pdf_cythonized._outline import (
     glyph_outline_edges,
     outline_coordinate_arrays,
     outline_edges,
+    outline_simple,
 )
 lazy from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 lazy from core_pdf_cythonized._rect import fill_rect_coverage
@@ -170,6 +171,7 @@ __all__ = (
     "object_headers_match",
     "outline_coordinate_arrays",
     "outline_edges",
+    "outline_simple",
     "path_bounds",
     "sample_opaque_pixels",
     "scan_to_unicode_cmap",

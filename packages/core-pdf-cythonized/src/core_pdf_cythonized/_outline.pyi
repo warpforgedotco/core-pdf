@@ -17,6 +17,7 @@ def glyph_outline_edges(
     e: float,
     f: float,
     spans: Any,
+    simple: bool = False,
 ) -> tuple[
     numpy.ndarray[Any, Any],
     numpy.ndarray[Any, Any],
@@ -30,3 +31,6 @@ def outline_coordinate_arrays(
 ) -> (
     tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], tuple[tuple[int, int], ...]] | None
 ): ...
+def outline_simple(
+    xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: Any
+) -> bool: ...

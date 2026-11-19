@@ -13,10 +13,16 @@ from core_pdf.impl.fonts.metrics import FontMetricsModel
 from core_pdf.impl.fonts.program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.spec.s_09_fonts.descriptor_flags import NO_DESCRIPTOR_STYLE, FontDescriptorStyle
 lazy from core_pdf.impl.fonts.raster_kernel import Contours
-lazy from core_pdf_cythonized import glyph_outline_edges, outline_coordinate_arrays, windings_mix
+lazy from core_pdf_cythonized import outline_coordinate_arrays, outline_simple
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
+
+
+# Whether an outline's windings never mix, by its point columns and spans: the same glyph
+# programs recur across fonts, pages and documents, and the check is worth keeping.
+SIMPLE_OUTLINES: dict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = {}
+SIMPLE_OUTLINE_LIMIT = 1 << 16
 
 
 class GlyphOutlineArrays:
@@ -36,8 +42,14 @@ class GlyphOutlineArrays:
         self.spans = spans
         # Whether the outline's windings are 0 or one sign of 1 everywhere, which no
         # invertible placement changes: its fills need not look for rows where they mix.
-        edges = glyph_outline_edges(xs, ys, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, spans)
-        self.simple = edges[2] is not None and not edges[4] and not windings_mix(edges[2])
+        key = (xs.tobytes(), ys.tobytes(), spans)
+        simple = SIMPLE_OUTLINES.get(key)
+        if simple is None:
+            simple = outline_simple(xs, ys, spans)
+            if len(SIMPLE_OUTLINES) >= SIMPLE_OUTLINE_LIMIT:
+                SIMPLE_OUTLINES.clear()
+            SIMPLE_OUTLINES[key] = simple
+        self.simple = simple
 
 
 def outline_arrays(
