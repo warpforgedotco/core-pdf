@@ -160,9 +160,13 @@ def outline_simple(xs, ys, spans) -> bool:
     outline_edges gives them with none dropped, and windings_mix finding none mixed."""
     global WINDINGS_MIX
     if not (is_float64_vector(xs) and is_float64_vector(ys)):
+        if len(xs) != len(ys):
+            raise ValueError("columns differ in length")
         edges, _, dropped = outline_edges(xs, ys, spans)
     else:
-        count: cython.Py_ssize_t = min(vector_length(xs), vector_length(ys))
+        count: cython.Py_ssize_t = vector_length(xs)
+        if vector_length(ys) != count:
+            raise ValueError("columns differ in length")
         if not _spans_inside(spans, count):
             raise IndexError("outline span outside the columns")
         edges, _, dropped = _outline_edges(float64_data(xs), float64_data(ys), spans)

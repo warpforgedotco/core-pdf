@@ -19,12 +19,6 @@ if TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
 
 
-# Whether an outline's windings never mix, by its point columns and spans: the same glyph
-# programs recur across fonts, pages and documents, and the check is worth keeping.
-SIMPLE_OUTLINES: dict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = {}
-SIMPLE_OUTLINE_LIMIT = 1 << 16
-
-
 class GlyphOutlineArrays:
     """A glyph outline's point columns and each contour's span in them, which
     core_pdf_cythonized.glyph_outline_edges places under a glyph's matrix."""
@@ -41,15 +35,9 @@ class GlyphOutlineArrays:
         self.ys = ys
         self.spans = spans
         # Whether the outline's windings are 0 or one sign of 1 everywhere, which no
-        # invertible placement changes: its fills need not look for rows where they mix.
-        key = (xs.tobytes(), ys.tobytes(), spans)
-        simple = SIMPLE_OUTLINES.get(key)
-        if simple is None:
-            simple = outline_simple(xs, ys, spans)
-            if len(SIMPLE_OUTLINES) >= SIMPLE_OUTLINE_LIMIT:
-                SIMPLE_OUTLINES.clear()
-            SIMPLE_OUTLINES[key] = simple
-        self.simple = simple
+        # invertible placement changes: its fills need not look for rows where they mix. The
+        # glyph cache keeps one of these per glyph of a font, so the check runs once per glyph.
+        self.simple = outline_simple(xs, ys, spans)
 
 
 def outline_arrays(

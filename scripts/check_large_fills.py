@@ -46,7 +46,9 @@ from core_pdf_cythonized import (  # noqa: E402
     area_coverage_plane,
     fill_glyph_coverage_at,
     glyph_outline_edges,
+    outline_simple,
     supersampled_coverage_plane,
+    windings_mix,
 )
 from scripts.check_patterns import document, numbers, stream  # noqa: E402
 
@@ -65,8 +67,9 @@ SAMPLES = 4
 SPAN_TOLERANCE = 0.05
 # The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
 TOUCH = 1e-7
-# The kernel's SWEEP_WORK_PER_EDGE: mark_rows stops past this much work per edge.
-SWEEP_WORK_PER_EDGE = 64
+# The kernel's CROSS_SLACK: chains closer than this, relative to x, meet rather than cross.
+CROSS_SLACK = 1e-9
+
 # A pixel may be off the reference by this much in a channel beyond what the 4x4 grid misses:
 # the rounding of its alpha and colour.
 SLACK = 2.0
@@ -661,7 +664,7 @@ def py_min(a: float, b: float) -> float:
     return b if b < a else a  # noqa: FURB136 - the kernels' py_min, NaN and all
 
 
-type Edge = tuple[float, float, float, float, float, int, int, int]
+type Edge = tuple[float, float, float, float, float, int, int, int, float]
 
 
 def edge_table(
@@ -683,18 +686,22 @@ def edge_table(
             continue
         sx, sy = (x0 - crop_x0) * scale - ix0, (crop_y1 - y0) * scale - iy0
         ex, ey = (x1 - crop_x0) * scale - ix0, (crop_y1 - y1) * scale - iy0
-        if sy == ey or not math.isfinite(sy) or not math.isfinite(ey):
+        if sy == ey or not all(math.isfinite(v) for v in (sx, sy, ex, ey)):
             continue
         if ey > sy:
             top_x, top_y, bottom_y, slope, direction = sx, sy, ey, (ex - sx) / (ey - sy), 1.0
+            bottom_x = ex
         else:
             top_x, top_y, bottom_y, slope, direction = ex, ey, sy, (sx - ex) / (sy - ey), -1.0
+            bottom_x = sx
+        if not math.isfinite(slope):
+            continue
         first = int(py_min(py_max(float(math.floor(top_y)), 0.0), float(height)))
         last_row = int(py_max(py_min(float(math.ceil(bottom_y)), float(height)), 0.0))
         if not (table and (sx, sy, direction) == last):
             chain += 1
         last = (ex, ey, direction)
-        table.append((top_x, top_y, bottom_y, slope, direction, first, last_row, chain))
+        table.append((top_x, top_y, bottom_y, slope, direction, first, last_row, chain, bottom_x))
     return table
 
 
@@ -708,21 +715,17 @@ def mark_span(flags: list[int], height: int, y0: float, y1: float) -> None:
 
 
 def mark_rows(table: list[Edge], height: int) -> list[int]:
-    """The kernel's _mark_rows: which rows to measure exactly."""
+    """The kernel's _mark_rows, without its budget: which rows to measure exactly."""
     mixed = [0] * (height + 1)
     positive = [0] * (height + 1)
     negative = [0] * (height + 1)
     chains: list[list[float]] = []  # first, last, direction, top, bottom
-    turns: list[float] = []
     for i, edge in enumerate(table):
         if chains and edge[7] == table[i - 1][7]:
             chain = chains[-1]
             chain[1] = i
             chain[3] = py_min(chain[3], edge[1])
             chain[4] = py_max(chain[4], edge[2])
-            before = table[i - 1][3]
-            if (edge[3] > 0.0 and before < 0.0) or (edge[3] < 0.0 and before > 0.0):
-                turns.append(edge[1] if edge[4] > 0.0 else edge[2])
         else:
             chains.append([i, i, 1 if edge[4] > 0.0 else -1, edge[1], edge[2]])
     for chain in chains:
@@ -731,17 +734,40 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
     cursors = [int(chain[0]) for chain in chains]
     bottom_cursors = [int(chain[0]) for chain in chains]
 
+    def edge_x(edge: Edge, y: float) -> float:
+        if y == edge[2]:
+            return edge[8]
+        if y == edge[1]:
+            return edge[0]
+        return edge[0] + (y - edge[1]) * edge[3]
+
     def chain_x(index: int, cursor: list[int], y: float) -> float:
         chain = chains[index]
         edge = table[cursor[index]]
         while edge[2] < y and cursor[index] != chain[1]:
             cursor[index] += int(chain[2])
             edge = table[cursor[index]]
-        return edge[0] + (y - edge[1]) * edge[3]
+        return edge_x(edge, y)
 
-    events = sorted([*turns, *(y for chain in chains for y in (chain[3], chain[4]))])
-    work = 0
-    budget = SWEEP_WORK_PER_EDGE * len(table) + 4096
+    def crossing(left: int, right: int, ya: float, yb: float) -> float | None:
+        li, ri = cursors[left], cursors[right]
+        y = previous = ya
+        while True:
+            el, er = table[li], table[ri]
+            xl = edge_x(el, y)
+            gap = xl - edge_x(er, y)
+            if gap > CROSS_SLACK * py_max(1.0, abs(xl)):
+                return previous
+            if not y < yb:
+                return None
+            previous = y
+            y = py_min(py_min(el[2], er[2]), yb)
+            if el[2] <= y and li != chains[left][1]:
+                li += int(chains[left][2])
+            if er[2] <= y and ri != chains[right][1]:
+                ri += int(chains[right][2])
+
+    events = sorted(y for chain in chains for y in (chain[3], chain[4]))
     for low, high in itertools.pairwise(events):
         if not high > low or high <= 0.0 or low >= height:
             continue
@@ -750,12 +776,11 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
         band = []
         for i, chain in enumerate(chains):
             if chain[3] <= low and chain[4] >= high:
-                band.append((chain_x(i, cursors, ya), chain_x(i, bottom_cursors, yb), i))
+                band.append(
+                    (chain_x(i, cursors, ya), chain_x(i, bottom_cursors, (ya + yb) * 0.5), i)
+                )
         if not band:
             continue
-        work += len(band)
-        if work > budget:
-            break
         band.sort()
         bad = False
         sign = 0
@@ -775,23 +800,13 @@ def mark_rows(table: list[Edge], height: int) -> list[int]:
             mark_span(positive, height, ya, yb)
         elif sign < 0:
             mark_span(negative, height, ya, yb)
-        previous_y = ya
-        y = float(math.floor(ya)) + 1.0
-        crossed = False
-        while y < yb and not crossed:
-            last_x = 0.0
-            work += len(band)
-            for i, (_, _, index) in enumerate(band):
-                x = chain_x(index, cursors, y)
-                if i and x < last_x:
-                    mark_span(mixed, height, previous_y, yb)
-                    crossed = True
-                    break
-                last_x = x
-            previous_y = y
-            y += 1.0
-        if not crossed and any(band[i][1] < band[i - 1][1] for i in range(1, len(band))):
-            mark_span(mixed, height, previous_y, yb)
+        earliest = yb
+        for i in range(len(band) - 1):
+            y = crossing(band[i][2], band[i + 1][2], ya, yb)
+            if y is not None and y < earliest:
+                earliest = y
+        if earliest < yb:
+            mark_span(mixed, height, earliest, yb)
     for row in range(height):
         if positive[row] and negative[row]:
             mixed[row] = 1
@@ -1135,6 +1150,15 @@ MIXED_GLYPHS: list[tuple[str, tuple[tuple[Point, ...], ...]]] = [
         ),
     ),
 ]
+MIXED_GLYPHS.append(
+    (
+        "two contours whose sides cross twice with no turn in x",
+        (
+            ((0.0, 0.0), (10.0, 5.0), (11.0, 10.0), (-20.0, 10.0), (-20.0, 0.0)),
+            ((5.0, 0.0), (40.0, 0.0), (40.0, 10.0), (16.0, 10.0), (6.0, 5.0)),
+        ),
+    )
+)
 # A plain glyph, an O: an outer contour and a reversed hole, which is simple.
 SIMPLE_GLYPH: tuple[tuple[Point, ...], ...] = (
     ((0.0, 0.0), (20.0, 0.0), (20.0, 40.0), (0.0, 40.0)),
@@ -1183,7 +1207,91 @@ def check_glyph_outlines() -> int:
                 f"{expected[row, column]:.1f}"
             )
             failed += int(bad.sum())
+    # Columns of different lengths are refused, as glyph_outline_edges refuses them.
+    try:
+        outline_simple(numpy.zeros(4), numpy.zeros(3), ((0, 3),))
+    except ValueError:
+        pass
+    else:
+        print("  outline_simple took columns of different lengths")
+        failed += 1
     print(f"{len(MIXED_GLYPHS) + 1} glyph outlines: {failed} failures")
+    return failed
+
+
+def check_engine_edges() -> int:
+    """Cases the review of the row engine raised: a tall path whose few edges once spent the
+    sweep's budget in its first band, edges whose x overflows to infinity among more than 16
+    active ones, and simple outlines filled as SimpleEdges and as plain rows, which must give
+    the same bytes."""
+    failed = 0
+    # 20 edges 3000 rows tall: a tall frame, and in its lower half two rectangles of opposite
+    # orientation sharing an edge at x = 60.4, whose seam column must be covered.
+    height, width = 3000, 120
+    loops = [
+        rectangle(2.0, 0.5, 10.0, 2999.5),
+        rectangle(110.0, 0.5, 118.0, 2999.5),
+        rectangle(30.2, 200.0, 60.4, 1200.0),
+        rectangle(60.4, 200.0, 90.7, 1200.0, reverse=True),
+        [(20.0, 10.0), (25.0, 2990.0), (24.0, 2990.0), (19.0, 10.0)],
+    ]
+    edges = loop_edges(loops)
+    if not windings_mix(edges):
+        print("  a tall path with opposite windings in its lower half is taken as simple")
+        failed += 1
+    for mode in (1, 2):
+        found = area_coverage_plane(edges, 0.0, float(height), 1.0, 0.0, 0.0, width, height, mode)
+        assert found is not None
+        seam = found[0][height - 1000, 60]
+        if abs(seam - 1.0) > 1e-9:
+            print(f"  a tall path's seam, {mode=}: {seam:.4f}, not 1.0")
+            failed += 1
+    # Edges whose x overflows after scaling, among 40 ordinary ones in the same rows: ten
+    # rectangles drawn twice, so the rows are measured exactly and their edges sorted.
+    ordinary = [rectangle(2.0 + 3 * k, 1.0, 3.5 + 3 * k, 40.0) for k in range(10)] * 2
+    wild = [[(1e308, 5.0), (1.5e308, 30.0), (-1e308, 20.0)]]
+    edges = loop_edges(ordinary + wild)
+    want = reference_area(edges, 0.0, 41.0, 4.0, 0.0, 0.0, 160, 164)
+    for mode in (1, 2):
+        first = area_coverage_plane(edges, 0.0, 41.0, 4.0, 0.0, 0.0, 160, 164, mode)
+        again = area_coverage_plane(edges, 0.0, 41.0, 4.0, 0.0, 0.0, 160, 164, mode)
+        if (
+            first is None
+            or again is None
+            or want is None
+            or not numpy.array_equal(first[0], again[0])
+            or not numpy.array_equal(first[0], want[0])
+        ):
+            print(f"  edges that overflow to infinity, {mode=}: not the reference's coverage")
+            failed += 1
+    # Simple outlines filled from the device edges (SimpleEdges) and from the edge table.
+    rng = numpy.random.default_rng(20261121)
+    for case in range(200):
+        count = int(rng.integers(5, 30))
+        # Angles spread around the centre, so the hole, scaled about it, stays inside.
+        angles = (numpy.arange(count) + rng.uniform(0, 0.8, count)) * (2 * math.pi / count)
+        radius = float(rng.uniform(2, 30))
+        cx, cy = rng.uniform(radius, 64 - radius, 2)
+        outer = [(cx + radius * math.cos(t), cy + radius * math.sin(t)) for t in angles]
+        inner = [(cx + radius * 0.4 * math.cos(t), cy + radius * 0.4 * math.sin(t)) for t in angles]
+        arrays = outline_arrays((tuple(outer), tuple(inner[::-1])))
+        assert arrays is not None
+        shift = rng.normal(0, 1, 2)
+        placed = []
+        for simple in (True, False):
+            edges = glyph_outline_edges(
+                arrays.xs, arrays.ys, 1.0, 0.0, 0.0, 1.0, *shift, arrays.spans, simple
+            )[2]
+            assert edges is not None
+            target = numpy.full((70, 70, 4), 200, numpy.uint8)
+            fill_glyph_coverage_at(
+                edges, 0.0, 70.0, 1.0, 0, 0, 70, 70, (20, 40, 60, 200), target, None, None, 1.0
+            )
+            placed.append(target)
+        if not arrays.simple or not numpy.array_equal(placed[0], placed[1]):
+            print(f"  simple outline {case}: the two paths differ (simple={arrays.simple})")
+            failed += 1
+    print(f"3 engine cases and 200 outlines on both paths: {failed} failures")
     return failed
 
 
@@ -1257,7 +1365,13 @@ def check_memory() -> int:
 
 def main(argv: Sequence[str]) -> int:
     pdfs = Path(argv[argv.index("--pdfs") + 1]) if "--pdfs" in argv else None
-    failures = check_kernel() + check_area_kernel() + check_glyph_outlines() + check_memory()
+    failures = (
+        check_kernel()
+        + check_area_kernel()
+        + check_glyph_outlines()
+        + check_engine_edges()
+        + check_memory()
+    )
     references: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}
     selected = cases()
     for case in selected:
