@@ -871,10 +871,32 @@ class MarkdownFormatter:
         return f"> [Figure: {figure.kind}]"
 
     def format_page(self, page: Page) -> str:
-        return "\n\n".join(format_elements(self, page))
+        # Neighbouring lists alternate their markers, - and *, . and ): a blank line alone
+        # would join them into one loose list.
+        rendered: list[str] = []
+        alternate = False
+        for index, element in enumerate(page.elements):
+            if isinstance(element, Block) and element.kind is BlockKind.LIST:
+                previous = page.elements[index - 1] if index else None
+                follows_list = isinstance(previous, Block) and previous.kind is BlockKind.LIST
+                alternate = follows_list and not alternate
+                rendered.append(block_to_markdown(element, alternate=alternate))
+            else:
+                rendered.append(
+                    map_page_element(
+                        element,
+                        block=self.format_block,
+                        table=self.format_table,
+                        figure=self.format_figure,
+                    )
+                )
+        return "\n\n".join(rendered)
 
     def format_document(self, document: Document) -> str:
-        return "\f".join(self.format_page(page) for page in document.pages) + "\f"
+        # A form feed on a line of its own between blank lines: CommonMark reads it as a
+        # paragraph of whitespace, so a page's first block starts a line and a list
+        # ending the page before ends there.
+        return "".join(f"{self.format_page(page)}\n\n\f\n\n" for page in document.pages)
 
 
 class HtmlFormatter:
@@ -910,31 +932,43 @@ def page_to_markdown(page: Page) -> str:
     return MARKDOWN_FORMATTER.format_page(page)
 
 
-def markdown_list_item(line: TextLine) -> tuple[str, int]:
-    """The CommonMark list marker a list line is written with, and where its text starts."""
+def markdown_list_item(line: TextLine, *, alternate: bool = False) -> tuple[str, int]:
+    """The CommonMark list marker a list line is written with, and where its text starts.
+
+    A numbered marker keeps its number, with . (or ) when alternate); a bullet glyph is -
+    (or *). A marker counts only before whitespace or the line's end, so `1.5 million` and
+    `-5 degrees` are text; a letter marker, or none, stays text after a bullet.
+    """
     prefix = list_prefix(line.text)
     marker = prefix.strip()
-    if NUMBERED_MARKER_RE.fullmatch(marker):
-        return f"{marker} ", len(prefix)
-    if marker in BULLET_MARKERS:
-        return "- ", len(prefix)
-    # A letter marker, or none, stays text after a bullet.
-    return "- ", 0
+    # The prefix takes the spaces after its marker: none there, the line must end.
+    ends = prefix.endswith((" ", "\t")) or len(prefix) == len(line.text)
+    if ends and NUMBERED_MARKER_RE.fullmatch(marker):
+        return f"{marker[:-1]}{')' if alternate else '.'} ", len(prefix)
+    bullet = "* " if alternate else "- "
+    if ends and marker in BULLET_MARKERS:
+        return bullet, len(prefix)
+    return bullet, 0
 
 
-def block_to_markdown(block: Block) -> str:
+def markdown_heading_level(block: Block) -> int:
+    """The ATX heading level: 2 when the block has none, else its level within 1 to 6."""
+    return 2 if block.level is None else min(max(block.level, 1), 6)
+
+
+def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
     if block.kind is BlockKind.LIST:
         return "\n".join(
             f"{marker}{markdown_line(line, start=start)}"
             for line in block.lines
-            for marker, start in (markdown_list_item(line),)
+            for marker, start in (markdown_list_item(line, alternate=alternate),)
         )
     # A line of spaces only would end the paragraph.
     lines = [text for line in block.lines if (text := markdown_line(line))]
     if block.kind is BlockKind.HEADING:
         # An ATX heading is one line, and a run of # ending it would close it.
         text = HEADING_CLOSING_RE.sub(r"\1\\\2", " ".join(lines))
-        return f"{'#' * min(max(block.level or 2, 1), 6)} {text}"
+        return f"{'#' * markdown_heading_level(block)} {text}"
     return "\n".join(lines)
 
 

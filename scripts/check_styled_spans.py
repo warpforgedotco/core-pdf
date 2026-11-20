@@ -15,9 +15,11 @@ caught there; a `****` of layers that cross, bold over `a b` and italic over `b 
 HTML parser and a CommonMark parser (markdown-it-py, with strikethrough) must read back
 the text and the markup each non-space character's span carries, a line's Markdown as one
 paragraph on its own and after another line, and a block's as the heading, paragraph or
-list it is, so text that reads as syntax must be escaped. Seeded random lines and blocks,
-of characters Markdown reads as syntax, leading and trailing spaces and tabs, and random
-markup, go through the same checks. A missing corpus file fails the check.
+list it is, so text that reads as syntax must be escaped; a page's lists, each block's
+apart from its neighbours', must read as tight lists of one item per line, and a page's
+first block must start a line. Seeded random lines and blocks, of characters Markdown
+reads as syntax, leading and trailing spaces and tabs, and random markup, go through the
+same checks. A missing corpus file fails the check.
 
 uv run --all-packages --group test python scripts/check_styled_spans.py [--all]
 
@@ -43,12 +45,14 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 from core_pdf import PdfDocument
-from core_pdf.impl.output.model import Block, BlockKind, TextLine, TextSpan
+from core_pdf.impl.output.model import Block, BlockKind, Document, Page, TextLine, TextSpan
 from core_pdf.impl.output.serialize import (
     block_to_markdown,
+    document_to_markdown,
     html_line,
     markdown_line,
     markdown_list_item,
+    page_to_markdown,
 )
 
 S = TextSpan
@@ -79,8 +83,8 @@ FULL_CORPUS = (
     "tests/upstream/pdfplumber/**/*.pdf",
     "tests/upstream/pypdf/**/*.pdf",
 )
-# (name, spans, Markdown, HTML or None to leave it unchecked)
-CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str | None], ...] = (
+# (name, spans, Markdown, HTML)
+CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
     (
         "bold runs",
         (S("U", bold=True), S("N", bold=True), S("I", bold=True)),
@@ -316,7 +320,12 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str | None], ...] = (
     # break: Markdown drops a line's end spaces and tabs.
     ("indented code", (S("    # x"),), "\\# x", "    # x"),
     ("tab before a marker", (S("\t- x  "),), "\\- x", "\t- x  "),
-    ("tab after spaces", (S("  \t"), S("1. x", bold=True)), "**1. x**", None),
+    (
+        "tab after spaces",
+        (S("  \t"), S("1. x", bold=True)),
+        "**1. x**",
+        "  \t<strong>1. x</strong>",
+    ),
     ("rule at the line start", (S("---"),), "\\---", "---"),
     ("number not starting a list", (S("1.5 x"),), "1.5 x", "1.5 x"),
     ("marker after markup", (S("-", bold=True), S(" x")), "**-** x", "<strong>-</strong> x"),
@@ -502,15 +511,15 @@ def structure_failure(line: TextLine, start: int = 0) -> str | None:
     return None
 
 
-def block_failure(block: Block) -> str | None:
-    """How the block CommonMark reads in a block's Markdown differs from the block."""
+def block_failure(block: Block, level: int | None = None) -> str | None:
+    """How the block CommonMark reads in a block's Markdown differs from the block, a
+    heading's level checked where given."""
     markdown = block_to_markdown(block)
     tokens = MARKDOWN.parse(markdown)
     types = [token.type for token in tokens]
     starts = [0] * len(block.lines)
     if block.kind is BlockKind.HEADING:
-        tag = f"h{min(max(block.level or 2, 1), 6)}"
-        shape = types == HEADING and tokens[0].tag == tag
+        shape = types == HEADING and (level is None or tokens[0].tag == f"h{level}")
     elif block.kind is BlockKind.LIST:
         shape = LIST_TOKENS.issuperset(types) and types.count("list_item_open") == len(block.lines)
         starts = [markdown_list_item(line)[1] for line in block.lines]
@@ -534,57 +543,134 @@ def block_failure(block: Block) -> str | None:
     return None
 
 
-def block_of(kind: BlockKind, *lines: TextLine, level: int | None = None) -> Block:
-    return Block(0, kind, lines=lines, level=level)
+def block_of(kind: BlockKind, *lines: TextLine, level: int | None = None, order: int = 0) -> Block:
+    return Block(order, kind, lines=lines, level=level)
+
+
+def lists_failure(markdown: str, items: int, lists: int | None = None) -> str | None:
+    """How the lists CommonMark reads in a page's or document's Markdown differ from its
+    list blocks: every list tight, one item per list line, and as many lists where given."""
+    tokens = MARKDOWN.parse(markdown)
+    depth = 0
+    for token in tokens:
+        if token.type in {"bullet_list_open", "ordered_list_open"}:
+            depth += 1
+        elif token.type in {"bullet_list_close", "ordered_list_close"}:
+            depth -= 1
+        elif token.type == "paragraph_open" and depth and not token.hidden:
+            return f"Markdown reads a loose list: {markdown!r}"
+    read = sum(token.type == "list_item_open" for token in tokens)
+    if read != items:
+        return f"Markdown reads {read} list items, not {items}: {markdown!r}"
+    opened = sum(token.type in {"bullet_list_open", "ordered_list_open"} for token in tokens)
+    if lists is not None and opened != lists:
+        return f"Markdown reads {opened} lists, not {lists}: {markdown!r}"
+    return None
+
+
+def list_lines(page: Page) -> int:
+    return sum(
+        len(element.lines)
+        for element in page.elements
+        if isinstance(element, Block) and element.kind is BlockKind.LIST
+    )
+
+
+def check_pages() -> list[str]:
+    """Neighbouring list blocks stay apart, and a page's first block starts a line."""
+    bullets = (
+        block_of(BlockKind.LIST, plain("• a"), plain("• b"), order=0),
+        block_of(BlockKind.LIST, plain("• c"), order=1),
+        block_of(BlockKind.LIST, plain("1. d"), plain("2) e"), order=2),
+        block_of(BlockKind.LIST, plain("3. f"), order=3),
+    )
+    page = Page(1, blocks=bullets)
+    failures: list[str] = []
+    expected = "- a\n- b\n\n* c\n\n1. d\n2. e\n\n3) f"
+    if (got := page_to_markdown(page)) != expected:
+        failures.append(f"neighbouring lists: Markdown {got!r}, expected {expected!r}")
+    if (failure := lists_failure(page_to_markdown(page), 6, lists=4)) is not None:
+        failures.append(f"neighbouring lists: {failure}")
+    second = Page(
+        2,
+        blocks=(
+            block_of(BlockKind.HEADING, plain("Next"), level=2, order=0),
+            block_of(BlockKind.LIST, plain("- g"), order=1),
+        ),
+    )
+    document = Document(pages=(Page(1, blocks=bullets[:1]), second, Page(3, blocks=bullets[:1])))
+    markdown = document_to_markdown(document)
+    if (failure := lists_failure(markdown, 5, lists=3)) is not None:
+        failures.append(f"page joins: {failure}")
+    headings = [token.tag for token in MARKDOWN.parse(markdown) if token.type == "heading_open"]
+    if headings != ["h2"]:
+        failures.append(f"page joins: Markdown reads headings {headings}: {markdown!r}")
+    return failures
 
 
 def plain(text: str) -> TextLine:
     return TextLine(text)
 
 
-# (name, block, Markdown)
-BLOCK_CASES: tuple[tuple[str, Block, str], ...] = (
+# (name, block, Markdown, heading level CommonMark must read or None)
+BLOCK_CASES: tuple[tuple[str, Block, str, int | None], ...] = (
     (
         "heading ending in a # run",
         block_of(BlockKind.HEADING, plain("Item #"), level=2),
         "## Item \\#",
+        2,
     ),
-    ("heading of a # only", block_of(BlockKind.HEADING, plain("#"), level=1), "# \\#"),
+    ("heading of a # only", block_of(BlockKind.HEADING, plain("#"), level=1), "# \\#", 1),
     (
         "heading of two lines",
         block_of(BlockKind.HEADING, plain("Annual  "), plain("  Report"), level=3),
         "### Annual Report",
+        3,
     ),
-    ("heading past level 6", block_of(BlockKind.HEADING, plain("x"), level=9), "###### x"),
+    ("heading past level 6", block_of(BlockKind.HEADING, plain("x"), level=9), "###### x", 6),
+    ("heading of level 0", block_of(BlockKind.HEADING, plain("x"), level=0), "# x", 1),
+    ("heading of no level", block_of(BlockKind.HEADING, plain("x")), "## x", 2),
     (
         "paragraph lines with end spaces",
         block_of(BlockKind.PARAGRAPH, plain("one  "), plain("    two"), plain("   "), plain("3.")),
         "one\ntwo\n3\\.",
+        None,
     ),
     (
         "setext underline",
         block_of(BlockKind.PARAGRAPH, plain("Title"), plain("====="), plain("---")),
         "Title\n\\=====\n\\---",
+        None,
     ),
     (
         "bullet glyphs",
         block_of(BlockKind.LIST, plain("• one"), plain("▪ two"), plain("◦ three"), plain("- four")),
         "- one\n- two\n- three\n- four",
+        None,
     ),
     (
         "letter markers",
         block_of(BlockKind.LIST, plain("a) one"), plain("b. two")),
         "- a) one\n- b. two",
+        None,
     ),
     (
         "numbered markers",
         block_of(BlockKind.LIST, plain("1. one"), plain("2) two"), plain("10. # ten")),
-        "1. one\n2) two\n10. \\# ten",
+        "1. one\n2. two\n10. \\# ten",
+        None,
+    ),
+    (
+        "markers without a space after them",
+        block_of(BlockKind.LIST, plain("1.5 million"), plain("-5 degrees"), plain("•")),
+        "- 1.5 million\n- \\-5 degrees\n- ",
+        None,
     ),
     (
         "unmarked list line",
         block_of(BlockKind.LIST, plain("    plain *item*")),
         "- plain \\*item\\*",
+        None,
     ),
 )
 FUZZ_PIECES = (
@@ -633,7 +719,7 @@ def check_cases() -> list[str]:
         line = styled_line(spans)
         if (got := markdown_line(line)) != markdown:
             failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
-        if html is not None and (got := html_line(line)) != html:
+        if (got := html_line(line)) != html:
             failures.append(f"{name}: HTML {got!r}, expected {html!r}")
         if (failure := structure_failure(line)) is not None:
             failures.append(f"{name}: {failure}")
@@ -643,11 +729,12 @@ def check_cases() -> list[str]:
         failures.append(f"list item: Markdown {got!r}, expected '**AB**'")
     if (failure := structure_failure(item, start=3)) is not None:
         failures.append(f"list item: {failure}")
-    for name, block, markdown in BLOCK_CASES:
+    for name, block, markdown, level in BLOCK_CASES:
         if (got := block_to_markdown(block)) != markdown:
             failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
-        if (failure := block_failure(block)) is not None:
+        if (failure := block_failure(block, level)) is not None:
             failures.append(f"{name}: {failure}")
+    failures += check_pages()
     return failures
 
 
@@ -678,6 +765,8 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
         except Exception:  # noqa: BLE001 - a PDF core cannot open has no lines to check
             continue
         for page in pages:
+            if (failure := lists_failure(page_to_markdown(page), list_lines(page))) is not None:
+                failures.append(f"{Path(path).name} page {page.page_number}: {failure}")
             for element in page.elements:
                 if not isinstance(element, Block):
                     continue
