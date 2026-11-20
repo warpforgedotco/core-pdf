@@ -584,6 +584,19 @@ def paint_time_cases() -> list[Case]:
             page_resources=indexed,
         ),
         group_case(
+            "an NChannel DeviceN whose Process is DeviceRGB, in an ICCBased RGB group",
+            b"/I true /CS %s" % LINEAR_RGB,
+            (b"/N cs %s sc" % numbers(FIRST_RGB), b"/N cs %s sc" % numbers(SECOND_RGB)),
+            (srgb(FIRST_RGB), srgb(SECOND_RGB)),
+            # The alternate paints black: the colour comes through the process space.
+            resources=b"/ColorSpace << /N [/DeviceN [/Red /Green /Blue] /DeviceGray 10 0 R "
+            b"<< /Subtype /NChannel /Process << /ColorSpace /DeviceRGB "
+            b"/Components [/Red /Green /Blue] >> >>] >>",
+            extra=(
+                stream(b"/FunctionType 4 /Domain [0 1 0 1 0 1] /Range [0 1]", b"{ pop pop pop 0 }"),
+            ),
+        ),
+        group_case(
             "an uncoloured pattern over DeviceRGB set outside an ICCBased RGB group",
             b"/I true /CS %s" % LINEAR_RGB,
             (b"", b""),

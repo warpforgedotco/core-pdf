@@ -241,26 +241,31 @@ def ancestor_spaces(
 def remap_parsed_space(space: ColorSpace, spaces: DefaultSpaces, depth: int = 0) -> ColorSpace:
     """A parsed colour space with each device space it selects replaced by spaces' space
     for it, as remap_color_space does for a value from the PDF: the space itself, the base
-    of an Indexed space, the underlying space of a Pattern space and the alternate of a
-    Separation or DeviceN space. space itself when nothing changes."""
+    of an Indexed space, the underlying space of a Pattern space, the alternate of a
+    Separation or DeviceN space, and the process colour space of an NChannel DeviceN
+    space, which its process components convert through. space itself when nothing
+    changes."""
     remapped = spaces.spaces.get(space.kind)
     if remapped is not None:
         return remapped
     kind = space.kind
-    if kind in {"Indexed", "Pattern"}:
-        inner = space.base
-    elif kind in {"Separation", "DeviceN"}:
-        inner = space.alternate
-    else:
-        return space
-    if inner is None or depth >= 8:
-        return space
-    changed = remap_parsed_space(inner, spaces, depth + 1)
-    if changed is inner:
+    if depth >= 8 or kind not in {"Indexed", "Pattern", "Separation", "DeviceN"}:
         return space
     if kind in {"Indexed", "Pattern"}:
-        return replace(space, base=changed)
-    return replace(space, alternate=changed)
+        base = space.base
+        changed = base if base is None else remap_parsed_space(base, spaces, depth + 1)
+        return space if changed is base else replace(space, base=changed)
+    alternate = space.alternate
+    changed = alternate if alternate is None else remap_parsed_space(alternate, spaces, depth + 1)
+    attributes = space.devicen_attributes
+    process = attributes.process if attributes is not None else None
+    if attributes is not None and process is not None:
+        process_space = remap_parsed_space(process.color_space, spaces, depth + 1)
+        if process_space is not process.color_space:
+            attributes = replace(attributes, process=replace(process, color_space=process_space))
+    if changed is alternate and attributes is space.devicen_attributes:
+        return space
+    return replace(space, alternate=changed, devicen_attributes=attributes)
 
 
 def with_ancestor_spaces(

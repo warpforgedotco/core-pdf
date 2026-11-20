@@ -91,6 +91,10 @@ def parse_error_from(error: Exception) -> PdfParseError:
     return failure
 
 
+# The most group colour spaces and default spaces over ancestor spaces kept (11.7.2).
+ANCESTOR_CACHE_LIMIT = 4096
+
+
 class ContentInterpreter:
     stream_executor_type: ClassVar[type[ContentStreamExecutor]] = ContentStreamExecutor
 
@@ -422,6 +426,8 @@ class ContentInterpreter:
                 entry = cached[2]
             else:
                 entry = self.group_color_entry(group_cs, defaults)
+                if len(self.group_entries) >= ANCESTOR_CACHE_LIMIT:
+                    self.group_entries.clear()
                 self.group_entries[key] = (group, defaults, entry)
             if entry is not None:
                 group_color_space, group_color_value = entry
@@ -515,6 +521,8 @@ class ContentInterpreter:
         if cached is not None and cached[0] is ancestors and cached[1] is defaults:
             return cached[2]
         merged = with_ancestor_spaces(defaults, ancestors)
+        if len(self.ancestor_defaults) >= ANCESTOR_CACHE_LIMIT:
+            self.ancestor_defaults.clear()
         self.ancestor_defaults[key] = (ancestors, defaults, merged)
         return merged
 
@@ -1059,7 +1067,9 @@ class ContentInterpreter:
             remapped = self.resolve_remapped_color_space(raw, defaults)
             if remapped is not None:
                 return remapped
-        cache = self.color_space_cache if type(raw) is PdfReference else None
+        # A reference, or an array the resource dictionary holds directly, parses once, so
+        # the colour space keeps its id and what is cached by it stays cached.
+        cache = self.color_space_cache if type(raw) in {PdfReference, list, tuple} else None
         if cache is not None:
             cached = cache.get(id(raw))
             if cached is not None and cached[0] is raw:

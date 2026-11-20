@@ -709,7 +709,7 @@ class TextState(RecoveringTextState):
         key = (id(enclosing), id(space))
         cached = memo.get(key)
         if cached is None or cached[0] is not enclosing or cached[1] is not space:
-            cached = memo[key] = (enclosing, space, ancestor_spaces(enclosing, space, value))
+            cached = memo.put(key, (enclosing, space, ancestor_spaces(enclosing, space, value)))
         return cached[2]
 
     def paint_space(self, space: ColorSpace) -> ColorSpace:
@@ -723,7 +723,7 @@ class TextState(RecoveringTextState):
         key = (id(space), id(ancestors))
         cached = memo.get(key)
         if cached is None or cached[0] is not space or cached[1] is not ancestors:
-            cached = memo[key] = (space, ancestors, remap_parsed_space(space, ancestors))
+            cached = memo.put(key, (space, ancestors, remap_parsed_space(space, ancestors)))
         return cached[2]
 
     def paint_default_spaces(self) -> DefaultSpaces | None:

@@ -98,6 +98,8 @@ class CaptureCaches:
         "capture_shadings",
         "ancestor_spaces",
         "ancestor_remaps",
+        "group_entries",
+        "ancestor_defaults",
     )
 
     parsed_soft_masks: IdentityCache[SoftMask | None]
@@ -113,11 +115,17 @@ class CaptureCaches:
     ]
     capture_shadings: IdentityCache[dict]
     # The ancestor spaces (default_spaces.ancestor_spaces) inside a group, by the ids of
-    # those around it and of its colour space; and each colour space as those of a set of
-    # ancestor spaces remap it, by the ids of both: one object for each, held with the keys
-    # it is found by, so that what is cached by its id stays cached.
-    ancestor_spaces: dict[tuple[int, int], tuple[object, object, DefaultSpaces | None]]
-    ancestor_remaps: dict[tuple[int, int], tuple[object, object, ColorSpace]]
+    # those around it and of its colour space; each colour space as those of a set of
+    # ancestor spaces remap it, by the ids of both; and the interpreter's group_entries and
+    # ancestor_defaults, shared with the states that capture tiling cells and soft masks:
+    # one object for each, held with the keys it is found by, so that what is cached by
+    # its id stays cached.
+    ancestor_spaces: BoundedDict[tuple[int, int], tuple[object, object, DefaultSpaces | None]]
+    ancestor_remaps: BoundedDict[tuple[int, int], tuple[object, object, ColorSpace]]
+    group_entries: BoundedDict[
+        tuple[int, int], tuple[object, object, tuple[ColorSpace, object] | None]
+    ]
+    ancestor_defaults: BoundedDict[tuple[int, int], tuple[object, object, DefaultSpaces | None]]
 
     def __init__(self) -> None:
         self.parsed_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
@@ -129,8 +137,10 @@ class CaptureCaches:
         self.capture_font_companions = IdentityCache()
         self.capture_colors = BoundedDict(COLOR_CACHE_LIMIT)
         self.capture_shadings = IdentityCache()
-        self.ancestor_spaces = {}
-        self.ancestor_remaps = {}
+        self.ancestor_spaces = BoundedDict(COLOR_CACHE_LIMIT)
+        self.ancestor_remaps = BoundedDict(COLOR_CACHE_LIMIT)
+        self.group_entries = BoundedDict(COLOR_CACHE_LIMIT)
+        self.ancestor_defaults = BoundedDict(COLOR_CACHE_LIMIT)
 
 
 class RecoveringTextState(ContentInterpreter):
@@ -153,6 +163,8 @@ class RecoveringTextState(ContentInterpreter):
         super().__init__(
             resolver, sink, font_provider, lexer_factory, semantic_context=semantic_context
         )
+        self.group_entries = self.caches.group_entries
+        self.ancestor_defaults = self.caches.ancestor_defaults
 
     def resolve_soft_mask(self, value: object) -> SoftMask | None:
         cache = self.caches.parsed_soft_masks
