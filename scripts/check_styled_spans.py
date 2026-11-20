@@ -11,14 +11,12 @@ underline, highlight, superscript, subscript and an abbreviation's expansion), f
 between and around spans, and for neighbours that differ, then on the upstream test PDFs:
 no line's Markdown joins two emphasis markers (`****`, `~~~~`), no HTML closes a tag only
 to reopen it, and no Markdown emphasis marker sits on whitespace. On both, an HTML parser
-and a CommonMark parser (markdown-it-py, with strikethrough) must read back the markup
-each non-space character's span carries. Markdown output does not escape characters
-Markdown reads as syntax, so the Markdown checks skip a line whose text has any. A
-missing corpus file fails the check.
+and a CommonMark parser (markdown-it-py, with strikethrough) must read back the text and
+the markup each non-space character's span carries, the Markdown as one paragraph on its
+own and after another line, so text that reads as syntax must be escaped. A missing
+corpus file fails the check.
 
-uv run --all-packages --group benchmark python scripts/check_styled_spans.py [--all]
-
-markdown-it-py is locked in the benchmark group, through pytest-codspeed's rich.
+uv run --all-packages --group test python scripts/check_styled_spans.py [--all]
 
 Without --all, the corpus scan reads the upstream PDFs that showed split markup; with it,
 every PDF in the checkouts CI's core shard has.
@@ -27,6 +25,7 @@ every PDF in the checkouts CI's core shard has.
 from __future__ import annotations
 
 import glob
+import html as html_module
 import logging
 import re
 import sys
@@ -164,7 +163,7 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
     (
         "bold then italic",
         (S("a", bold=True), S("b", italic=True)),
-        "**a**<em>b</em>",
+        "**a***b*",
         "<strong>a</strong><em>b</em>",
     ),
     (
@@ -281,6 +280,36 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
         "~~a~~**b** ~~c~~",
         "<del>a</del><strong>b</strong> <del>c</del>",
     ),
+    # Markdown escapes text CommonMark would read as markup.
+    (
+        "bold backslash",
+        (S("x\\", bold=True), S("y")),
+        "<strong>x\\\\</strong>y",
+        "<strong>x\\</strong>y",
+    ),
+    (
+        "literal markup characters",
+        (S("a*b_c~d`e<f>g[h]i&amp; &j", bold=True),),
+        "**a\\*b\\_c\\~d\\`e\\<f>g\\[h\\]i\\&amp; &j**",
+        "<strong>a*b_c~d`e&lt;f&gt;g[h]i&amp;amp; &amp;j</strong>",
+    ),
+    ("heading at the line start", (S("# 1"),), "\\# 1", "# 1"),
+    (
+        "list item at the line start",
+        (S("12"), S(". x"), S(" y", bold=True)),
+        "12\\. x **y**",
+        "12. x <strong>y</strong>",
+    ),
+    ("indented heading", (S("  #"), S(" x")), "  \\# x", "  # x"),
+    ("rule at the line start", (S("---"),), "\\---", "---"),
+    ("number not starting a list", (S("1.5 x"),), "1.5 x", "1.5 x"),
+    ("marker after markup", (S("-", bold=True), S(" x")), "**-** x", "<strong>-</strong> x"),
+    (
+        "abbreviation title to escape",
+        (S("AT&T", expansion='"A" & <T>'),),
+        '<abbr title="&quot;A&quot; &amp; &lt;T&gt;">AT&T</abbr>',
+        '<abbr title="&quot;A&quot; &amp; &lt;T&gt;">AT&amp;T</abbr>',
+    ),
     (
         "abbreviation after a space",
         (S("See"), S(" CIA", bold=True, expansion="Central Agency")),
@@ -301,7 +330,7 @@ def marker_on_space(markdown: str) -> str | None:
     for match in MARKER_RUN.finditer(markdown):
         before = markdown[match.start() - 1] if match.start() else " "
         after = markdown[match.end()] if match.end() < len(markdown) else " "
-        if before.isspace() and after.isspace():
+        if SPACE_RE.match(before) and SPACE_RE.match(after):
             return match.group()
     return None
 
@@ -318,9 +347,10 @@ TAG_STYLES = {
 }
 MARKDOWN_STYLES = {"strong": "bold", "em": "italic", "s": "strikeout"}
 HTML_TAG_RE = re.compile(r'<(/?)(\w+)(?: title="([^"]*)")?>')
-# Characters markdown-it may read as more than text in a line Markdown output leaves as is.
-MARKDOWN_SYNTAX = frozenset("*_~`\\<>&[]!")
 MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
+PARAGRAPH = ["paragraph_open", "inline", "paragraph_close"]
+# CommonMark's whitespace (2.1): Unicode Zs, tab, line feed, form feed and carriage return.
+SPACE_RE = re.compile("[\t\n\f\r \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")
 
 type Styled = list[tuple[str, frozenset[str]]]
 
@@ -348,18 +378,33 @@ class StyleCounter:
 
     def text(self, text: str) -> None:
         current = frozenset(style for style, count in self.open.items() if count > 0)
-        self.styled.extend((character, current) for character in text if not character.isspace())
+        self.styled.extend(
+            (character, current) for character in text if not SPACE_RE.match(character)
+        )
 
 
-def markdown_styles(markdown: str) -> Styled:
-    """The non-space characters CommonMark reads in a line, each with its markup."""
+def markdown_styles(markdown: str) -> Styled | None:
+    """The non-space characters CommonMark reads in a line, each with its markup, or None
+    where the line, alone or after another, is not read as one paragraph."""
+    if not markdown.strip(" "):
+        return []
+    blocks = MARKDOWN.parse(markdown)
+    if [token.type for token in blocks] != PARAGRAPH or [
+        token.type for token in MARKDOWN.parse(f"a\n{markdown}")
+    ] != PARAGRAPH:
+        return None
     counter = StyleCounter()
-    for token in MARKDOWN.parseInline(markdown)[0].children or ():
+    for token in blocks[1].children or ():
         name, _, side = token.type.rpartition("_")
         if name in MARKDOWN_STYLES and side in {"open", "close"}:
             counter.change(MARKDOWN_STYLES[name], side == "open")
         elif token.type == "html_inline" and (match := HTML_TAG_RE.fullmatch(token.content)):
-            counter.tag(match.group(2), bool(match.group(1)), match.group(3))
+            title = match.group(3)
+            counter.tag(
+                match.group(2),
+                bool(match.group(1)),
+                None if title is None else html_module.unescape(title),
+            )
         else:
             counter.text(token.content)
     return counter.styled
@@ -405,8 +450,10 @@ def span_styles(line: TextLine, start: int = 0) -> Styled:
             )
             if flag
         )
-        styled.extend((character, styles) for character in span.text if not character.isspace())
-    skipped = sum(not character.isspace() for character in line.text[:start])
+        styled.extend(
+            (character, styles) for character in span.text if not SPACE_RE.match(character)
+        )
+    skipped = sum(not SPACE_RE.match(character) for character in line.text[:start])
     return styled[skipped:]
 
 
@@ -416,10 +463,9 @@ def structure_failure(line: TextLine, start: int = 0) -> str | None:
     html = html_line(line, start=start)
     if html_styles(html) != expected:
         return f"HTML reads back other markup: {html!r}"
-    if MARKDOWN_SYNTAX.isdisjoint(line.text):
-        markdown = markdown_line(line, start=start)
-        if markdown_styles(markdown) != expected:
-            return f"Markdown reads back other markup: {markdown!r}"
+    markdown = markdown_line(line, start=start)
+    if markdown_styles(markdown) != expected:
+        return f"Markdown reads back other text or markup: {markdown!r}"
     return None
 
 
@@ -444,12 +490,11 @@ def check_cases() -> list[str]:
 
 def check_line(line: TextLine) -> str | None:
     markdown = markdown_line(line)
-    # Markdown output does not escape a literal * or ~, which then reads as a marker.
-    if "*" not in line.text and "~" not in line.text:
-        if "****" in markdown or "~~~~" in markdown:
-            return f"Markdown joins markers: {markdown!r}"
-        if (run := marker_on_space(markdown)) is not None:
-            return f"Markdown {run!r} on whitespace: {markdown!r}"
+    # A literal * or ~ is escaped, so neither joins nor sits beside a marker.
+    if "****" in markdown or "~~~~" in markdown:
+        return f"Markdown joins markers: {markdown!r}"
+    if (run := marker_on_space(markdown)) is not None:
+        return f"Markdown {run!r} on whitespace: {markdown!r}"
     html = html_line(line)
     if REOPENED_TAG.search(html):
         return f"HTML reopens a tag: {html!r}"

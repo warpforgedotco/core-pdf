@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
 from functools import partial
@@ -492,9 +493,25 @@ INLINE_TAGS = {
     "sup": ("<sup>", "</sup>"),
     "sub": ("<sub>", "</sub>"),
 }
-INLINE_UNITS_RE = re.compile(r"\s+|\S+")
+# CommonMark's whitespace (2.1): Unicode Zs, tab, line feed, form feed and carriage return.
+COMMONMARK_SPACES = "\t\n\f\r \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000"
+COMMONMARK_SPACES_RE = re.compile(f"[{COMMONMARK_SPACES}]+")
+INLINE_UNITS_RE = re.compile(f"[{COMMONMARK_SPACES}]+|[^{COMMONMARK_SPACES}]+")
+# Text CommonMark would read as markup: escaped with a backslash in Markdown. An & only
+# where it would start an entity or character reference.
+MARKDOWN_SYNTAX_RE = re.compile(
+    r"[\\*_~`<\[\]]|&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]{0,31};)"
+)
+# What starts a heading, block quote, list item, thematic break or setext underline at the
+# start of a line; an ordered list marker is escaped at its . or ).
+MARKDOWN_LINE_START = frozenset("#>+=-")
+ORDERED_MARKER_RE = re.compile(r"^([0-9]{1,9})([.)])(?=[ \t]|$)")
 # An inline token: ("text", text, unit index) or ("open" or "close", layer, instance).
 type InlineToken = tuple[str, InlineLayer | str, int]
+
+
+def is_space(text: str) -> bool:
+    return COMMONMARK_SPACES_RE.fullmatch(text) is not None
 
 
 def span_layers(span: TextSpan, index: int) -> tuple[InlineLayer, ...]:
@@ -550,11 +567,11 @@ def styled_units(
     edges: list[int] = []  # -1 a span's leading whitespace, 1 its trailing, 0 neither
     for text, layers in pieces:
         parts = INLINE_UNITS_RE.findall(text)
-        blank = len(parts) == 1 and parts[0].isspace()
+        blank = len(parts) == 1 and is_space(parts[0])
         for position, part in enumerate(parts):
             units.append((part, layers))
             edge = 0
-            if part.isspace() and not blank:
+            if is_space(part) and not blank:
                 edge = -1 if position == 0 else 1 if position == len(parts) - 1 else 0
             edges.append(edge)
     return [
@@ -596,7 +613,7 @@ def inline_tokens(
         for layer, instance in reversed(stack[keep:]):
             moved: list[InlineToken] = []
             if markdown and layer[0] in EMPHASIS_KINDS:
-                while tokens and isinstance(tokens[-1][1], str) and tokens[-1][1].isspace():
+                while tokens and isinstance(tokens[-1][1], str) and is_space(tokens[-1][1]):
                     moved.append(tokens.pop())
             tokens.append(("close", layer, instance))
             tokens.extend(reversed(moved))
@@ -607,7 +624,7 @@ def inline_tokens(
         while keep < len(stack) and stack[keep][0] in layers:
             keep += 1
         kept = [layer for layer, _ in stack[:keep]]
-        if markdown and text.isspace():
+        if markdown and is_space(text):
             layers = tuple(
                 layer for layer in layers if layer[0] not in EMPHASIS_KINDS or layer in kept
             )
@@ -631,7 +648,7 @@ def flanking(before: str, after: str) -> tuple[bool, bool]:
     (CommonMark 6.2); an empty string is the line's edge."""
 
     def space(character: str) -> bool:
-        return not character or character.isspace()
+        return not character or is_space(character)
 
     def punctuation(character: str) -> bool:
         return bool(character) and unicodedata.category(character)[0] in "PS"
@@ -639,6 +656,37 @@ def flanking(before: str, after: str) -> tuple[bool, bool]:
     left = not space(after) and (not punctuation(after) or space(before) or punctuation(before))
     right = not space(before) and (not punctuation(before) or space(after) or punctuation(after))
     return left, right
+
+
+def escape_markdown(text: str, *, line_start: bool) -> str:
+    text = MARKDOWN_SYNTAX_RE.sub(lambda match: f"\\{match.group()}", text)
+    if not line_start:
+        return text
+    # A block marker may follow up to three spaces.
+    indent = len(text) - len(text.lstrip(" "))
+    head = text[indent:]
+    if head[:1] and head[0] in MARKDOWN_LINE_START:
+        head = f"\\{head}"
+    else:
+        head = ORDERED_MARKER_RE.sub(r"\1\\\2", head, count=1)
+    return text[:indent] + head
+
+
+def escaped_tokens(tokens: list[InlineToken]) -> list[InlineToken]:
+    """The tokens with their text escaped for Markdown, text between two markers joined,
+    and the line's text escaped as a line start unless markup comes first."""
+    joined: list[InlineToken] = []
+    for token in tokens:
+        if joined and isinstance(token[1], str) and isinstance(joined[-1][1], str):
+            joined[-1] = (joined[-1][0], joined[-1][1] + token[1], joined[-1][2])
+        else:
+            joined.append(token)
+    return [
+        (kind, escape_markdown(value, line_start=index == 0), unit)
+        if isinstance(value, str)
+        else (kind, value, unit)
+        for index, (kind, value, unit) in enumerate(joined)
+    ]
 
 
 def render_tokens(tokens: list[InlineToken], markup: InlineMarkup, tagged: set[int]) -> list[str]:
@@ -658,15 +706,31 @@ def is_delimiter(token: InlineToken, tagged: set[int]) -> bool:
     return not isinstance(value, str) and value[0] in EMPHASIS_KINDS and token[2] not in tagged
 
 
-def untagged_delimiters(tokens: list[InlineToken], tagged: set[int]) -> set[int]:
-    """The emphasis written with Markdown delimiters that CommonMark would not read back.
+class DelimiterRun:
+    """A run of one Markdown emphasis character, as CommonMark matches it."""
 
-    A run of one delimiter character must open or close only, an opening run be
-    left-flanking and a closing run right-flanking; an emphasis whose run fails is
-    written with HTML tags instead (where a run opens and closes, the opening ones).
+    __slots__ = ("can_close", "can_open", "character", "end", "left", "length", "start")
+
+    def __init__(
+        self, character: str, start: int, end: int, length: int, flanks: tuple[bool, bool]
+    ):
+        self.character = character
+        self.start, self.end = start, end  # its first token and the token after it
+        self.length = length
+        self.left = length  # characters not yet matched
+        self.can_open, self.can_close = flanks
+
+
+def misread_at(tokens: list[InlineToken], markup: InlineMarkup, tagged: set[int]) -> int | None:
+    """The first token CommonMark would read with other emphasis than its own, if any.
+
+    This follows CommonMark's delimiter runs and their matching (6.2 and appendix A, its
+    rule of 3 included, strikethrough pairing as markdown-it's), and compares the emphasis
+    each word ends up in with the emphasis written around it; a delimiter left unmatched
+    reads as text.
     """
-    rendered = render_tokens(tokens, MARKDOWN_MARKUP, tagged)
-    failing: set[int] = set()
+    rendered = render_tokens(tokens, markup, tagged)
+    runs: list[DelimiterRun] = []
     index = 0
     while index < len(tokens):
         if not is_delimiter(tokens[index], tagged):
@@ -680,18 +744,55 @@ def untagged_delimiters(tokens: list[InlineToken], tagged: set[int]) -> set[int]
             and rendered[end][0] == character
         ):
             end += 1
-        # Neither text units nor markers are empty.
+        # Neither words nor markers are empty.
         before = rendered[index - 1][-1] if index else ""
         after = rendered[end][0] if end < len(rendered) else ""
-        left, right = flanking(before, after)
-        opens = {tokens[at][2] for at in range(index, end) if tokens[at][0] == "open"}
-        closes = {tokens[at][2] for at in range(index, end) if tokens[at][0] == "close"}
-        if opens and (closes or not left):
-            failing |= opens
-        elif closes and not right:
-            failing |= closes
+        length = sum(len(rendered[at]) for at in range(index, end))
+        runs.append(DelimiterRun(character, index, end, length, flanking(before, after)))
         index = end
-    return failing
+    pairs: list[tuple[int, int, str]] = []
+    for closer_index, closer in enumerate(runs):
+        while closer.can_close and closer.left:
+            for opener_index in range(closer_index - 1, -1, -1):
+                opener = runs[opener_index]
+                if opener.character != closer.character or not opener.can_open or not opener.left:
+                    continue
+                if (
+                    closer.character == "*"
+                    and (opener.can_close or closer.can_open)
+                    and (opener.length + closer.length) % 3 == 0
+                    and (opener.length % 3 or closer.length % 3)
+                ):
+                    continue
+                break
+            else:
+                break
+            if closer.character == "~":
+                count, kind = 2, "strikeout"
+            else:
+                count = 2 if opener.left >= 2 and closer.left >= 2 else 1
+                kind = "bold" if count == 2 else "italic"
+            opener.left -= count
+            closer.left -= count
+            pairs.append((opener.end, closer.start, kind))
+            # Delimiters between the two read as text.
+            for between in runs[opener_index + 1 : closer_index]:
+                if between.character == closer.character:
+                    between.can_open = between.can_close = False
+    if unmatched := [run.start for run in runs if run.left]:
+        return unmatched[0]
+    written: Counter[str] = Counter()
+    for at, token in enumerate(tokens):
+        side, value, _ = token
+        if isinstance(value, str):
+            if is_space(value):
+                continue
+            read = {style for first, end, style in pairs if first <= at < end}
+            if read != {style for style, count in written.items() if count}:
+                return at
+        elif is_delimiter(token, tagged):
+            written[value[0]] += 1 if side == "open" else -1
+    return None
 
 
 def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
@@ -701,8 +802,16 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
     tokens = inline_tokens(styled_units(line, markup, start), markup)
     tagged: set[int] = set()
     if not markup.escape_text:
-        while failing := untagged_delimiters(tokens, tagged):
-            tagged |= failing
+        tokens = escaped_tokens(tokens)
+        # Emphasis CommonMark would misread is written as HTML, which Markdown reads as
+        # inline HTML: the one whose marker is nearest the first word misread, till none is.
+        while (at := misread_at(tokens, markup, tagged)) is not None:
+            nearest = min(
+                (abs(position - at), position)
+                for position, token in enumerate(tokens)
+                if is_delimiter(token, tagged)
+            )[1]
+            tagged.add(tokens[nearest][2])
     return "".join(render_tokens(tokens, markup, tagged))
 
 
