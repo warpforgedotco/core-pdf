@@ -21,9 +21,9 @@ segment with square caps at alpha 0.5, each against its shape filled as one path
 opaque strokes of several pieces, collinear segments meeting inside a pixel, with and
 without square caps, and a right-angle miter, each against its union filled as one path:
 byte-identical under the clip, and unclipped and under a rectangular clip, where the
-union is filled by its exact area, within four samples; those strokes and a closed frame,
-unclipped and under a rectangular clip, must also be byte-identical to the same strokes
-through stroke_once, which paints each pixel once. Then it
+union is filled by its exact area, byte-identical too; and painted on a raster target
+directly, those strokes and a closed frame, unclipped and under a rectangular clip, must
+be byte-identical to the stroke kernel's pieces filled as one path. Then it
 paints, on a raster target directly, square and round dots (fill_terminal), glyph bitmaps
 (draw_glyph_bitmap) whose cells have fractional device edges, each glyph against its cells
 filled as one path, and rectangles in a blend mode named Normal, against a rectangle
@@ -196,19 +196,6 @@ def fills(before: bytes, pairs: tuple[tuple[bytes, bytes], ...]) -> bytes:
     return before + b"0.1 0.3 0.8 rg " + b" f ".join(fill for _, fill in pairs) + b" f"
 
 
-def compare_within(name: str, got: numpy.ndarray, want: numpy.ndarray, tolerance: int) -> int:
-    difference = numpy.abs(got.astype(numpy.int32) - want).max(axis=2)
-    worst = int(difference.max())
-    if worst <= tolerance:
-        return 0
-    y, x = numpy.unravel_index(int(difference.argmax()), difference.shape)
-    print(
-        f"{name}: ({x}, {y}) is {tuple(int(v) for v in got[y, x])}, "
-        f"{tuple(int(v) for v in want[y, x])} wanted, more than {tolerance} apart"
-    )
-    return 1
-
-
 def compare(name: str, got: numpy.ndarray, want: numpy.ndarray) -> int:
     if got.shape == want.shape and numpy.array_equal(got, want):
         return 0
@@ -249,15 +236,7 @@ def pdf_pairs() -> int:
             ):
                 stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
                 filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
-                label = f"{clip_name} {name} @{scale}"
-                if clip_name == "triangle":
-                    failed += compare(label, stroked, filled)
-                else:
-                    # Without a clip path the union is filled by its exact area and the
-                    # stroke by its samples: a pixel may differ by up to four samples of
-                    # the sixteen where both of its edges cross it. pieces_once checks
-                    # these strokes exactly.
-                    failed += compare_within(label, stroked, filled, 4 * 255 // 16 + 1)
+                failed += compare(f"{clip_name} {name} @{scale}", stroked, filled)
         for name, before, stroke, fill in ON_SAMPLES:
             stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
             filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
@@ -395,41 +374,98 @@ def direct_pairs() -> int:
     return failed + kernel_round_caps() + batch_orientation() + pieces_once()
 
 
+# A rectangular clip whose bottom edge cuts the frames' lower sides inside pixels.
+PIECES_CLIP = (15.15, 30.35, 155.6, 121.0)
 # PIECES' strokes as paths: points, line cap and line join.
 PIECE_PATHS = (
     ("collinear segments", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 0, 0),
     ("collinear segments with square caps", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 2, 0),
     ("right-angle miter", ((20.3, 50.37), (60.4, 50.37), (60.4, 90.6)), 0, 0),
     ("square frame", ((30.3, 30.45), (130.6, 30.45), (130.6, 110.7), (30.3, 110.7)), 0, 0),
+    ("round joins", ((20.3, 50.37), (60.4, 50.37), (60.4, 90.6), (100.7, 90.6)), 0, 1),
+    ("round caps", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 1, 0),
+    ("round frame", ((30.3, 30.45), (130.6, 30.45), (130.6, 110.7), (30.3, 110.7)), 1, 1),
 )
 
 
+def stroke_pieces(
+    points: tuple[tuple[float, float], ...],
+    closed: bool,
+    cap: int,
+    join: int,
+    half: float,
+    clip: tuple[float, float, float, float] | None = None,
+) -> list[CapturedSubpath]:
+    """The pieces the stroke kernel paints for an opaque stroke along the axes with miter
+    or round joins, in its order, each counter-clockwise: the rectangle around each
+    segment, then each corner's square (a right angle's, under miter joins) or disc (every
+    corner's, under round joins), then each open end's square or disc. A disc is
+    circle_path's polygon. Under a rectangular clip, each rectangle and square is cut to
+    it, as the kernel cuts them; a disc is not."""
+    pieces: list[CapturedSubpath] = []
+
+    def box(x0: float, y0: float, x1: float, y1: float) -> list[CapturedSubpath]:
+        if clip is not None:
+            x0, y0 = max(x0, clip[0]), max(y0, clip[1])
+            x1, y1 = min(x1, clip[2]), min(y1, clip[3])
+            if x1 <= x0 or y1 <= y0:
+                return []
+        return rectangle(x0, y0, x1, y1).subpaths
+
+    ends = list(zip(points, points[1:], strict=False))
+    if closed:
+        ends.append((points[-1], points[0]))
+    for (x0, y0), (x1, y1) in ends:
+        if y0 == y1:
+            pieces += box(min(x0, x1), y0 - half, max(x0, x1), y0 + half)
+        else:
+            pieces += box(x0 - half, min(y0, y1), x0 + half, max(y0, y1))
+    count = len(points)
+    order = [*range(1, count), 0] if closed else list(range(1, count - 1))
+    for index in order:
+        x, y = points[index]
+        if join == 1:
+            pieces += circle_path(x, y, half).subpaths
+            continue
+        before = points[index - 1]
+        after = points[(index + 1) % count]
+        if (before[0] == x) != (x == after[0]):
+            pieces += box(x - half, y - half, x + half, y + half)
+    if not closed and cap:
+        for x, y in (points[0], points[-1]):
+            if cap == 1:
+                pieces += circle_path(x, y, half).subpaths
+            else:
+                pieces += box(x - half, y - half, x + half, y + half)
+    return pieces
+
+
 def pieces_once() -> int:
-    """PIECES' strokes, and a closed frame, opaque, unclipped and under a rectangular clip,
-    painted by the stroke kernel, against the same strokes through stroke_once, which
-    covers their pieces' samples once and blends them in one pass: byte-identical, so that
-    no two pieces blend a pixel they share in turn."""
+    """PIECES' strokes, closed frames, and strokes with round joins and caps, opaque,
+    unclipped and under a rectangular clip, painted by the stroke kernel, against the same
+    pieces filled as one path: their union by its exact area, byte-identical, so that no
+    two pieces blend a pixel they share in turn and no edge is coarser than a filled
+    path's."""
     rgba = (26, 77, 204, 255)
     failed = 0
     for scale in SCALES:
+        half = stroke_half_width(scale, 1.3)
         for name, points, cap, join in PIECE_PATHS:
-            closed = name == "square frame"
-            for clip_name, clip in (
-                ("unclipped", None),
-                ("rectangle-clipped", rectangle(15.15, 30.35, 155.6, 121.0)),
-            ):
+            closed = name.endswith("frame")
+            for clip_name, clip in (("unclipped", None), ("rectangle-clipped", PIECES_CLIP)):
                 images = []
-                for route in ("kernel", "once"):
+                for route in ("kernel", "path"):
                     raster = target(scale)
                     if clip is not None:
-                        raster.clip.push(clip, "nonzero")
-                    path = CapturedPath([CapturedSubpath(list(points), closed=closed)])
+                        raster.clip.push(rectangle(*clip), "nonzero")
                     if route == "kernel":
+                        path = CapturedPath([CapturedSubpath(list(points), closed=closed)])
                         raster.stroke_path(path, 1.3, rgba, None, None, cap, join, 10.0)
                     else:
-                        stroke_once(raster, path, 1.3, rgba, None, None, cap, join, 10.0, None)
+                        pieces = stroke_pieces(points, closed, cap, join, half, clip)
+                        raster.fill_path(CapturedPath(pieces), rgba, None)
                     images.append(raster.pixel_array.copy())
-                failed += compare(f"{clip_name} {name} once @{scale}", images[0], images[1])
+                failed += compare(f"{clip_name} {name} as one path @{scale}", images[0], images[1])
     return failed
 
 

@@ -12,6 +12,7 @@ from cython.cimports.core_pdf_cythonized._stroke import (
     CAP_ROUND,
     CAP_SQUARE,
     CLIP_NONE,
+    CLIP_RECT,
     CLIP_ROWS,
     COVER_DISC,
     COVER_POLYGON,
@@ -23,8 +24,21 @@ from cython.cimports.core_pdf_cythonized._stroke import (
     JOIN_ROUND,
 )
 from cython.cimports.core_pdf_cythonized._stroke_segment import segment_samples
-from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rint, rintf, sqrt
-from cython.cimports.libc.stdlib import calloc, free, malloc
+from cython.cimports.cpython.bytes import PyBytes_FromStringAndSize
+from cython.cimports.libc.math import (
+    ceil,
+    cos,
+    fabs,
+    floor,
+    isinf,
+    isnan,
+    pow,
+    rint,
+    rintf,
+    sin,
+    sqrt,
+)
+from cython.cimports.libc.stdlib import calloc, free, malloc, realloc
 from cython.cimports.libc.string import memcpy, memset
 
 __all__ = ("axis_aligned_polylines", "short_subpaths", "stroke_coverage", "stroke_polylines")
@@ -1399,6 +1413,13 @@ Walk = cython.struct(
     line_join=cython.int,
     miter_limit_squared=cython.double,
     cover=cython.pointer[Cover],
+    # While collecting, the pieces' edges (x0, y0, x1, y1), each piece counter-clockwise,
+    # for paint_union to hand to the exact-area fill in one call.
+    collect=cython.bint,
+    union_edges=cython.p_double,
+    union_count=cython.Py_ssize_t,
+    union_capacity=cython.Py_ssize_t,
+    union_box=cython.double[4],
 )
 
 
@@ -1410,6 +1431,7 @@ class Callbacks:
     circle: object
     dot: object
     extend: object
+    union: object
 
 
 @cython.cfunc
@@ -1433,6 +1455,177 @@ def failed(p: cython.pointer[Paint], calls: typing.Optional[Callbacks]) -> cytho
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
+def collect_edge(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+) -> cython.int:
+    """Add the edge from (x0, y0) to (x1, y1) to the pieces' edges."""
+    grown: cython.p_double
+    capacity: cython.Py_ssize_t
+    if w.union_count == w.union_capacity:
+        capacity = 64 if w.union_capacity == 0 else 2 * w.union_capacity
+        grown = cython.cast(
+            cython.p_double, realloc(w.union_edges, capacity * 4 * cython.sizeof(cython.double))
+        )
+        if grown == cython.NULL:
+            p.error = FAILED_MEMORY
+            return -1
+        w.union_edges = grown
+        w.union_capacity = capacity
+    edge: cython.p_double = w.union_edges + 4 * w.union_count
+    edge[0] = x0
+    edge[1] = y0
+    edge[2] = x1
+    edge[3] = y1
+    if w.union_count == 0:
+        w.union_box[0] = py_min(x0, x1)
+        w.union_box[1] = py_min(y0, y1)
+        w.union_box[2] = py_max(x0, x1)
+        w.union_box[3] = py_max(y0, y1)
+    else:
+        w.union_box[0] = py_min(w.union_box[0], py_min(x0, x1))
+        w.union_box[1] = py_min(w.union_box[1], py_min(y0, y1))
+        w.union_box[2] = py_max(w.union_box[2], py_max(x0, x1))
+        w.union_box[3] = py_max(w.union_box[3], py_max(y0, y1))
+    w.union_count += 1
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def collect_box(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+) -> cython.int:
+    """Add the rectangle (x0, y0, x1, y1), x0 <= x1 and y0 <= y1, counter-clockwise from
+    its lower left corner, as a closed subpath of its corners has it: under a rectangular
+    clip, the part of it inside the clip, as fill_rect paints it."""
+    if p.clip_mode == CLIP_RECT:
+        x0 = py_max(x0, p.clip[0])
+        y0 = py_max(y0, p.clip[1])
+        x1 = py_min(x1, p.clip[2])
+        y1 = py_min(y1, p.clip[3])
+        if x1 <= x0 or y1 <= y0:
+            return 0
+    if (
+        collect_edge(p, w, x0, y0, x1, y0) < 0
+        or collect_edge(p, w, x1, y0, x1, y1) < 0
+        or collect_edge(p, w, x1, y1, x0, y1) < 0
+        or collect_edge(p, w, x0, y1, x0, y0) < 0
+    ):
+        return -1
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def collect_polygon(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    xs: cython.p_double,
+    ys: cython.p_double,
+    n: cython.int,
+) -> cython.int:
+    """Add the polygon of n vertices, counter-clockwise."""
+    area: cython.double = 0.0
+    k: cython.int
+    for k in range(n):
+        area += xs[k] * ys[(k + 1) % n] - xs[(k + 1) % n] * ys[k]
+    for k in range(n):
+        if area >= 0.0:
+            if collect_edge(p, w, xs[k], ys[k], xs[(k + 1) % n], ys[(k + 1) % n]) < 0:
+                return -1
+        elif collect_edge(p, w, xs[(k + 1) % n], ys[(k + 1) % n], xs[k], ys[k]) < 0:
+            return -1
+    return 0
+
+
+# A disc is the polygon of this many sides fill_path fills for one (core_pdf's
+# circle_path), its vertices from angle 0 counter-clockwise.
+DISC_SIDES = cython.declare(cython.int, 32)
+TAU = cython.declare(cython.double, 6.283185307179586)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def collect_disc(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    cx: cython.double,
+    cy: cython.double,
+    radius: cython.double,
+) -> cython.int:
+    """Add the disc of the radius around (cx, cy) as circle_path's polygon, whose vertices
+    run counter-clockwise."""
+    k: cython.int
+    angle: cython.double
+    x0: cython.double = cx + radius * cos(0.0)
+    y0: cython.double = cy + radius * sin(0.0)
+    x: cython.double = x0
+    y: cython.double = y0
+    next_x: cython.double
+    next_y: cython.double
+    for k in range(1, DISC_SIDES):
+        angle = k * TAU / DISC_SIDES
+        next_x = cx + radius * cos(angle)
+        next_y = cy + radius * sin(angle)
+        if collect_edge(p, w, x, y, next_x, next_y) < 0:
+            return -1
+        x = next_x
+        y = next_y
+    return collect_edge(p, w, x, y, x0, y0)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
+def collect_segment(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+) -> cython.int:
+    """Add the rectangle around the segment, half a line width either side of it: the
+    rectangle fill_line fills for a segment along an axis."""
+    half: cython.double = w.half
+    if y0 == y1:
+        return collect_box(p, w, py_min(x0, x1) - 0.0, y0 - half, py_max(x0, x1) + 0.0, y0 + half)
+    if x0 == x1:
+        return collect_box(p, w, x0 - half, py_min(y0, y1) - 0.0, x0 + half, py_max(y0, y1) + 0.0)
+    dx: cython.double = x1 - x0
+    dy: cython.double = y1 - y0
+    length: cython.double = pow(dx * dx + dy * dy, p.exponent)
+    normal_x: cython.double = -dy / length * half
+    normal_y: cython.double = dx / length * half
+    xs = cython.declare(cython.double[4])
+    ys = cython.declare(cython.double[4])
+    xs[0] = x0 + normal_x
+    ys[0] = y0 + normal_y
+    xs[1] = x1 + normal_x
+    ys[1] = y1 + normal_y
+    xs[2] = x1 - normal_x
+    ys[2] = y1 - normal_y
+    xs[3] = x0 - normal_x
+    ys[3] = y0 - normal_y
+    return collect_polygon(p, w, xs, ys, 4)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
 def line(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -1442,6 +1635,11 @@ def line(
     x1: cython.double,
     y1: cython.double,
 ) -> cython.int:
+    if w.collect:
+        if collect_segment(p, w, x0, y0, x1, y1) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.cover != cython.NULL:
         if cover_segment(p, w.cover, x0, y0, x1, y1, w.half) < 0:
             with cython.gil:
@@ -1470,6 +1668,15 @@ def terminal(
 ) -> cython.int:
     """A disc, or a square a line width wide, around (x, y)."""
     found: cython.int
+    if w.collect:
+        if round_shape:
+            found = collect_disc(p, w, x, y, w.half)
+        else:
+            found = collect_box(p, w, x - w.half, y - w.half, x + w.half, y + w.half)
+        if found < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.cover != cython.NULL:
         if round_shape:
             found = cover_disc(p, w.cover, x, y, w.half)
@@ -1503,6 +1710,11 @@ def polygon(
     ys: cython.p_double,
     n: cython.int,
 ) -> cython.int:
+    if w.collect:
+        if collect_polygon(p, w, xs, ys, n) < 0:
+            with cython.gil:
+                failed(p, calls)
+        return 0
     if w.cover != cython.NULL:
         if cover_convex(p, w.cover, xs, ys, n) < 0:
             with cython.gil:
@@ -1753,7 +1965,11 @@ def walk_range(
         if not found:
             # A subpath of one point: a dot with round caps, and nothing otherwise, as its
             # caps have no direction (ISO 32000-2 8.5.3.2).
-            if w.line_cap == CAP_ROUND and w.cover != cython.NULL:
+            if w.line_cap == CAP_ROUND and w.collect:
+                if collect_disc(p, w, x0, y0, w.half) < 0:
+                    with cython.gil:
+                        failed(p, calls)
+            elif w.line_cap == CAP_ROUND and w.cover != cython.NULL:
                 if (
                     cover_disc(p, w.cover, x0, y0, w.half) < 0
                     or cover_nearest(p, w.cover, x0, y0) < 0
@@ -2157,6 +2373,39 @@ def pieces_on_pixels(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
+def paint_union(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    calls: typing.Optional[Callbacks],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+) -> cython.int:
+    """Paint the stroke of subpaths first to last, whose pieces in_pieces allows but meet
+    inside pixels, once: collect its pieces' rectangles, squares, polygons and discs (as
+    circle_path's polygons), each counter-clockwise so that the nonzero rule fills their
+    union, and hand them to calls.union in one call, which fills them by their exact area
+    as fill_path fills the same pieces as one path, with the box they span."""
+    w.collect = True
+    w.union_count = 0
+    walk_range(p, w, calls, first, last)
+    w.collect = False
+    if w.union_count == 0:
+        return 0
+    with cython.gil:
+        flush(p, calls)
+        calls.union(
+            PyBytes_FromStringAndSize(
+                cython.cast(cython.p_char, w.union_edges),
+                w.union_count * 4 * cython.sizeof(cython.double),
+            ),
+            (w.union_box[0], w.union_box[1], w.union_box[2], w.union_box[3]),
+        )
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(-1, check=False)
 def walk_once(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -2179,6 +2428,14 @@ def walk_once(
             p, w, first, last
         ):
             result = walk_range(p, w, calls, first, last)
+        elif (
+            p.clip_mode != CLIP_ROWS
+            and calls.union is not None
+            and in_pieces(w, first, last, p.alpha >= 255, p.scale)
+        ):
+            # Without a clip path, its pieces' union by its exact area, as a filled
+            # path's; under one, paint_once samples it 4 x 4, as a filled path is.
+            result = paint_union(p, w, calls, first, last)
         else:
             result = paint_once(p, w, calls, first, last, buffer, capacity)
         if result < 0:
@@ -2220,6 +2477,7 @@ def stroke_polylines(
     on_circle,
     on_dot,
     on_extend,
+    on_union=None,
 ):
     if pixels.shape[2] != 4:
         raise ValueError("pixels must be RGBA")
@@ -2249,6 +2507,10 @@ def stroke_polylines(
     end: cython.Py_ssize_t
     p = cython.declare(Paint)
     w = cython.declare(Walk)
+    w.collect = False
+    w.union_edges = cython.NULL
+    w.union_count = 0
+    w.union_capacity = 0
     calls: Callbacks = Callbacks.__new__(Callbacks)
     calls.line = on_line
     calls.polygon = on_polygon
@@ -2256,6 +2518,7 @@ def stroke_polylines(
     calls.circle = on_circle
     calls.dot = on_dot
     calls.extend = on_extend
+    calls.union = on_union
     try:
         for k in range(count):
             start, end, flag = spans[k]
@@ -2334,6 +2597,7 @@ def stroke_polylines(
                 walk(cython.address(p), cython.address(w), calls)
         flush(cython.address(p), calls)
     finally:
+        free(w.union_edges)
         free(buffer)
         free(bounds)
 
@@ -2430,6 +2694,10 @@ def stroke_coverage(
     number: cython.uchar
     p = cython.declare(Paint)
     w = cython.declare(Walk)
+    w.collect = False
+    w.union_edges = cython.NULL
+    w.union_count = 0
+    w.union_capacity = 0
     no_calls: typing.Optional[Callbacks] = None
     try:
         for k in range(count):

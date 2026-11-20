@@ -24,7 +24,7 @@ from core_pdf.impl.render.paths import (
     stroke_half_width,
     stroke_reach,
 )
-from core_pdf.impl.render.raster_fills import paint_as_one
+from core_pdf.impl.render.raster_fills import fill_edges, paint_as_one
 from core_pdf.impl.render.raster_support import subpath_columns
 from core_pdf.impl.spec.citations import cites
 lazy from core_pdf_cythonized import (
@@ -299,6 +299,12 @@ def stroke_path(
         radius = stroke_half_width(scale, float(line_width))
         self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
 
+    def union(data: bytes, box: tuple[float, float, float, float]) -> None:
+        # The pieces of a stroke that meet inside pixels, each counter-clockwise, and the
+        # box they span: their union filled once, by its exact area without a clip path.
+        edges = numpy.frombuffer(data, dtype=numpy.float64).reshape(-1, 4)
+        fill_edges(self, edges, box, rgba, blend_mode, "nonzero")
+
     def walk() -> None:
         stroke_polylines(
             self.pixel_array,
@@ -330,6 +336,7 @@ def stroke_path(
             circle,
             dot,
             self.extend_paint_box,
+            union,
         )
 
     if native:
