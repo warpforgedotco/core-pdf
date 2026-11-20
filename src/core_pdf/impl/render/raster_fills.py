@@ -42,8 +42,37 @@ def fill_rect(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None = None,
 ) -> None:
+    """Fill the rectangle box antialiased, as fill_path fills it: paint_rect paints it
+    where it can give its edges the coverage fill_path would, and otherwise it is covered
+    by the 4x4 samples, the whole rectangle in one pass."""
     if box is None:
         return
+    if rect_paints_whole(self, box, rgba, blend_mode):
+        paint_rect(self, box, rgba, blend_mode)
+        return
+    x0, y0, x1, y1 = box
+    fill_edges(
+        self,
+        numpy.array(
+            ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)),
+            dtype=numpy.float64,
+        ),
+        box,
+        rgba,
+        blend_mode,
+        "nonzero",
+    )
+
+
+def paint_rect(
+    self: RasterTarget,
+    box: tuple[float, float, float, float],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None = None,
+) -> None:
+    """Paint box, with partial coverage at its edges in the Normal mode under a rectangular
+    clip and otherwise each pixel whose centre it holds whole: as fill_path would only
+    where rect_paints_whole says so."""
     if rgba[3] == 255 and declared_blend(blend_mode) is None:
         blend_mode = None
     clipped_box = self.clip.clipped_pixel_box(box)
@@ -327,7 +356,7 @@ def rect_paints_whole(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None,
 ) -> bool:
-    """Whether fill_rect paints rect as fill_path would: with partial coverage at its edges,
+    """Whether paint_rect paints rect as fill_path would: with partial coverage at its edges,
     which it gives in the Normal mode under a rectangular clip, or where its device edges
     fall on pixel edges, so no pixel is partly covered."""
     if self.clip.clip_paths_are_axis_aligned_rects() and (
@@ -366,10 +395,9 @@ def fill_path(
     within the row. Otherwise it
     is the share of a 4x4 grid of sample points inside the path, under fill_rule. Memory and
     work follow the edges and the painted runs, not the pixel box."""
-    clip = self.clip
     rect = path.axis_aligned_rect()
     if rect is not None and rect_paints_whole(self, rect, rgba, blend_mode):
-        self.fill_rect(rect, rgba, blend_mode)
+        paint_rect(self, rect, rgba, blend_mode)
         return
     if edge_array is None:
         edge_array = path.fill_edge_array()
@@ -381,9 +409,23 @@ def fill_path(
     elif len(edge_array) == 0:
         return
     if bbox is None:
-        bbox = clip.path_bbox(path)
+        bbox = self.clip.path_bbox(path)
     if bbox is None:
         return
+    fill_edges(self, edge_array, bbox, rgba, blend_mode, fill_rule)
+
+
+def fill_edges(
+    self: RasterTarget,
+    edge_array: numpy.ndarray[Any, Any],
+    bbox: tuple[float, float, float, float],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+    fill_rule: str,
+) -> None:
+    """Fill the outline whose edges are edge_array's rows (x0, y0, x1, y1), within bbox,
+    as fill_path describes."""
+    clip = self.clip
     clipped_box = clip.clipped_pixel_box(bbox)
     if clipped_box is None:
         return

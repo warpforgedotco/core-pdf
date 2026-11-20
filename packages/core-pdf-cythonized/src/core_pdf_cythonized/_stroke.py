@@ -23,7 +23,7 @@ from cython.cimports.core_pdf_cythonized._stroke import (
     JOIN_ROUND,
 )
 from cython.cimports.core_pdf_cythonized._stroke_segment import segment_samples
-from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rintf, sqrt
+from cython.cimports.libc.math import ceil, fabs, floor, isinf, isnan, pow, rint, rintf, sqrt
 from cython.cimports.libc.stdlib import calloc, free, malloc
 from cython.cimports.libc.string import memcpy, memset
 
@@ -314,6 +314,14 @@ def solid_blend(
 
 
 @cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def on_pixel_edge(value: cython.double) -> cython.bint:
+    return fabs(value - rint(value)) <= 1e-9
+
+
+@cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def fill_rect(
@@ -343,7 +351,26 @@ def fill_rect(
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
     spans: cython.p_const_longlong = cython.NULL
+    corner_x = cython.declare(cython.double[4])
+    corner_y = cython.declare(cython.double[4])
     if p.clip_mode == CLIP_ROWS:
+        if not (
+            on_pixel_edge((x0 - p.crop_x0) * p.scale)
+            and on_pixel_edge((x1 - p.crop_x0) * p.scale)
+            and on_pixel_edge((p.crop_y1 - y1) * p.scale)
+            and on_pixel_edge((p.crop_y1 - y0) * p.scale)
+        ):
+            # An edge inside pixels: the 4 x 4 samples cover them, as they cover a filled
+            # path's under a clip path.
+            corner_x[0] = x0
+            corner_y[0] = y0
+            corner_x[1] = x1
+            corner_y[1] = y0
+            corner_x[2] = x1
+            corner_y[2] = y1
+            corner_x[3] = x0
+            corner_y[3] = y1
+            return fill_convex(p, corner_x, corner_y, 4)
         for y in range(iy0, iy1):
             count = row_spans(p, y, cython.address(spans))
             for k in range(count):
