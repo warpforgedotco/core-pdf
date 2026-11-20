@@ -18,14 +18,15 @@ specifies and the backdrop's for the rest, which Table 146 sums up:
   colour space: "within a transparency group, this should be done only if the group
   inherits the native colour space of the output device ... If any other colour space has
   been specified for the group, the Separation or DeviceN colour space shall be converted
-  to its alternate colour space" (11.7.3). Inside a group, the page group included, that
-  names a colour space, such a space is its alternate -- "likewise for Separation and
-  DeviceN spaces that revert to their alternate colour space" (11.7.4.3, NOTE 2) -- a
-  process colour space reached through a tint transform, not "DeviceCMYK, specified
-  directly", which marks every component (Table 146); nonzero overprint mode does not apply
-  either, as the current colour space is not DeviceCMYK (8.6.7). Where the page stands for
-  the device's CMYK -- a page group without a colour space, under overprint simulation --
-  its colorants are marked as named.
+  to its alternate colour space" (11.7.3). Core renders for a CMYK device whose native
+  process space is DeviceCMYK, so (our reading) a group whose resolved colour space is
+  DeviceCMYK itself, or where no group names one, takes the colorants as named; inside a
+  group whose space is any other -- ICCBased CMYK, CalRGB, Lab -- such a space is its
+  alternate -- "likewise for Separation and DeviceN spaces that revert to their alternate
+  colour space" (11.7.4.3, NOTE 2) -- a process colour space reached through a tint
+  transform, not "DeviceCMYK, specified directly", which marks every component (Table
+  146); nonzero overprint mode does not apply either, as the current colour space is not
+  DeviceCMYK (8.6.7). A DeviceN space naming a spot as well converts as a whole.
 - Any other colour space -- DeviceGray, DeviceRGB, CIE-based, ICCBased, Indexed over one
   of those -- marks every process component, so overprinting changes nothing.
 
@@ -85,13 +86,14 @@ CMYK_MARKS = (CYAN, MAGENTA, YELLOW, BLACK)
     "11.7.3",
     introduced="1.4",
     rule="a Separation or DeviceN space naming process colourants converts to its alternate in "
-    "a group that names a colour space",
+    "a group whose colour space is not the device's native one",
 )
 def colorant_marks(kind: str, names: Sequence[str], *, device: bool = True) -> int | None:
     """The process components a Separation or DeviceN space naming names marks: each
     process colorant it names, and none for a spot colorant or None (8.6.6.4, 8.6.6.5), with
     SPOT for a spot colorant; the separation All marks every component. device: the paint
-    lands where no group names a colour space; elsewhere a space naming a process colorant
+    lands in the device's native DeviceCMYK (capture.recording.TextState.device_cmyk_group);
+    elsewhere a space naming a process colorant
     "shall be converted to its alternate colour space" (11.7.3), a process colour space
     whose every component takes the source's value (Table 146), so it marks all four."""
     if kind == "Separation" and tuple(names) == ("All",):

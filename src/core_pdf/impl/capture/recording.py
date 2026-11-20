@@ -358,9 +358,10 @@ class TextState(RecoveringTextState):
     # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
     cie_gray_groups_in_srgb: bool
     capture_cmyk_frames: dict[int, tuple[bool, bytes | None, bool]]
-    # Whether paint lands where no transparency group, the page group included, names a
-    # colour space: the group "inherits the native colour space of the output device", the
-    # only place a Separation or DeviceN space may name process colorants as such (11.7.3;
+    # Whether paint lands in the native colour space of the CMYK device rendering composites
+    # for: where no transparency group, the page group included, names a colour space, or
+    # the nearest one that does names DeviceCMYK itself (device_cmyk_group); the only place
+    # a Separation or DeviceN space may name process colorants as such (11.7.3;
     # graphics.overprint.colorant_marks).
     capture_device: bool
     # The ancestor spaces to restore when each group that changed them ends; and each set
@@ -613,7 +614,7 @@ class TextState(RecoveringTextState):
                 blending_space_of(frame.group_color_space) == "DeviceCMYK",
                 blending_profile(frame.group_color_space),
             )
-            self.set_capture_device(False)
+            self.set_capture_device(self.device_cmyk_group(frame.group_color_space))
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -693,6 +694,24 @@ class TextState(RecoveringTextState):
             cmyk, profile, device = self.capture_cmyk_frames.pop(id(frame))
             self.set_capture_cmyk(cmyk, profile)
             self.set_capture_device(device)
+
+    @cites(
+        "ISO 32000-2",
+        "11.7.3",
+        introduced="1.4",
+        rule="a group whose colour space is the device's native DeviceCMYK may take process "
+        "colourants named in a Separation or DeviceN space as such",
+    )
+    def device_cmyk_group(self, space: object) -> bool:
+        """Whether a group whose CS is space composites in the native colour space of the
+        CMYK device rendering composites for (11.7.3): DeviceCMYK itself, unless an
+        ancestor's CIE-based space or a default space stands for it (11.7.2, 8.6.5.6), as
+        the ancestor spaces just set for the group record. Any other space -- ICCBased CMYK,
+        CalRGB, Lab, a device gray or RGB group -- is "any other colour space"."""
+        if getattr(space, "kind", None) != "DeviceCMYK":
+            return False
+        spaces = self.ancestor_spaces
+        return spaces is None or "DeviceCMYK" not in spaces.spaces
 
     def set_capture_device(self, device: bool) -> None:
         """Paint from now on where no group names a colour space (device) or inside one."""

@@ -6,15 +6,15 @@ An overprinting paint marks only the process colorants its colour space names: D
 under overprint mode 1, given directly as the current colour of a fill, stroke, text or
 image mask, marks its nonzero components; a Separation or DeviceN space marks the process
 colorants it names, whose tints it paints directly -- an image's samples and a shading's
-function values included -- where the page stands for the device's CMYK (a simulated page
-without a group colour space), while in a group naming a colour space it converts to its
-alternate and marks every component (11.7.3); a spot colorant marks none, its alternate
-colour's tints adding to the backdrop's; any other space marks every component, so
-overprinting changes nothing (Table 146). Core composites overprinting where paint lands
-in a DeviceCMYK blending space: a transparency group or page group whose colour space is
-CMYK; with
-RenderOptions(overprint="simulate") a page without a group colour space too, its tiling
-cells and form XObjects included; and with "auto", such a page of a PDF/X document.
+function values included -- in a DeviceCMYK group or on a simulated page without a group
+colour space, the device's native process space, while in an ICCBased CMYK group it
+converts to its alternate and marks every component (11.7.3); a spot colorant marks none,
+its alternate colour's tints adding to the backdrop's; any other space marks every
+component, so overprinting changes nothing (Table 146). Core composites overprinting
+where paint lands in a DeviceCMYK blending space: a transparency group or page group whose
+colour space is CMYK; with RenderOptions(overprint="simulate") a page without a group
+colour space too, its tiling cells and form XObjects included; and with "auto", such a
+page of a PDF/X document.
 
 Each page here paints a backdrop and an overprinting paint over it, mostly in a DeviceCMYK
 page group, and names the CMYK each sampled pixel must show, worked out here from the
@@ -50,6 +50,9 @@ SIZE = 200
 TOLERANCE = 3
 CMYK_GROUP = b"/Group << /S /Transparency /CS /DeviceCMYK >> "
 RGB_GROUP = b"/Group << /S /Transparency /CS /DeviceRGB >> "
+# An ICCBased CMYK page group of the built-in profile (object 8), as long as CMYK_GROUP, so
+# one can stand for the other in a built document.
+ICC_GROUP = b"/Group<</S/Transparency/CS[/ICCBased 8 0 R]>>".ljust(len(CMYK_GROUP))
 EXTGSTATES = (
     b"/ExtGState << "
     b"/Off << /OP false /op false >> "
@@ -229,6 +232,9 @@ class Case(NamedTuple):
     # Each sampled pixel and the CMYK it must show.
     samples: tuple[tuple[tuple[int, int], Cmyk], ...]
     overprint: str = "groups"
+    # A known difference: core does not render the samples yet, which is reported, not
+    # failed; passing becomes a failure, so the case is promoted.
+    known: bool = False
 
 
 class Same(NamedTuple):
@@ -318,11 +324,51 @@ def device_paint_cases() -> list[Case]:
     ]
 
 
-def explicit_group_sames() -> list[Same]:
-    """In a group naming a colour space, a Separation or DeviceN space naming process
-    colorants converts to its alternate (11.7.3): a process colour space, every component
-    of which takes the source's value (Table 146), so it paints as with overprint off."""
-    pages = [
+def in_icc_group(data: bytes) -> bytes:
+    """data, a page in a DeviceCMYK page group, in an ICCBased CMYK one instead."""
+    return data.replace(CMYK_GROUP, ICC_GROUP, 1)
+
+
+# A form XObject (object 10) whose isolated DeviceCMYK group paints the cyan backdrop and
+# fills the paint's rectangle with Separation Magenta at 0.6, overprinting.
+MAGENTA_FORM = stream(
+    b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+    b"/Group << /S /Transparency /CS /DeviceCMYK /I true >> /Resources << "
+    + EXTGSTATES
+    + SPACES
+    + b">>",
+    b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Mag cs 0.6 sc " + PAINT_RECT + b" f",
+)
+
+
+def device_group_cases() -> list[Case]:
+    """A group whose colour space is DeviceCMYK itself composites in the native process
+    space of the CMYK device: a Separation Magenta paint in it marks magenta alone, on any
+    page."""
+    overprinted = regions(CYAN, (0.0, 0.6, 0.0, 0.0), (1.0, 0.6, 0.0, 0.0))
+    content = b"/X10 Do"
+    return [
+        Case(
+            "a DeviceCMYK form group on a DeviceCMYK page marks magenta alone",
+            document(CMYK_GROUP, content, [MAGENTA_FORM]),
+            overprinted,
+        ),
+        Case(
+            "a DeviceCMYK form group on a page without a group marks magenta alone",
+            document(b"", content, [MAGENTA_FORM]),
+            overprinted,
+        ),
+    ]
+
+
+def icc_group_sames() -> list[Same]:
+    """In a group whose colour space is ICCBased CMYK -- "any other colour space" than the
+    device's -- a Separation or DeviceN space naming process colorants converts to its
+    alternate (11.7.3): a process colour space, every component of which takes the source's
+    value (Table 146), so it paints as with overprint off; so does a DeviceCMYK group inside
+    one, whose space is the ancestor's (11.7.2)."""
+    pages = [(case.name, case.data) for case in fill_cases() if case.name in DEVICE_FILLS]
+    pages += [
         ("a Separation Magenta fill", two_fills(b"/On0 gs /Mag cs 0.6 sc")),
         (
             "a DeviceN Cyan and spot fill",
@@ -342,9 +388,22 @@ def explicit_group_sames() -> list[Same]:
         ),
     ]
     sames = [
-        Same(f"in a DeviceCMYK group, {name} paints as with overprint off", data, turned_off(data))
+        Same(
+            f"in an ICCBased CMYK group, {name}: it paints as with overprint off",
+            in_icc_group(data),
+            turned_off(in_icc_group(data)),
+        )
         for name, data in pages
     ]
+    nested = document(ICC_GROUP, b"/X10 Do", [MAGENTA_FORM])
+    sames.append(
+        Same(
+            "a DeviceCMYK form group in an ICCBased CMYK page group paints Separation Magenta "
+            "as with overprint off",
+            nested,
+            turned_off(nested),
+        )
+    )
     # On a simulated page (kept simulating by an OPM 1 fill of 0 0 0 0 k, which marks
     # nothing), a DeviceN Cyan and Magenta image whose soft mask has a Matte: its tints
     # cannot be painted directly, so it paints its alternate's colour, not overprinting.
@@ -817,12 +876,24 @@ def auto_cases() -> list[Case]:
 
 def spot_cases() -> list[Case]:
     """A spot colorant over another spot adds to it, and a process paint that does not
-    overprint erases it. Known difference: a spot over the same spot adds again too, where
-    Table 146 gives the source's value for a spot colorant the source space names and MuPDF,
-    keeping a separation per spot, replaces it; that waits for spot plates of their own."""
+    overprint erases it. Known difference, reported rather than failed: a spot over the same
+    spot adds again too, where Table 146 gives the source's value for a spot colorant the
+    source space names and MuPDF, keeping a separation per spot, replaces it; that waits for
+    spot plates of their own."""
     spot = (0.0, 0.5, 1.0, 0.0)
     spot2 = (0.3, 0.0, 0.0, 0.0)
+    light = (0.0, 0.2, 0.4, 0.0)
     return [
+        Case(
+            "a spot over the same spot replaces its tint",
+            document(
+                CMYK_GROUP,
+                b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f "
+                b"0.4 sc " + PAINT_RECT + b" f",
+            ),
+            regions(add(CYAN, spot, ""), light, add(CYAN, light, "")),
+            known=True,
+        ),
         Case(
             "a spot over another spot keeps both",
             document(
@@ -1021,6 +1092,11 @@ def check_case(case: Case) -> list[str]:
         actual = tuple(int(value) for value in page[y, x])
         if max(abs(a - e) for a, e in zip(actual, expected, strict=True)) > TOLERANCE:
             failures.append(f"{case.name}: at {x},{y} {actual} != {expected} (CMYK {cmyk})")
+    if case.known:
+        if not failures:
+            return [f"{case.name}: a known difference now passes; make it an ordinary case"]
+        print(f"known difference, {failures[0]}")
+        return []
     return failures
 
 
@@ -1069,16 +1145,19 @@ def mupdf_distances(cases: Sequence[Case]) -> None:
 
 def all_cases() -> list[Case]:
     return [
-        *(simulated(case) if case.name in DEVICE_FILLS else case for case in fill_cases()),
+        *fill_cases(),
+        *(simulated(case) for case in fill_cases() if case.name in DEVICE_FILLS),
         *device_paint_cases(),
+        *device_group_cases(),
         *stroke_cases(),
         masked_fill_stroke_case(),
         *group_cases(),
         *image_cases(),
         shading_case(),
+        *process_shading_cases(),
         *map(simulated, process_shading_cases()),
-        *map(simulated, process_image_cases()),
-        *map(simulated, shading_pattern_cases()),
+        *process_image_cases(),
+        *shading_pattern_cases(),
         *census_cases(),
         *auto_cases(),
         *spot_cases(),
@@ -1090,7 +1169,7 @@ def main(argv: list[str]) -> int:
     failures = []
     for case in cases:
         failures.extend(check_case(case))
-    sames = [*same_cases(), *explicit_group_sames()]
+    sames = [*same_cases(), *icc_group_sames()]
     for same in sames:
         failures.extend(check_same(same))
     failures.extend(text_failures())
