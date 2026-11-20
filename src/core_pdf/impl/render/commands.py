@@ -289,8 +289,11 @@ class ProgramLowering:
                     and (arrays := outline_arrays(code, glyph.gid, glyph.text)) is not None
                 ):
                     a, b, c, d, e, f = transform
+                    # Windings that never mix stay so wherever the outline is placed: its
+                    # edges come as SimpleEdges, and the coverage kernels need not look for
+                    # rows where they do.
                     column_x, column_y, edge_array, kept, dropped, bounds = glyph_outline_edges(
-                        arrays.xs, arrays.ys, a, b, c, d, e, f, arrays.spans
+                        arrays.xs, arrays.ys, a, b, c, d, e, f, arrays.spans, arrays.simple
                     )
                     if edge_array is not None:
                         path = CapturedPath.deferred_outline(column_x, column_y, kept)

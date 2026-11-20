@@ -29,12 +29,15 @@ lazy from core_pdf_cythonized._composite import (
     composite_normal_group,
 )
 lazy from core_pdf_cythonized._coverage import (
+    SimpleEdges,
+    area_coverage_plane,
     fill_glyph_coverage,
     fill_glyph_coverage_at,
     fill_glyph_knockout,
     fill_glyph_knockout_at,
     glyph_coverage_plane,
     signed_area_coverage,
+    windings_mix,
 )
 lazy from core_pdf_cythonized._coverage_blend import blend_coverage_counts
 lazy from core_pdf_cythonized._distinct_rows import (
@@ -58,6 +61,7 @@ lazy from core_pdf_cythonized._outline import (
     glyph_outline_edges,
     outline_coordinate_arrays,
     outline_edges,
+    outline_simple,
 )
 lazy from core_pdf_cythonized._paths import fill_edge_rows, flatten_path_commands, path_bounds
 lazy from core_pdf_cythonized._rect import fill_rect_coverage
@@ -129,6 +133,8 @@ __all__ = (
     "function_values",
     "mesh_values",
     "patch_triangles",
+    "SimpleEdges",
+    "area_coverage_plane",
     "blend_coverage_counts",
     "blend_normal_alpha_array_numpy",
     "bilinear_opaque_pixels",
@@ -165,6 +171,7 @@ __all__ = (
     "object_headers_match",
     "outline_coordinate_arrays",
     "outline_edges",
+    "outline_simple",
     "path_bounds",
     "sample_opaque_pixels",
     "scan_to_unicode_cmap",
@@ -172,6 +179,7 @@ __all__ = (
     "shading_t",
     "shading_values",
     "signed_area_coverage",
+    "windings_mix",
     "axis_aligned_polylines",
     "short_subpaths",
     "stroke_coverage",

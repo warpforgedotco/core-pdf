@@ -132,13 +132,14 @@ def corpus_draws() -> tuple[list[tuple[Any, Any, Any]], list[tuple[Any, Any, Mat
     draws: list[tuple[Any, Any, Matrix, Any]] = []
     kernel = commands.glyph_outline_edges
 
-    def recording(xs: Any, ys: Any, *rest: Any) -> Any:
-        *matrix, spans = rest
+    def recording(xs: Any, ys: Any, *rest: Any, **options: Any) -> Any:
+        # Rendering passes the edges' subtype after the spans.
+        *matrix, spans = rest[:7]
         if len(draws) < MAX_DRAWS:
             draws.append((xs, ys, tuple(matrix), spans))
         if len(outlines) < MAX_OUTLINES:
             outlines.setdefault(id(xs), (xs, ys, spans))
-        return kernel(xs, ys, *rest)
+        return kernel(xs, ys, *rest, **options)
 
     commands.glyph_outline_edges = recording  # ty: ignore[invalid-assignment]
     try:

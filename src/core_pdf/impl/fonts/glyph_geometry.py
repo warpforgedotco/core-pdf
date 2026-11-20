@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -13,7 +15,7 @@ from core_pdf.impl.fonts.metrics import FontMetricsModel
 from core_pdf.impl.fonts.program_base import NULL_PROGRAM, GlyphProgram
 from core_pdf.impl.spec.s_09_fonts.descriptor_flags import NO_DESCRIPTOR_STYLE, FontDescriptorStyle
 lazy from core_pdf.impl.fonts.raster_kernel import Contours
-lazy from core_pdf_cythonized import outline_coordinate_arrays
+lazy from core_pdf_cythonized import outline_coordinate_arrays, outline_simple
 
 if TYPE_CHECKING:
     from core_pdf.impl.fonts.fallback import RasterFontProviderLike
@@ -23,7 +25,7 @@ class GlyphOutlineArrays:
     """A glyph outline's point columns and each contour's span in them, which
     core_pdf_cythonized.glyph_outline_edges places under a glyph's matrix."""
 
-    __slots__ = ("spans", "xs", "ys")
+    __slots__ = ("simple", "spans", "xs", "ys")
 
     def __init__(
         self,
@@ -34,6 +36,52 @@ class GlyphOutlineArrays:
         self.xs = xs
         self.ys = ys
         self.spans = spans
+        # Whether the outline's windings are 0 or one sign of 1 everywhere, which no
+        # invertible placement changes: its fills need not look for rows where they mix.
+        self.simple = cached_outline_simple(xs, ys, spans)
+
+
+# outline_simple's answers by an outline's point columns and spans, least recently used
+# first: a font's glyph cache keeps one outline per code, and the same glyph programs recur
+# across codes, fonts and documents. Looking one up (0.6 us for a text glyph) costs a third
+# of the check. Held to SIMPLE_OUTLINE_LIMIT entries and SIMPLE_OUTLINE_BYTES of keys, under
+# SIMPLE_OUTLINES_LOCK as threads may render at once; an outline past SIMPLE_OUTLINE_LARGEST
+# bytes is checked each time instead.
+SIMPLE_OUTLINES: OrderedDict[tuple[bytes, bytes, tuple[tuple[int, int], ...]], bool] = OrderedDict()
+SIMPLE_OUTLINES_LOCK = threading.Lock()
+SIMPLE_OUTLINE_LIMIT = 4096
+SIMPLE_OUTLINE_BYTES = 16 * 2**20
+SIMPLE_OUTLINE_LARGEST = 64 * 2**10
+simple_outline_bytes = 0
+
+
+def cached_outline_simple(
+    xs: numpy.ndarray[Any, Any], ys: numpy.ndarray[Any, Any], spans: tuple[tuple[int, int], ...]
+) -> bool:
+    global simple_outline_bytes
+    size = xs.nbytes + ys.nbytes
+    if size > SIMPLE_OUTLINE_LARGEST:
+        return outline_simple(xs, ys, spans)
+    key = (xs.tobytes(), ys.tobytes(), spans)
+    with SIMPLE_OUTLINES_LOCK:
+        cached = SIMPLE_OUTLINES.get(key)
+        if cached is not None:
+            SIMPLE_OUTLINES.move_to_end(key)
+            return cached
+    simple = outline_simple(xs, ys, spans)
+    with SIMPLE_OUTLINES_LOCK:
+        if key in SIMPLE_OUTLINES:
+            SIMPLE_OUTLINES.move_to_end(key)
+            return SIMPLE_OUTLINES[key]
+        while SIMPLE_OUTLINES and (
+            len(SIMPLE_OUTLINES) >= SIMPLE_OUTLINE_LIMIT
+            or simple_outline_bytes + size > SIMPLE_OUTLINE_BYTES
+        ):
+            (oldest_xs, oldest_ys, _), _ = SIMPLE_OUTLINES.popitem(last=False)
+            simple_outline_bytes -= len(oldest_xs) + len(oldest_ys)
+        SIMPLE_OUTLINES[key] = simple
+        simple_outline_bytes += size
+    return simple
 
 
 def outline_arrays(

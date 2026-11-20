@@ -183,6 +183,8 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
             raster_target.paint_items(items)
         while len(raster_target.buffer_stack) > 1:
             raster_target.composite_group(raster_target.pop_group())
+        # The pattern fills' zeroed pages are kept only while the page paints.
+        raster_target.pattern_scratch.clear()
         if rotate in {90, 180, 270}:
             quarter_turns = {90: -1, 180: 2, 270: 1}[rotate]
             source_view = uint8_image_view(raster_target.pixels, (height, width, 4))

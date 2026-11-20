@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from copy import replace
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -36,7 +37,6 @@ from core_pdf.impl.render.model import (
     SpaceMode,
 )
 from core_pdf.impl.render.paths import intersect_box
-from core_pdf.impl.render.raster_fills import ANTIALIASED_FILL_PIXELS
 from core_pdf.impl.render.raster_support import (
     cell_paints_nothing,
     shading_rgba,
@@ -64,6 +64,12 @@ if TYPE_CHECKING:
 
 # Cells one pattern paints at most, so a tiny cell over a large area stays bounded.
 MAX_TILING_CELLS = 10000
+# An axial or radial shading is worked out a band of at most this many pixels at a time.
+SHADING_BAND_CELLS = 1 << 20
+# The colours the bands of one shading share stop growing at this many inputs (24 bytes each,
+# 24 MiB): a shading of a distinct input per pixel would otherwise keep them all, with no
+# hits; the inputs past it are evaluated in their band, as each band found them before.
+SHADING_KNOWN_LIMIT = 1 << 20
 # Cells from which a pattern paints one cell and copies its pixels to the rest.
 MIN_STAMPED_CELLS = 16
 
@@ -125,42 +131,59 @@ def paint_shading(self: RasterTarget, item: ShadingItem, blend_mode: str | None)
     ix0, iy0, ix1, iy1 = clipped_box[1]
     mode = kernel_blend_code(self.resolved_blend(blend_mode))
     domain = shading.domain
-    allowed = numpy.frombuffer(self.clip_pixel_mask(ix0, iy0, ix1, iy1), dtype=numpy.uint8).reshape(
-        iy1 - iy0, ix1 - ix0
+    # A band of rows at a time: each pixel's value depends on its centre alone, and the
+    # bands paint in row order, so a colour that fails stops where it would over the box.
+    band = max(1, SHADING_BAND_CELLS // max(1, ix1 - ix0))
+    # Each colour is found once for the box: the bands share what they find.
+    known: list[Any] | None = (
+        [numpy.zeros(0, dtype=numpy.float64), numpy.zeros((0, 4), dtype=numpy.int32)]
+        if iy1 - iy0 > band
+        else None
     )
-    values, painted = shading_values(
-        shading.shading_type,
-        shading.coords,
-        self.crop_x0,
-        self.crop_y1,
-        self.scale,
-        ix0,
-        iy0,
-        ix1,
-        iy1,
-        allowed,
-        bool(shading.extend_start),
-        bool(shading.extend_end),
-        domain[0],
-        domain[1] - domain[0],
-        0.5,
-        to_shading,
-        shading_bbox,
-    )
-    ordered = values[painted.view(numpy.bool_)]
-    blend_shading_colors(
-        self,
-        item,
-        shading,
-        mode,
-        (ix0, iy0),
-        painted,
-        ordered,
-        lambda positions: ordered[positions].tolist(),
-        allowed if background is not None else None,
-        background,
-        many_colors=True,
-    )
+    for top in range(iy0, iy1, band):
+        bottom = min(iy1, top + band)
+        allowed = numpy.frombuffer(
+            self.clip_pixel_mask(ix0, top, ix1, bottom), dtype=numpy.uint8
+        ).reshape(bottom - top, ix1 - ix0)
+        values, painted = shading_values(
+            shading.shading_type,
+            shading.coords,
+            self.crop_x0,
+            self.crop_y1,
+            self.scale,
+            ix0,
+            top,
+            ix1,
+            bottom,
+            allowed,
+            bool(shading.extend_start),
+            bool(shading.extend_end),
+            domain[0],
+            domain[1] - domain[0],
+            0.5,
+            to_shading,
+            shading_bbox,
+        )
+        ordered = values[painted.view(numpy.bool_)]
+        blend_shading_colors(
+            self,
+            item,
+            shading,
+            mode,
+            (ix0, top),
+            painted,
+            ordered,
+            partial(positions_of, ordered),
+            allowed if background is not None else None,
+            background,
+            many_colors=True,
+            known=known,
+        )
+
+
+def positions_of(values: Any, positions: Any) -> list[Any]:
+    """values at positions, as a list."""
+    return values[positions].tolist()
 
 
 @cites(
@@ -194,13 +217,16 @@ def blend_shading_colors(
     background: tuple[float, ...] | None,
     *,
     many_colors: bool = False,
+    known: list[Any] | None = None,
 ) -> None:
     """Paint each pixel the shading paints in its colour, and with a background, the rest of
     area in the background colour. keys holds one entry per painted pixel, in row order, the
     same for pixels of one colour; arguments gives the evaluator's input (a number, or a tuple
     of them) at the given positions of keys. Colours are found in the order they first
     appear; when one fails, the pixels before it are painted and its error raised. With
-    many_colors, the colours of a device colour model are converted in one pass."""
+    many_colors, the colours of a device colour model are converted in one pass. known holds
+    the inputs (sorted) and colours earlier bands of the same shading found, as two arrays,
+    and gains this band's, up to SHADING_KNOWN_LIMIT inputs."""
     ix0, iy0 = origin
     soft_mask_alpha = item.soft_mask_alpha
     fill_opacity = item.fill_opacity
@@ -224,8 +250,24 @@ def blend_shading_colors(
     reached = len(keys)
     color_error: Exception | None = None
     evaluate = shading.evaluator
-    order = by_first.tolist()
-    inputs = arguments(first[by_first]) if len(first) else []
+    all_inputs = arguments(first[by_first]) if len(first) else []
+    # The colours an earlier band found are taken as they were; the others are found here, in
+    # the order they first appear, so a failing one stops where it would over the whole box.
+    if known is not None and len(first):
+        values = numpy.asarray(keys)[first[by_first]]
+        known_keys, known_colors = known
+        hit = numpy.zeros(len(values), dtype=numpy.bool_)
+        if len(known_keys):
+            slots = numpy.minimum(numpy.searchsorted(known_keys, values), len(known_keys) - 1)
+            hit = known_keys[slots] == values
+            colors[by_first[hit]] = known_colors[slots[hit]]
+        todo = numpy.flatnonzero(~hit).tolist()
+        order = by_first[todo].tolist()
+        inputs = [all_inputs[step] for step in todo]
+    else:
+        todo = list(range(len(all_inputs)))
+        order = by_first.tolist()
+        inputs = all_inputs
     # A colour space other than a device one converts every colour in one pass.
     batch = evaluate.many(inputs) if isinstance(evaluate, SpaceEvaluator) and inputs else None
     palette = (
@@ -234,8 +276,11 @@ def blend_shading_colors(
         else None
     )
     if palette is not None:
-        colors[by_first] = palette
+        colors[order] = palette
+        evaluated = len(order)
         order = []
+    else:
+        evaluated = 0
     for step, unique_index in enumerate(order):
         position = int(first[unique_index])
         try:
@@ -248,10 +293,19 @@ def blend_shading_colors(
             if in_space:
                 rgba = self.shading_space_color(color_model, components, rgba)
             colors[unique_index] = rgba
+            evaluated = step + 1
         except Exception as error:
             color_error = error
             reached = position
             break
+    room = SHADING_KNOWN_LIMIT - len(known[0]) if known is not None else 0
+    if known is not None and evaluated and room > 0:
+        found = todo[: min(evaluated, room)]
+        merged_keys = numpy.concatenate((known[0], values[found]))
+        merged_colors = numpy.concatenate((known[1], colors[by_first[found]]))
+        by_key = numpy.argsort(merged_keys, kind="stable")
+        known[0] = merged_keys[by_key]
+        known[1] = merged_colors[by_key]
     color_index = inverse.reshape(-1)[:reached]
     if fill is not None:
         # The background's pixels join the shading's, in row order, with the last colour.
@@ -838,31 +892,61 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     clipped = clip_state.clipped_pixel_box(box)
     if clipped is None:
         return True
-    ix0, iy0, ix1, iy1 = clipped[1]
-    if (ix1 - ix0) * (iy1 - iy0) >= ANTIALIASED_FILL_PIXELS and path.axis_aligned_rect() is None:
-        # A fill this large, other than a rectangle's, covers each pixel whole or not at all,
-        # which the path as a clip gives without drawing its coverage.
-        clip_state.push(path, data.fill_rule or "nonzero")
-        try:
-            self.paint_pattern_over(pattern, data, box, data.fill_opacity, blend_mode)
-        finally:
-            clip_state.pop()
-        return True
     # The fill's coverage, drawn opaque on a blank page of its own under the same clip and
-    # in the same blend mode, which choose how a plain fill antialiases.
-    coverage, view = self.blank_sibling(clip_state)
-    coverage.fill_path(
-        path,
-        (255, 255, 255, 255),
-        blend_mode,
-        data.fill_rule or "nonzero",
-        bbox=data.bbox if data.edge_array is not None else None,
-        edge_array=data.edge_array,
-    )
+    # in the same blend mode, which choose how a plain fill antialiases. The page, the
+    # coverage's alpha and the pattern's group are kept zero between pattern fills at this
+    # depth, so a fill costs its pixel box, not the page.
+    scratch = self.pattern_scratch_for()
+    try:
+        paint_pattern_fill(self, pattern, data, path, box, clipped[1], blend_mode, scratch)
+    finally:
+        self.pattern_scratch_done(scratch)
+    return True
+
+
+def paint_pattern_fill(
+    self: RasterTarget,
+    pattern: ShadingPattern | TilingPattern,
+    data: PathPaintItem,
+    path: CapturedPath,
+    box: tuple[float, float, float, float],
+    pixel_box: tuple[int, int, int, int],
+    blend_mode: str | None,
+    scratch: PatternScratch,
+) -> None:
+    """paint_fill_pattern's work on scratch, the zeroed planes of its depth."""
+    clip_state = self.clip
+    ix0, iy0, ix1, iy1 = pixel_box
+    rows, columns = slice(iy0, iy1), slice(ix0, ix1)
+    coverage, view = self.blank_sibling(clip_state, scratch.page)
+    try:
+        coverage.fill_path(
+            path,
+            (255, 255, 255, 255),
+            blend_mode,
+            data.fill_rule or "nonzero",
+            bbox=data.bbox if data.edge_array is not None else None,
+            edge_array=data.edge_array,
+        )
+        scratch.alpha[rows, columns] = view[rows, columns, 3]
+    finally:
+        view[rows, columns] = 0
+    del coverage, view
     # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
     isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
-    self.paint_pattern_through(pattern, data, box, data.fill_opacity, blend_mode, view, isolated)
-    return True
+    try:
+        self.paint_pattern_through(
+            pattern,
+            data,
+            box,
+            data.fill_opacity,
+            blend_mode,
+            scratch.alpha,
+            isolated,
+            scratch if isolated else None,
+        )
+    finally:
+        scratch.alpha[rows, columns] = 0
 
 
 def paint_pattern_through(
@@ -874,20 +958,24 @@ def paint_pattern_through(
     blend_mode: str | None,
     coverage: UInt8Array,
     isolated: bool,
+    scratch: PatternScratch | None = None,
 ) -> None:
-    """Paint pattern over box at opacity in a group masked by coverage's alpha, which blends
-    in blend_mode."""
-    mask = SoftMaskPlane(coverage[..., 3], None)
+    """Paint pattern over box at opacity in a group masked by coverage, an alpha plane of
+    the page, which blends in blend_mode. An isolated group may take scratch's zeroed page,
+    which it leaves zero again."""
+    mask = SoftMaskPlane(coverage, None)
     self.push_group(
-        bytearray(len(self.pixels)),
+        bytearray(len(self.pixels)) if scratch is None else scratch.page,
         None,
         blend_mode,
         isolated=isolated,
         alpha_is_shape=data.alpha_is_shape,
         mask_alpha=mask,
     )
+    group = self.buffer_stack[-1]
+    limit = self.paint_limit
+    self.paint_limit = coverage
     try:
-        group = self.buffer_stack[-1]
         self.paint_pattern_over(pattern, data, box, opacity)
         shape = group.source_shape
         window = group.paint_window.slices()
@@ -897,7 +985,15 @@ def paint_pattern_through(
             rows, columns = window
             shape[rows, columns] *= mask[rows, columns]
     finally:
-        self.composite_group(self.pop_group())
+        self.paint_limit = limit
+        try:
+            self.composite_group(self.pop_group())
+        finally:
+            if scratch is not None:
+                # Every paint widens the group's window, so zeroing it leaves the page blank.
+                window = group.paint_window.slices()
+                if window is not None:
+                    group.view[window] = 0
 
 
 @cites(
@@ -932,7 +1028,12 @@ def paint_stroke_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: st
         data.miter_limit,
         data.stroke_matrix,
     )
-    self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, view, True)
+    stroke_box = self.clip.clipped_pixel_box(box)
+    if stroke_box is None:
+        return True
+    alpha = coverage_alpha(view, stroke_box[1])
+    del coverage, view
+    self.paint_pattern_through(pattern, data, box, data.stroke_opacity, blend_mode, alpha, True)
     return True
 
 
@@ -962,11 +1063,65 @@ def paint_pattern_over(
     self.paint_tiling_pattern(pattern, replace(data, bbox=box, fill_opacity=opacity), blend_mode)
 
 
+def coverage_alpha(view: UInt8Array, pixel_box: tuple[int, int, int, int]) -> UInt8Array:
+    """The alpha of a blank page that coverage was drawn on within pixel_box, as a plane of
+    the page whose memory is touched only there; the page can then be freed."""
+    ix0, iy0, ix1, iy1 = pixel_box
+    alpha = numpy.zeros(view.shape[:2], dtype=numpy.uint8)
+    alpha[iy0:iy1, ix0:ix1] = view[iy0:iy1, ix0:ix1, 3]
+    return alpha
+
+
+class PatternScratch:
+    """Zeroed planes a pattern fill draws on and leaves zero:
+    page, the blank page its coverage is drawn on and then the pattern's group, which never
+    live at once, and alpha, the coverage's alpha."""
+
+    __slots__ = ("alpha", "busy", "page")
+
+    def __init__(self, width: int, height: int) -> None:
+        self.page = bytearray(width * height * 4)
+        self.alpha = numpy.zeros((height, width), dtype=numpy.uint8)
+        # Whether a pattern fill at its depth is drawing on it now.
+        self.busy = False
+
+
+# pattern_scratch's key for the one idle set of planes, kept for the next fill at any depth.
+IDLE_SCRATCH = -1
+
+
+def pattern_scratch_for(self: RasterTarget) -> PatternScratch:
+    """The scratch planes for a pattern fill at the current depth of the group stack: the
+    idle ones, when a fill left them, else new ones; busy until pattern_scratch_done."""
+    depth = len(self.buffer_stack)
+    scratch = self.pattern_scratch.get(depth)
+    if scratch is None:
+        scratch = self.pattern_scratch.pop(IDLE_SCRATCH, None)
+        if scratch is None:
+            scratch = PatternScratch(self.width, self.height)
+        self.pattern_scratch[depth] = scratch
+    scratch.busy = True
+    return scratch
+
+
+def pattern_scratch_done(self: RasterTarget, scratch: PatternScratch) -> None:
+    """Give scratch's depth up: its planes become the idle ones, unless another fill's are
+    idle already, when they are freed. At most one page waits idle, and fills that move
+    between depths one at a time reuse it."""
+    scratch.busy = False
+    for depth, other in list(self.pattern_scratch.items()):
+        if other is scratch and depth != IDLE_SCRATCH:
+            del self.pattern_scratch[depth]
+    self.pattern_scratch.setdefault(IDLE_SCRATCH, scratch)
+
+
 def blank_sibling(
-    self: RasterTarget, clip: ClipState | None = None
+    self: RasterTarget, clip: ClipState | None = None, pixels: bytearray | None = None
 ) -> tuple[RasterTarget, UInt8Array]:
-    """A blank target of the same page, unclipped or sharing clip, which it must not change."""
-    pixels = bytearray(self.width * self.height * 4)
+    """A blank target of the same page, unclipped or sharing clip, which it must not change,
+    on pixels (zero) or a new page."""
+    if pixels is None:
+        pixels = bytearray(self.width * self.height * 4)
     view = uint8_image_view(pixels, (self.height, self.width, 4))
     sibling = type(self)(
         pixels,

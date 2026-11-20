@@ -350,6 +350,7 @@ jobs:
           $run/check_patterns.py
           $run/check_pattern_text.py
           $run/check_pattern_edges.py
+          $run/check_large_fills.py
           $run/check_uncoloured_patterns.py
           $run/check_image_interpolation.py
           $run/check_strokes.py

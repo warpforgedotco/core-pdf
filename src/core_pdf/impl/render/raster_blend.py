@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+lazy import numpy
+
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.render.blend import (
     BLACK_BLEND_OPS,
     BLEND_OP_MODES,
-    RASTER_NUMPY_SPAN_MIN_PIXELS,
     BlendOp,
-    blend_normal_solid_array_numpy,
     blend_op,
     kernel_blend_code,
 )
@@ -116,46 +116,6 @@ def blend_px(
     pixels[idx + 3] = max(0, min(255, out_a_i))
 
 
-def blend_normal_solid_span(
-    self: RasterTarget, row: int, start: int, end: int, rgba: tuple[int, int, int, int]
-) -> None:
-    sr, sg, sb, sa = rgba
-    if end <= start:
-        return
-    self.record_source_shape(row // (self.width * 4), slice(start, end), 255)
-    if sa <= 0:
-        return
-    self.record_source_alpha(row // (self.width * 4), slice(start, end), sa)
-    pixels = self.pixels
-    width = self.width
-    if end - start >= RASTER_NUMPY_SPAN_MIN_PIXELS:
-        target = self.pixel_array
-        blend_normal_solid_array_numpy(target[row // (width * 4), start:end], rgba)
-        return
-    start_offset = row + start * 4
-    stop_offset = row + end * 4
-    if sa >= 255:
-        self.pixel_array[row // (width * 4), start:end] = (sr, sg, sb, 255)
-        return
-    src_a = sa / 255.0
-    one_minus_src_a = 1.0 - src_a
-    for idx in range(start_offset, stop_offset, 4):
-        dr = pixels[idx]
-        dg = pixels[idx + 1]
-        db = pixels[idx + 2]
-        da = pixels[idx + 3]
-        dst_a = da / 255.0
-        out_a = src_a + dst_a * one_minus_src_a
-        out_r = int(round((sr * src_a + dr * dst_a * one_minus_src_a) / out_a))
-        out_g = int(round((sg * src_a + dg * dst_a * one_minus_src_a) / out_a))
-        out_b = int(round((sb * src_a + db * dst_a * one_minus_src_a) / out_a))
-        out_a_i = int(round(out_a * 255.0))
-        pixels[idx] = max(0, min(255, out_r))
-        pixels[idx + 1] = max(0, min(255, out_g))
-        pixels[idx + 2] = max(0, min(255, out_b))
-        pixels[idx + 3] = max(0, min(255, out_a_i))
-
-
 def clip_pixel_mask(self: RasterTarget, ix0: int, iy0: int, ix1: int, iy1: int) -> bytearray:
     box_width = ix1 - ix0
     allowed = bytearray(box_width * (iy1 - iy0))
@@ -168,6 +128,11 @@ def clip_pixel_mask(self: RasterTarget, ix0: int, iy0: int, ix1: int, iy1: int) 
             end = min(ix1, span_end)
             if end > start:
                 allowed[row_start + start : row_start + end] = ones[: end - start]
+    limit = self.paint_limit
+    if limit is not None:
+        # Paint a masked group's mask leaves out would never show: it is not worked out.
+        plane = numpy.frombuffer(allowed, dtype=numpy.uint8).reshape(iy1 - iy0, box_width)
+        plane &= limit[iy0:iy1, ix0:ix1] != 0
     return allowed
 
 

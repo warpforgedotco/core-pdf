@@ -8,3 +8,7 @@ cdef enum:
     STACK_CELLS = 1024
     # Four doubles per device edge. Pure-mode array sizes must be a single constant.
     STACK_EDGE_VALUES = STACK_EDGES * 4
+    # A window of at most this many cells, (width + 2) x height, is summed densely.
+    DENSE_CELLS = 262144
+    # Rows the row engine counts edges into on the stack.
+    TALLY_STACK = 128

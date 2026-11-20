@@ -4,6 +4,20 @@ from typing import Any
 
 import numpy
 
+class SimpleEdges(numpy.ndarray[Any, Any]): ...
+
+def windings_mix(edges: numpy.ndarray[Any, Any]) -> bool: ...
+def area_coverage_plane(
+    edges: numpy.ndarray[Any, Any],
+    crop_x0: float,
+    crop_y1: float,
+    scale: float,
+    ix0: float,
+    iy0: float,
+    width: int,
+    height: int,
+    mode: int = 0,
+) -> tuple[numpy.ndarray[Any, Any], int, numpy.ndarray[Any, Any]] | None: ...
 def signed_area_coverage(
     edges: numpy.ndarray[Any, Any], width: int, height: int
 ) -> numpy.ndarray[Any, Any]: ...

@@ -15,6 +15,7 @@ from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SpaceMode
+from core_pdf.impl.render.raster_shading import PatternScratch
 from core_pdf.impl.render.raster_support import ElementaryScratch, FloatPlane, RenderResources
 from core_pdf.impl.spec.standards import SemanticContext
 
@@ -50,6 +51,8 @@ class RasterTarget:
         "scope_stack",
         "resources",
         "elementary_scratch",
+        "pattern_scratch",
+        "paint_limit",
         "group_member_boxes",
         "space_mode",
         "space_profile",
@@ -81,6 +84,9 @@ class RasterTarget:
     scope_stack: list[tuple[int, list[int], int, int, int]]
     resources: RenderResources
     elementary_scratch: dict[int, ElementaryScratch]
+    pattern_scratch: dict[int, PatternScratch]
+    # Inside a pattern's masked group, its mask: pixels it leaves out need no paint.
+    paint_limit: UInt8Array | None
     group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None
     fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None
     # What the colour components hold (raster_spaces): sRGB unless inside a group that
@@ -124,6 +130,8 @@ class RasterTarget:
         self.scope_stack = []
         self.resources = RenderResources() if resources is None else resources
         self.elementary_scratch = {}
+        self.pattern_scratch = {}
+        self.paint_limit = None
         self.fill_memo = None
         self.group_member_boxes = None
         self.space_mode = SpaceMode.RGB
@@ -165,7 +173,6 @@ class RasterTarget:
     # Blending source pixels into the target, and the clip mask they pass through.
     resolved_blend = blend.resolved_blend
     blend_px = blend.blend_px
-    blend_normal_solid_span = blend.blend_normal_solid_span
     clip_pixel_mask = blend.clip_pixel_mask
     blend_rules = blend.blend_rules
     blend_counts = blend.blend_counts
@@ -174,8 +181,6 @@ class RasterTarget:
     fill_rect = fills.fill_rect
     draw_glyph_bitmap = fills.draw_glyph_bitmap
     fill_circle = fills.fill_circle
-    fill_path_scanlines = fills.fill_path_scanlines
-    fast_fill_path = fills.fast_fill_path
     fill_path = fills.fill_path
 
     # Stroking paths: segments, joins and caps.
@@ -200,6 +205,8 @@ class RasterTarget:
     paint_pattern_over = shading.paint_pattern_over
     paint_pattern_through = shading.paint_pattern_through
     blank_sibling = shading.blank_sibling
+    pattern_scratch_for = shading.pattern_scratch_for
+    pattern_scratch_done = shading.pattern_scratch_done
 
     # Painting a display list: each item goes to the handler for its type.
     paint_items = dispatch.paint_items

@@ -245,11 +245,24 @@ Nothing checks the result on the platforms that build wheels.
 | `glyph_feature_cells` | the numpy cell measurement of `core_pdf.impl.fonts.cff_repair.feature_from_contours` (deleted), which keeps `feature_from_points` for the non-finite inputs the kernel declines | 57 to 18 us per glyph feature over the NASA CMap sample's CFF repair glyphs (about 200 points each), where some twenty array operations ran on arrays too small to amortize them |
 | `outline_coordinate_arrays` | the list build and two `numpy.asarray` calls of `core_pdf.impl.fonts.glyph_geometry.outline_arrays` (deleted) | 16.8 to 3.0 us per glyph outline over 919 corpus render outlines (median 202 points) |
 
-`glyph_coverage_plane`, `fill_glyph_coverage` and `signed_area_coverage` share one accumulation core;
-Core reaches it through the fused entry point only.
+`area_coverage_plane`, `glyph_coverage_plane`, `fill_glyph_coverage`,
+`fill_glyph_knockout` and `signed_area_coverage` share one row engine: the dense sums of
+signed areas for a small window and row-by-row sums for a large one, each cell's sum added in
+the same order, and an exact measure, from the outline's pieces alone, for the rows whose
+windings meet inside a pixel (+1 against -1, or beyond 1), where those sums cancel or count
+twice. Rows the search for those runs out of work before (unknown, so taken as mixed), and
+mixed rows with more than 256 active edges, are supersampled 4x4 by winding instead, at a
+cost bounded by their edges: a trade of their antialiasing, no finer than main's 4x4 route
+gave such fills, for time, which an exact measure of such a row would spend on crossings
+among every pair of its edges. Unmixed rows are summed however many edges they have.
+`scripts/check_large_fills.py` checks `area_coverage_plane` against a Python reference
+of the engine, supersampled rows included, for equality (the reference has no budget, so it
+takes the rows the kernel left unchecked from the kernel) and against an independent span
+measure. Core reaches the engine
+through the fused entry points only.
 
-Together the two render kernels take full `render().rasterize()` down by
-21-32% across the corpus, with byte-identical pixels:
+Together the two render kernels took full `render().rasterize()` down by
+21-32% across the corpus, with byte-identical pixels when they came in:
 
 | page | before | after |
 | ---- | ------ | ----- |
