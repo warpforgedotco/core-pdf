@@ -17,9 +17,12 @@ the text and the markup each non-space character's span carries, a line's Markdo
 paragraph on its own and after another line, and a block's as the heading, paragraph or
 list it is, so text that reads as syntax must be escaped; a page's lists, each block's
 apart from its neighbours', must read as tight lists of one item per line, and a page's
-first block must start a line. Seeded random lines and blocks, of characters Markdown
-reads as syntax, leading and trailing spaces and tabs, and random markup, go through the
-same checks. A missing corpus file fails the check.
+first block must start a line. A block's HTML, and a page's lists in HTML, must read back
+with the structure of their Markdown: the same lists, ordered or bulleted, with the same
+start and items, the same heading level, and the same text and markup in each. Seeded
+random lines and blocks, of characters Markdown reads as syntax, leading and trailing
+spaces and tabs, and random markup, go through the same checks. A missing corpus file
+fails the check.
 
 uv run --all-packages --group test python scripts/check_styled_spans.py [--all]
 
@@ -47,11 +50,15 @@ from markdown_it.token import Token
 from core_pdf import PdfDocument
 from core_pdf.impl.output.model import Block, BlockKind, Document, Page, TextLine, TextSpan
 from core_pdf.impl.output.serialize import (
+    block_to_html,
     block_to_markdown,
+    document_to_html,
     document_to_markdown,
+    heading_level,
     html_line,
+    list_runs,
     markdown_line,
-    markdown_list_item,
+    page_to_html,
     page_to_markdown,
 )
 
@@ -511,35 +518,135 @@ def structure_failure(line: TextLine, start: int = 0) -> str | None:
     return None
 
 
+# A block as a parser reads it: ("heading", level, [text]), ("paragraph", None, [text]),
+# ("ordered", start, [text per item]) or ("bullet", None, [text per item]), each text the
+# non-space characters with their markup. A paragraph with no such characters, and a list
+# of no items, which Markdown cannot write, are left out.
+type Structure = list[tuple[str, int | None, list[Styled]]]
+HTML_HEADINGS = {f"h{level}": level for level in range(1, 7)}
+
+
+def without_empty(structure: Structure) -> Structure:
+    return [
+        (kind, start, texts)
+        for kind, start, texts in structure
+        if kind == "heading" or (any(texts) if kind == "paragraph" else texts)
+    ]
+
+
+def markdown_structure(markdown: str) -> Structure:
+    """The headings, paragraphs and lists CommonMark reads in Markdown, nothing else."""
+    structure: Structure = []
+    depth = 0
+    for token in MARKDOWN.parse(markdown):
+        if token.type in {"bullet_list_open", "ordered_list_open"}:
+            depth += 1
+            if token.type == "bullet_list_open":
+                structure.append(("bullet", None, []))
+            else:
+                # markdown-it gives a start only where it is not 1.
+                start = token.attrGet("start")
+                structure.append(("ordered", 1 if start is None else int(start), []))
+        elif token.type in {"bullet_list_close", "ordered_list_close"}:
+            depth -= 1
+        elif token.type == "list_item_open":
+            structure[-1][2].append([])
+        elif token.type == "heading_open" and not depth:
+            structure.append(("heading", HTML_HEADINGS[token.tag], [[]]))
+        elif token.type == "paragraph_open" and not depth:
+            structure.append(("paragraph", None, [[]]))
+        elif token.type == "inline" and structure:
+            structure[-1][2][-1].extend(inline_styles(token.children or ()))
+    return without_empty(structure)
+
+
+class HtmlStructure(HTMLParser):
+    """The headings, paragraphs and lists an HTML parser reads, text elsewhere left out."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.counter = StyleCounter()
+        self.structure: Structure = []
+        self.inside = False  # in a heading, paragraph or list item
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in HTML_HEADINGS or tag == "p":
+            self.counter.styled = []
+            kind = "paragraph" if tag == "p" else "heading"
+            self.structure.append((kind, HTML_HEADINGS.get(tag), [self.counter.styled]))
+            self.inside = True
+        elif tag == "ul":
+            self.structure.append(("bullet", None, []))
+        elif tag == "ol":
+            self.structure.append(("ordered", int(dict(attrs).get("start") or 1), []))
+        elif tag == "li":
+            self.counter.styled = []
+            self.structure[-1][2].append(self.counter.styled)
+            self.inside = True
+        else:
+            self.counter.tag(tag, False, dict(attrs).get("title"))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in HTML_HEADINGS or tag in {"p", "li"}:
+            self.inside = False
+        else:
+            self.counter.tag(tag, True, None)
+
+    def handle_data(self, data: str) -> None:
+        if self.inside:
+            self.counter.text(data)
+
+
+def html_structure(html: str) -> Structure:
+    parser = HtmlStructure()
+    parser.feed(html)
+    parser.close()
+    return without_empty(parser.structure)
+
+
+def lists_of(structure: Structure) -> Structure:
+    return [entry for entry in structure if entry[0] in {"ordered", "bullet"}]
+
+
+def expected_structure(block: Block) -> Structure:
+    """The structure the block's own lines and list_runs give it."""
+    if block.kind is BlockKind.LIST:
+        return [
+            (
+                "bullet" if run[0].number is None else "ordered",
+                None if run[0].number is None else int(run[0].number),
+                [span_styles(item.line, item.start) for item in run],
+            )
+            for run in list_runs(block)
+        ]
+    styled = [styled for line in block.lines for styled in span_styles(line)]
+    if block.kind is BlockKind.HEADING:
+        return [("heading", heading_level(block), [styled])]
+    return without_empty([("paragraph", None, [styled])])
+
+
 def block_failure(block: Block, level: int | None = None) -> str | None:
     """How the block CommonMark reads in a block's Markdown differs from the block, a
-    heading's level checked where given."""
+    heading's level checked where given, and how the block an HTML parser reads in its
+    HTML differs from that: the same lists, of the same kind, start and items, the same
+    heading level, and the same text and markup in each."""
     markdown = block_to_markdown(block)
     tokens = MARKDOWN.parse(markdown)
     types = [token.type for token in tokens]
-    starts = [0] * len(block.lines)
     if block.kind is BlockKind.HEADING:
         shape = types == HEADING and (level is None or tokens[0].tag == f"h{level}")
     elif block.kind is BlockKind.LIST:
         shape = LIST_TOKENS.issuperset(types) and types.count("list_item_open") == len(block.lines)
-        starts = [markdown_list_item(line)[1] for line in block.lines]
     else:
         shape = types == PARAGRAPH or not types and not markdown.strip()
     if not shape:
         return f"{block.kind} Markdown reads as {types}: {markdown!r}"
-    read = [
-        styled
-        for token in tokens
-        if token.type == "inline"
-        for styled in inline_styles(token.children or ())
-    ]
-    expected = [
-        styled
-        for line, start in zip(block.lines, starts, strict=True)
-        for styled in span_styles(line, start)
-    ]
-    if read != expected:
-        return f"{block.kind} Markdown reads back other text or markup: {markdown!r}"
+    read = markdown_structure(markdown)
+    if read != expected_structure(block):
+        return f"{block.kind} Markdown reads back other structure, text or markup: {markdown!r}"
+    html = block_to_html(block)
+    if html_structure(html) != read:
+        return f"{block.kind} HTML reads back other structure than its Markdown: {html!r}"
     return None
 
 
@@ -605,71 +712,202 @@ def check_pages() -> list[str]:
     headings = [token.tag for token in MARKDOWN.parse(markdown) if token.type == "heading_open"]
     if headings != ["h2"]:
         failures.append(f"page joins: Markdown reads headings {headings}: {markdown!r}")
+    shapes = [(kind, start, len(items)) for kind, start, items in html_lists(page_to_html(page))]
+    if shapes != [("bullet", None, 2), ("bullet", None, 1), ("ordered", 1, 2), ("ordered", 3, 1)]:
+        failures.append(f"neighbouring lists: HTML reads lists {shapes}: {page_to_html(page)!r}")
+    if (failure := html_lists_failure(page_to_markdown(page), page_to_html(page))) is not None:
+        failures.append(f"neighbouring lists: {failure}")
+    if (failure := html_lists_failure(markdown, document_to_html(document))) is not None:
+        failures.append(f"page joins: {failure}")
+    # Blocks Markdown writes as nothing leave their neighbours neighbours.
+    gaps = Page(
+        4,
+        blocks=(
+            block_of(BlockKind.LIST, plain("• a"), order=0),
+            block_of(BlockKind.PARAGRAPH, plain("   "), order=1),
+            block_of(BlockKind.LIST, plain("• b"), order=2),
+            block_of(BlockKind.LIST, order=3),
+            block_of(BlockKind.LIST, plain("• c"), order=4),
+            block_of(BlockKind.LIST, plain("1. d"), plain("• e"), order=5),
+        ),
+    )
+    expected = "- a\n\n* b\n\n- c\n\n1) d\n* e"
+    if (got := page_to_markdown(gaps)) != expected:
+        failures.append(f"lists around empty blocks: Markdown {got!r}, expected {expected!r}")
+    if (failure := lists_failure(page_to_markdown(gaps), 5, lists=5)) is not None:
+        failures.append(f"lists around empty blocks: {failure}")
+    if (failure := html_lists_failure(page_to_markdown(gaps), page_to_html(gaps))) is not None:
+        failures.append(f"lists around empty blocks: {failure}")
+    # One HTML element per block, a block of several lists one <div>.
+    for name, checked in (("neighbouring lists", page), ("lists around empty blocks", gaps)):
+        html = page_to_html(checked)
+        if (count := html.count("data-block-kind=")) != len(checked.elements):
+            failures.append(f"{name}: HTML has {count} block elements: {html!r}")
     return failures
+
+
+def html_lists(html: str) -> Structure:
+    return lists_of(html_structure(html))
+
+
+def html_lists_failure(markdown: str, html: str) -> str | None:
+    """How the lists an HTML parser reads in a page's or document's HTML differ from those
+    CommonMark reads in its Markdown."""
+    if html_lists(html) != lists_of(markdown_structure(markdown)):
+        return f"HTML reads other lists than its Markdown: {html!r}"
+    return None
 
 
 def plain(text: str) -> TextLine:
     return TextLine(text)
 
 
-# (name, block, Markdown, heading level CommonMark must read or None)
-BLOCK_CASES: tuple[tuple[str, Block, str, int | None], ...] = (
+H = ' data-block-kind="heading"'
+P = ' data-block-kind="paragraph"'
+L = ' data-block-kind="list"'
+# (name, block, Markdown, HTML, heading level CommonMark must read or None)
+BLOCK_CASES: tuple[tuple[str, Block, str, str, int | None], ...] = (
     (
         "heading ending in a # run",
         block_of(BlockKind.HEADING, plain("Item #"), level=2),
         "## Item \\#",
+        f"<h2{H}>Item #</h2>",
         2,
     ),
-    ("heading of a # only", block_of(BlockKind.HEADING, plain("#"), level=1), "# \\#", 1),
+    (
+        "heading of a # only",
+        block_of(BlockKind.HEADING, plain("#"), level=1),
+        "# \\#",
+        f"<h1{H}>#</h1>",
+        1,
+    ),
     (
         "heading of two lines",
         block_of(BlockKind.HEADING, plain("Annual  "), plain("  Report"), level=3),
         "### Annual Report",
+        f"<h3{H}>Annual Report</h3>",
         3,
     ),
-    ("heading past level 6", block_of(BlockKind.HEADING, plain("x"), level=9), "###### x", 6),
-    ("heading of level 0", block_of(BlockKind.HEADING, plain("x"), level=0), "# x", 1),
-    ("heading of no level", block_of(BlockKind.HEADING, plain("x")), "## x", 2),
+    (
+        "heading with a blank line",
+        block_of(BlockKind.HEADING, plain("A"), plain("   "), plain("B"), level=2),
+        "## A B",
+        f"<h2{H}>A B</h2>",
+        2,
+    ),
+    (
+        "heading with lines of no-break and styled spaces",
+        block_of(
+            BlockKind.HEADING,
+            plain("A"),
+            plain("  "),
+            styled_line((S("  ", underline=True), S("\t", bold=True))),
+            plain("B"),
+            level=2,
+        ),
+        "## A B",
+        f"<h2{H}>A B</h2>",
+        2,
+    ),
+    (
+        "heading past level 6",
+        block_of(BlockKind.HEADING, plain("x"), level=9),
+        "###### x",
+        f"<h6{H}>x</h6>",
+        6,
+    ),
+    (
+        "heading of level 0",
+        block_of(BlockKind.HEADING, plain("x"), level=0),
+        "# x",
+        f"<h1{H}>x</h1>",
+        1,
+    ),
+    ("heading of no level", block_of(BlockKind.HEADING, plain("x")), "## x", f"<h2{H}>x</h2>", 2),
+    (
+        "heading to escape",
+        block_of(BlockKind.HEADING, styled_line((S("<a> & "), S("b", bold=True))), level=1),
+        "# \\<a> & **b**",
+        f"<h1{H}>&lt;a&gt; &amp; <strong>b</strong></h1>",
+        1,
+    ),
     (
         "paragraph lines with end spaces",
         block_of(BlockKind.PARAGRAPH, plain("one  "), plain("    two"), plain("   "), plain("3.")),
         "one\ntwo\n3\\.",
+        f"<p{P}>one  <br />    two<br />   <br />3.</p>",
         None,
     ),
     (
         "setext underline",
         block_of(BlockKind.PARAGRAPH, plain("Title"), plain("====="), plain("---")),
         "Title\n\\=====\n\\---",
+        f"<p{P}>Title<br />=====<br />---</p>",
         None,
     ),
     (
         "bullet glyphs",
         block_of(BlockKind.LIST, plain("• one"), plain("▪ two"), plain("◦ three"), plain("- four")),
         "- one\n- two\n- three\n- four",
+        f"<ul{L}><li>one</li><li>two</li><li>three</li><li>four</li></ul>",
         None,
     ),
     (
         "letter markers",
         block_of(BlockKind.LIST, plain("a) one"), plain("b. two")),
         "- a) one\n- b. two",
+        f"<ul{L}><li>a) one</li><li>b. two</li></ul>",
         None,
     ),
     (
         "numbered markers",
         block_of(BlockKind.LIST, plain("1. one"), plain("2) two"), plain("10. # ten")),
         "1. one\n2. two\n10. \\# ten",
+        f"<ol{L}><li>one</li><li>two</li><li># ten</li></ol>",
         None,
     ),
+    (
+        "numbered markers from 3",
+        block_of(BlockKind.LIST, plain("3. c"), plain("4. d")),
+        "3. c\n4. d",
+        f'<ol{L} start="3"><li>c</li><li>d</li></ol>',
+        None,
+    ),
+    (
+        "numbered markers from 0 and with a leading 0",
+        block_of(BlockKind.LIST, plain("0. a"), plain("01. b")),
+        "0. a\n01. b",
+        f'<ol{L} start="0"><li>a</li><li>b</li></ol>',
+        None,
+    ),
+    (
+        "numbered then bulleted then numbered",
+        block_of(BlockKind.LIST, plain("1. a"), plain("2. b"), plain("• c"), plain("7) d")),
+        "1. a\n2. b\n- c\n7. d",
+        f"<div{L}><ol><li>a</li><li>b</li></ol><ul><li>c</li></ul>"
+        '<ol start="7"><li>d</li></ol></div>',
+        None,
+    ),
+    ("empty list", block_of(BlockKind.LIST), "", f"<ul{L}></ul>", None),
     (
         "markers without a space after them",
         block_of(BlockKind.LIST, plain("1.5 million"), plain("-5 degrees"), plain("•")),
         "- 1.5 million\n- \\-5 degrees\n- ",
+        f"<ul{L}><li>1.5 million</li><li>-5 degrees</li><li></li></ul>",
         None,
     ),
     (
         "unmarked list line",
         block_of(BlockKind.LIST, plain("    plain *item*")),
         "- plain \\*item\\*",
+        f"<ul{L}><li>    plain *item*</li></ul>",
+        None,
+    ),
+    (
+        "list item to escape",
+        block_of(BlockKind.LIST, styled_line((S("2. "), S("x<y", italic=True), S(" & z")))),
+        "2. *x\\<y* & z",
+        f'<ol{L} start="2"><li><em>x&lt;y</em> &amp; z</li></ol>',
         None,
     ),
 )
@@ -729,9 +967,11 @@ def check_cases() -> list[str]:
         failures.append(f"list item: Markdown {got!r}, expected '**AB**'")
     if (failure := structure_failure(item, start=3)) is not None:
         failures.append(f"list item: {failure}")
-    for name, block, markdown, level in BLOCK_CASES:
+    for name, block, markdown, html, level in BLOCK_CASES:
         if (got := block_to_markdown(block)) != markdown:
             failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
+        if (got := block_to_html(block)) != html:
+            failures.append(f"{name}: HTML {got!r}, expected {html!r}")
         if (failure := block_failure(block, level)) is not None:
             failures.append(f"{name}: {failure}")
     failures += check_pages()
@@ -765,7 +1005,10 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
         except Exception:  # noqa: BLE001 - a PDF core cannot open has no lines to check
             continue
         for page in pages:
-            if (failure := lists_failure(page_to_markdown(page), list_lines(page))) is not None:
+            markdown = page_to_markdown(page)
+            if (failure := lists_failure(markdown, list_lines(page))) is not None:
+                failures.append(f"{Path(path).name} page {page.page_number}: {failure}")
+            if (failure := html_lists_failure(markdown, page_to_html(page))) is not None:
                 failures.append(f"{Path(path).name} page {page.page_number}: {failure}")
             for element in page.elements:
                 if not isinstance(element, Block):

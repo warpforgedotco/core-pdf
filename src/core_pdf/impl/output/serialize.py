@@ -11,7 +11,8 @@ from csv import writer
 from functools import partial
 from html import escape
 from io import StringIO
-from typing import Protocol
+from itertools import groupby
+from typing import NamedTuple, Protocol
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from core_pdf.impl.base.pages import PageSelection, resolve_page_selection
@@ -872,24 +873,27 @@ class MarkdownFormatter:
 
     def format_page(self, page: Page) -> str:
         # Neighbouring lists alternate their markers, - and *, . and ): a blank line alone
-        # would join them into one loose list.
+        # would join them into one loose list. An element rendered empty is left out, so
+        # lists around it are neighbours.
         rendered: list[str] = []
-        alternate = False
-        for index, element in enumerate(page.elements):
+        previous_list: bool | None = None  # the last list's alternate, None after another
+        for element in page.elements:
             if isinstance(element, Block) and element.kind is BlockKind.LIST:
-                previous = page.elements[index - 1] if index else None
-                follows_list = isinstance(previous, Block) and previous.kind is BlockKind.LIST
-                alternate = follows_list and not alternate
-                rendered.append(block_to_markdown(element, alternate=alternate))
+                alternate = previous_list is False
+                text = block_to_markdown(element, alternate=alternate)
+                if text:
+                    rendered.append(text)
+                    previous_list = alternate
             else:
-                rendered.append(
-                    map_page_element(
-                        element,
-                        block=self.format_block,
-                        table=self.format_table,
-                        figure=self.format_figure,
-                    )
+                text = map_page_element(
+                    element,
+                    block=self.format_block,
+                    table=self.format_table,
+                    figure=self.format_figure,
                 )
+                if text:
+                    rendered.append(text)
+                    previous_list = None
         return "\n\n".join(rendered)
 
     def format_document(self, document: Document) -> str:
@@ -932,28 +936,65 @@ def page_to_markdown(page: Page) -> str:
     return MARKDOWN_FORMATTER.format_page(page)
 
 
-def markdown_list_item(line: TextLine, *, alternate: bool = False) -> tuple[str, int]:
-    """The CommonMark list marker a list line is written with, and where its text starts.
+class ListItem(NamedTuple):
+    """A list line, the number its marker gives it (its digits as written, None for a
+    bullet), and where its text starts."""
 
-    A numbered marker keeps its number, with . (or ) when alternate); a bullet glyph is -
-    (or *). A marker counts only before whitespace or the line's end, so `1.5 million` and
-    `-5 degrees` are text; a letter marker, or none, stays text after a bullet.
+    line: TextLine
+    number: str | None
+    start: int
+
+
+def list_item(line: TextLine) -> ListItem:
+    """What a list line's marker makes it, in Markdown and HTML alike.
+
+    A numbered marker gives the item its number, and a bullet glyph makes it a bullet. A
+    marker counts only before whitespace or the line's end, so `1.5 million` and
+    `-5 degrees` are text. A letter marker, or none, stays text in a bullet item:
+    CommonMark has no letter lists, and HTML's type="a" would lose `a)` against `a.`,
+    `A)` or `α)`.
     """
     prefix = list_prefix(line.text)
     marker = prefix.strip()
     # The prefix takes the spaces after its marker: none there, the line must end.
     ends = prefix.endswith((" ", "\t")) or len(prefix) == len(line.text)
     if ends and NUMBERED_MARKER_RE.fullmatch(marker):
-        return f"{marker[:-1]}{')' if alternate else '.'} ", len(prefix)
-    bullet = "* " if alternate else "- "
+        return ListItem(line, marker[:-1], len(prefix))
     if ends and marker in BULLET_MARKERS:
-        return bullet, len(prefix)
-    return bullet, 0
+        return ListItem(line, None, len(prefix))
+    return ListItem(line, None, 0)
 
 
-def markdown_heading_level(block: Block) -> int:
-    """The ATX heading level: 2 when the block has none, else its level within 1 to 6."""
+def list_runs(block: Block) -> list[list[ListItem]]:
+    """A list block's items in the lists CommonMark reads its Markdown as: a run of
+    numbered items is an ordered list starting at the first one's number, a run of
+    bullets a bullet list, and a change from one to the other starts the next list."""
+    return [
+        list(run)
+        for _, run in groupby(map(list_item, block.lines), key=lambda item: item.number is None)
+    ]
+
+
+def markdown_list_item(line: TextLine, *, alternate: bool = False) -> tuple[str, int]:
+    """The CommonMark list marker a list line is written with, and where its text starts:
+    a number keeps its digits, with . (or ) when alternate), and a bullet is - (or *)."""
+    _, number, start = list_item(line)
+    if number is not None:
+        return f"{number}{')' if alternate else '.'} ", start
+    return "* " if alternate else "- ", start
+
+
+def heading_level(block: Block) -> int:
+    """A heading's level: 2 when the block has none, else its level within 1 to 6, the
+    levels of both Markdown's ATX headings and HTML's h1 to h6."""
     return 2 if block.level is None else min(max(block.level, 1), 6)
+
+
+def heading_text(block: Block, render: Callable[[TextLine], str]) -> str:
+    """A heading's lines rendered and joined into its one line, as an ATX heading cannot
+    break; a line whose text is blank (CommonMark's whitespace, no-break spaces among it,
+    or none) is left out, whatever its markup."""
+    return " ".join(render(line) for line in block.lines if line.text and not is_space(line.text))
 
 
 def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
@@ -963,13 +1004,12 @@ def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
             for line in block.lines
             for marker, start in (markdown_list_item(line, alternate=alternate),)
         )
-    # A line of spaces only would end the paragraph.
-    lines = [text for line in block.lines if (text := markdown_line(line))]
     if block.kind is BlockKind.HEADING:
         # An ATX heading is one line, and a run of # ending it would close it.
-        text = HEADING_CLOSING_RE.sub(r"\1\\\2", " ".join(lines))
-        return f"{'#' * markdown_heading_level(block)} {text}"
-    return "\n".join(lines)
+        text = HEADING_CLOSING_RE.sub(r"\1\\\2", heading_text(block, markdown_line))
+        return f"{'#' * heading_level(block)} {text}"
+    # A line of spaces only would end the paragraph.
+    return "\n".join(text for line in block.lines if (text := markdown_line(line)))
 
 
 def document_to_html(document: Document) -> str:
@@ -981,17 +1021,33 @@ def page_to_html(page: Page) -> str:
 
 
 def block_to_html(block: Block) -> str:
+    """The block's HTML, one element per block, read back with the structure of its
+    Markdown: a heading at the same level on one line, and a list block as the lists
+    list_runs finds, an <ol> or a <ul> each, in a <div> when there are several."""
     attributes = f' data-block-kind="{escape(block.kind.value)}"'
 
     if block.kind is BlockKind.HEADING:
-        tag = f"h{block.level or 2}"
-        heading = "<br />".join(html_line(line) for line in block.lines)
+        tag = f"h{heading_level(block)}"
+        heading = heading_text(block, lambda line: html_line(line).strip(" \t"))
         return f"<{tag}{attributes}>{heading}</{tag}>"
     if block.kind is BlockKind.LIST:
-        items = "".join(
-            f"<li>{html_line(line, start=len(list_prefix(line.text)))}</li>" for line in block.lines
-        )
-        return f"<ul{attributes}>{items}</ul>"
+        runs = list_runs(block)
+        # The block's kind goes on its one element: its list, or the <div> around them.
+        inner = attributes if len(runs) <= 1 else ""
+        lists: list[str] = []
+        for run in runs:
+            items = "".join(f"<li>{html_line(item.line, start=item.start)}</li>" for item in run)
+            number = run[0].number
+            if number is None:
+                lists.append(f"<ul{inner}>{items}</ul>")
+            else:
+                start = f' start="{int(number)}"' if int(number) != 1 else ""
+                lists.append(f"<ol{inner}{start}>{items}</ol>")
+        if not lists:
+            return f"<ul{attributes}></ul>"
+        if len(lists) == 1:
+            return lists[0]
+        return f"<div{attributes}>{''.join(lists)}</div>"
     text = "<br />".join(html_line(line) for line in block.lines)
     return f"<p{attributes}>{text}</p>"
 
