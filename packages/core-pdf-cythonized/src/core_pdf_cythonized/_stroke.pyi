@@ -40,6 +40,7 @@ def stroke_polylines(
     on_circle: Callable[[float, float], None],
     on_dot: Callable[[float, float], None],
     on_extend: Callable[[int, int, int, int], None],
+    on_union: Callable[[bytes, tuple[float, float, float, float]], None] | None = None,
 ) -> None: ...
 def stroke_coverage(
     counts: numpy.ndarray[Any, numpy.dtype[numpy.uint8]],

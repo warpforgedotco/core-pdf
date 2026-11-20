@@ -7,6 +7,8 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 lazy import numpy
@@ -19,7 +21,7 @@ from core_pdf.impl.render.blend import (
     blend_solid_array_numpy,
     declared_blend,
 )
-from core_pdf.impl.render.paths import RASTER_CIRCLE_MIN_PIXEL_AREA, intersect_box
+from core_pdf.impl.render.paths import RASTER_CIRCLE_MIN_PIXEL_AREA, circle_path, intersect_box
 lazy from core_pdf_cythonized import (
     blend_normal_alpha_array_numpy,
     fill_glyph_coverage_at,
@@ -42,8 +44,97 @@ def fill_rect(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None = None,
 ) -> None:
+    """Fill the rectangle box antialiased, as fill_path fills it: paint_rect paints it
+    where it can give its edges the coverage fill_path would, and otherwise it is covered
+    by the 4x4 samples, the whole rectangle in one pass, or, while an edge batch is open,
+    with the rest of the batch's shape."""
     if box is None:
         return
+    blend_mode = declared_blend(blend_mode)
+    batch = self.edge_batch
+    # Under an open batch every piece joins it, a whole one too: painted now, it would be
+    # blended again where the batch's union covers it.
+    if batch is None and rect_paints_whole(self, box, rgba, blend_mode):
+        paint_rect(self, box, rgba, blend_mode)
+        return
+    if batch is not None:
+        # Counter-clockwise, as every piece of the batch is.
+        box = (min(box[0], box[2]), min(box[1], box[3]), max(box[0], box[2]), max(box[1], box[3]))
+    x0, y0, x1, y1 = box
+    edges = ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0))
+    if batch is not None:
+        batch.rows.extend(edges)
+        batch.extend(box)
+        return
+    fill_edges(self, numpy.array(edges, dtype=numpy.float64), box, rgba, blend_mode, "nonzero")
+
+
+class EdgeBatch:
+    """The pieces of one stroke, painted piece by piece, that fill_rect, fill_path and
+    fill_circle take while it is open, whole ones too: their edges, each piece counter-clockwise,
+    filled once as one shape under the nonzero rule when the shape ends, so that pieces
+    meeting inside a pixel cover it once rather than leaving a seam where two partial
+    coverages are painted in turn."""
+
+    __slots__ = ("arrays", "box", "rows")
+
+    def __init__(self) -> None:
+        self.rows: list[tuple[float, float, float, float]] = []
+        self.arrays: list[numpy.ndarray[Any, Any]] = []
+        self.box: tuple[float, float, float, float] | None = None
+
+    def extend(self, box: tuple[float, float, float, float]) -> None:
+        known = self.box
+        self.box = (
+            box
+            if known is None
+            else (
+                min(known[0], box[0]),
+                min(known[1], box[1]),
+                max(known[2], box[2]),
+                max(known[3], box[3]),
+            )
+        )
+
+    def fill(
+        self, target: RasterTarget, rgba: tuple[int, int, int, int], blend_mode: str | None
+    ) -> None:
+        box = self.box
+        if box is None:
+            return
+        arrays = self.arrays
+        if self.rows:
+            arrays = [numpy.array(self.rows, dtype=numpy.float64), *arrays]
+        edges = arrays[0] if len(arrays) == 1 else numpy.concatenate(arrays)
+        fill_edges(target, edges, box, rgba, declared_blend(blend_mode), "nonzero")
+
+
+def paint_as_one(
+    self: RasterTarget,
+    paint: Callable[[], object],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+) -> None:
+    """Call paint, which paints the pieces of one shape in rgba and blend_mode, under an
+    edge batch, then fill the pieces the batch took as one shape."""
+    previous = self.edge_batch
+    batch = self.edge_batch = EdgeBatch()
+    try:
+        paint()
+    finally:
+        self.edge_batch = previous
+    batch.fill(self, rgba, blend_mode)
+
+
+def paint_rect(
+    self: RasterTarget,
+    box: tuple[float, float, float, float],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None = None,
+) -> None:
+    """Paint box, with partial coverage at its edges in the Normal mode under a rectangular
+    clip and otherwise each pixel whose centre it holds whole: as fill_path would only
+    where rect_paints_whole says so."""
     if rgba[3] == 255 and declared_blend(blend_mode) is None:
         blend_mode = None
     clipped_box = self.clip.clipped_pixel_box(box)
@@ -212,6 +303,31 @@ def draw_glyph_bitmap(
             target_region[expanded] = rgba
             self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=expanded)
             return
+    if not cells_on_pixels(self, x0, y1, cell_w, cell_h):
+        # The cells meet inside pixels: the glyph is one shape, its cells filled together,
+        # so that a pixel two cells share is covered once, with no seam between them.
+        cells = cell_edges(tuple(rows[:bitmap_h]), bitmap_w)
+        if cells is None:
+            return
+        across, down, (first_column, first_row, last_column, last_row) = cells
+        edges = numpy.empty((len(across), 4), dtype=numpy.float64)
+        edges[:, 0::2] = x0 + across * cell_w
+        edges[:, 1::2] = y1 - down * cell_h
+        fill_edges(
+            self,
+            edges,
+            (
+                x0 + first_column * cell_w,
+                y1 - last_row * cell_h,
+                x0 + last_column * cell_w,
+                y1 - first_row * cell_h,
+            ),
+            rgba,
+            declared_blend(blend_mode),
+            "nonzero",
+        )
+        return
+    # Every cell's edges on pixel edges: each cell, or run of cells, painted whole.
     for row_index, row in enumerate(rows[:bitmap_h]):
         cell_y1 = y1 - row_index * cell_h
         cell_y0 = y1 - (row_index + 1) * cell_h
@@ -239,6 +355,64 @@ def draw_glyph_bitmap(
             fill_rect((cell_x0, cell_y0, cell_x1, cell_y1), rgba, blend_mode)
 
 
+@functools.lru_cache(maxsize=256)
+def cell_edges(
+    rows: tuple[int, ...], bitmap_w: int
+) -> (
+    tuple[numpy.ndarray[Any, Any], numpy.ndarray[Any, Any], tuple[float, float, float, float]]
+    | None
+):
+    """The edges of a bitmap's set cells, rows top first and bit i of a row the cell i from
+    the left, in cell units: each cell's four edges in turn, as a closed subpath of its
+    corners has them, in reading order, their x as columns from the left and their y as
+    rows from the top, (x0, x1) and (y0, y1) of each edge; and the columns and rows they
+    span, (first column, first row, last column, last row). None when no cell is set."""
+    # The bits of the bitmap's columns alone, a negative row's too; a row then sets no cell
+    # past its highest bit.
+    mask = (1 << max(0, bitmap_w)) - 1
+    rows = tuple(row & mask for row in rows)
+    width = min(bitmap_w, max((row.bit_length() for row in rows), default=0))
+    if width <= 0:
+        return None
+    if width <= 63:
+        values = numpy.array(rows, dtype=numpy.uint64)
+        shifts = numpy.arange(width, dtype=numpy.uint64)
+        bits = ((values[:, None] >> shifts[None, :]) & numpy.uint64(1)).astype(bool)
+    else:
+        bits = numpy.array(
+            [[bool(row & (1 << column)) for column in range(width)] for row in rows], dtype=bool
+        ).reshape(len(rows), width)
+    lines, columns = bits.nonzero()
+    if not len(columns):
+        return None
+    left = columns.astype(numpy.float64)
+    right = left + 1.0
+    top = lines.astype(numpy.float64)
+    bottom = top + 1.0
+    across = numpy.stack((left, right, right, right, right, left, left, left), axis=1)
+    down = numpy.stack((bottom, bottom, bottom, top, top, top, top, bottom), axis=1)
+    return (
+        across.reshape(-1, 2),
+        down.reshape(-1, 2),
+        (float(left.min()), float(top.min()), float(right.max()), float(bottom.max())),
+    )
+
+
+def cells_on_pixels(self: RasterTarget, x0: float, y1: float, cell_w: float, cell_h: float) -> bool:
+    """Whether a grid of cells from the top left corner (x0, y1), cell_w by cell_h, has
+    every edge on a pixel edge."""
+    scale = self.scale
+    for value in (
+        (x0 - self.crop_x0) * scale,
+        (self.crop_y1 - y1) * scale,
+        cell_w * scale,
+        cell_h * scale,
+    ):
+        if abs(value - round(value)) > 1e-9:
+            return False
+    return True
+
+
 def fill_circle(
     self: RasterTarget,
     cx: float,
@@ -247,78 +421,56 @@ def fill_circle(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None = None,
 ) -> None:
+    blend_mode = declared_blend(blend_mode)
+    if blend_mode is not None or rgba[3] < 255 or not self.clip.clip_paths_are_axis_aligned_rects():
+        # Antialiased, as the same circle filled as a path.
+        self.fill_path(circle_path(cx, cy, radius), rgba, blend_mode)
+        return
+    # Opaque, in the Normal mode, under no clip or a rectangular one: each pixel whose
+    # centre the circle holds.
     clip = self.clip
-    blend_px = self.blend_px
-    blend_resolved_mode = self.resolved_blend(blend_mode)
-    clip_regions = clip.regions
-    clip_paths_are_axis_aligned_rects = clip.clip_paths_are_axis_aligned_rects
-    clip_row_visible_spans = clip.clip_row_visible_spans
     crop_x0 = self.crop_x0
     crop_y1 = self.crop_y1
-    current_clip = clip.current_clip
-    page_box_to_pixels = self.grid.page_box_to_pixels
     pixels = self.pixels
     scale = self.scale
     width = self.width
     circle_box = (cx - radius, cy - radius, cx + radius, cy + radius)
-    clip_box = current_clip() if clip_regions else None
+    clip_box = clip.current_clip() if clip.regions else None
     if clip_box is not None:
         clipped_circle_box = intersect_box(circle_box, clip_box)
         if clipped_circle_box is None:
             return
         circle_box = clipped_circle_box
-    pixel_box = page_box_to_pixels(*circle_box)
+    pixel_box = self.grid.page_box_to_pixels(*circle_box)
     if pixel_box is None:
         return
     ix0, iy0, ix1, iy1 = pixel_box
     radius2 = radius * radius
-    normal_fast = blend_mode is None
-    rectangular_clip = not clip_regions or clip_paths_are_axis_aligned_rects()
-    if normal_fast and rgba[3] >= 255 and rectangular_clip:
-        if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
-            circle_page_xs = self.grid.x_centers(ix0, ix1)
-            circle_page_ys = self.grid.y_centers(iy0, iy1)
-            inside = (circle_page_xs[None, :] - cx) ** 2 + (
-                circle_page_ys[:, None] - cy
-            ) ** 2 <= radius2
-            self.pixel_array[iy0:iy1, ix0:ix1][inside] = rgba
-            self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=inside)
-            return
-        red, green, blue, alpha = rgba
-        for py in range(iy0, iy1):
-            page_y = crop_y1 - (py + 0.5) / scale
-            dy = page_y - cy
-            row = py * width * 4
-            for px in range(ix0, ix1):
-                page_x = crop_x0 + (px + 0.5) / scale
-                dx = page_x - cx
-                if dx * dx + dy * dy > radius2:
-                    continue
-                index = row + px * 4
-                pixels[index] = red
-                pixels[index + 1] = green
-                pixels[index + 2] = blue
-                pixels[index + 3] = 255
-                self.record_source_coverage(py, px, 255)
+    if (ix1 - ix0) * (iy1 - iy0) > RASTER_CIRCLE_MIN_PIXEL_AREA:
+        circle_page_xs = self.grid.x_centers(ix0, ix1)
+        circle_page_ys = self.grid.y_centers(iy0, iy1)
+        inside = (circle_page_xs[None, :] - cx) ** 2 + (
+            circle_page_ys[:, None] - cy
+        ) ** 2 <= radius2
+        self.pixel_array[iy0:iy1, ix0:ix1][inside] = rgba
+        self.record_source_coverage(slice(iy0, iy1), slice(ix0, ix1), rgba[3], visible=inside)
         return
+    red, green, blue, _ = rgba
     for py in range(iy0, iy1):
         page_y = crop_y1 - (py + 0.5) / scale
+        dy = page_y - cy
         row = py * width * 4
-        visible_spans = clip_row_visible_spans(py)
-        if not visible_spans:
-            continue
-        for clip_start, clip_end in visible_spans:
-            start = max(ix0, clip_start)
-            end = min(ix1, clip_end)
-            if end <= start:
+        for px in range(ix0, ix1):
+            page_x = crop_x0 + (px + 0.5) / scale
+            dx = page_x - cx
+            if dx * dx + dy * dy > radius2:
                 continue
-            for px in range(start, end):
-                page_x = crop_x0 + (px + 0.5) / scale
-                dx = page_x - cx
-                dy = page_y - cy
-                if dx * dx + dy * dy > radius2:
-                    continue
-                blend_px(row + px * 4, rgba, blend_resolved_mode)
+            index = row + px * 4
+            pixels[index] = red
+            pixels[index + 1] = green
+            pixels[index + 2] = blue
+            pixels[index + 3] = 255
+            self.record_source_coverage(py, px, 255)
 
 
 def rect_paints_whole(
@@ -327,7 +479,7 @@ def rect_paints_whole(
     rgba: tuple[int, int, int, int],
     blend_mode: str | None,
 ) -> bool:
-    """Whether fill_rect paints rect as fill_path would: with partial coverage at its edges,
+    """Whether paint_rect paints rect as fill_path would: with partial coverage at its edges,
     which it gives in the Normal mode under a rectangular clip, or where its device edges
     fall on pixel edges, so no pixel is partly covered."""
     if self.clip.clip_paths_are_axis_aligned_rects() and (
@@ -366,10 +518,11 @@ def fill_path(
     within the row. Otherwise it
     is the share of a 4x4 grid of sample points inside the path, under fill_rule. Memory and
     work follow the edges and the painted runs, not the pixel box."""
-    clip = self.clip
+    blend_mode = declared_blend(blend_mode)
     rect = path.axis_aligned_rect()
-    if rect is not None and rect_paints_whole(self, rect, rgba, blend_mode):
-        self.fill_rect(rect, rgba, blend_mode)
+    batch = self.edge_batch
+    if rect is not None and batch is None and rect_paints_whole(self, rect, rgba, blend_mode):
+        paint_rect(self, rect, rgba, blend_mode)
         return
     if edge_array is None:
         edge_array = path.fill_edge_array()
@@ -381,9 +534,33 @@ def fill_path(
     elif len(edge_array) == 0:
         return
     if bbox is None:
-        bbox = clip.path_bbox(path)
+        bbox = self.clip.path_bbox(path)
     if bbox is None:
         return
+    if batch is not None and fill_rule == "nonzero":
+        # A piece of the batch's shape: filled with the rest of it, counter-clockwise, as
+        # every piece of the batch is, so that pieces which overlap add to the winding
+        # number rather than cancel.
+        area = float(
+            numpy.sum(edge_array[:, 0] * edge_array[:, 3] - edge_array[:, 2] * edge_array[:, 1])
+        )
+        batch.arrays.append(edge_array[:, [2, 3, 0, 1]] if area < 0 else edge_array)
+        batch.extend(bbox)
+        return
+    fill_edges(self, edge_array, bbox, rgba, blend_mode, fill_rule)
+
+
+def fill_edges(
+    self: RasterTarget,
+    edge_array: numpy.ndarray[Any, Any],
+    bbox: tuple[float, float, float, float],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+    fill_rule: str,
+) -> None:
+    """Fill the outline whose edges are edge_array's rows (x0, y0, x1, y1), within bbox,
+    as fill_path describes."""
+    clip = self.clip
     clipped_box = clip.clipped_pixel_box(bbox)
     if clipped_box is None:
         return

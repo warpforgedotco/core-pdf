@@ -16,6 +16,7 @@ from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SpaceMode
+from core_pdf.impl.render.raster_fills import EdgeBatch
 from core_pdf.impl.render.raster_overprint import OverprintScratch
 from core_pdf.impl.render.raster_shading import PatternScratch
 from core_pdf.impl.render.raster_support import ElementaryScratch, FloatPlane, RenderResources
@@ -28,6 +29,7 @@ class RasterTarget:
 
     __slots__ = (
         "fill_memo",
+        "edge_batch",
         "pixels",
         "pixel_array",
         "semantic_context",
@@ -93,6 +95,9 @@ class RasterTarget:
     paint_limit: UInt8Array | None
     group_member_boxes: dict[int, tuple[float, float, float, float] | None] | None
     fill_memo: tuple[object, object, object, tuple[int, int, int, int]] | None
+    # While a stroke paints its pieces or a glyph bitmap its cells, the edges of those
+    # fill_rect cannot paint whole, filled as one shape when they end (raster_fills).
+    edge_batch: EdgeBatch | None
     # What the colour components hold (raster_spaces): sRGB unless inside a group that
     # blends in DeviceGray or DeviceCMYK.
     space_mode: SpaceMode
@@ -141,6 +146,7 @@ class RasterTarget:
         self.pattern_scratch = {}
         self.paint_limit = None
         self.fill_memo = None
+        self.edge_batch = None
         self.group_member_boxes = None
         self.space_mode = SpaceMode.RGB
         self.space_profile = None
