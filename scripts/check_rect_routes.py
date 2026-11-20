@@ -374,7 +374,7 @@ def direct_pairs() -> int:
                     draw(raster, rgba, mode)
                     images.append(raster.pixel_array.copy())
                 failed += compare(f"{state} {shape} @{scale}", images[0], images[1])
-    return failed + kernel_round_caps() + batch_orientation() + pieces_once()
+    return failed + kernel_round_caps() + batch_orientation() + batch_whole_pieces() + pieces_once()
 
 
 # A rectangular clip whose bottom edge cuts the frames' lower sides inside pixels.
@@ -527,6 +527,41 @@ def pieces_once() -> int:
                 raster.fill_path(CapturedPath(pieces), rgba, None)
             images.append(raster.pixel_array.copy())
         failed += compare(f"round cap on a clip edge as one path @{scale}", images[0], images[1])
+    return failed
+
+
+def batch_whole_pieces() -> int:
+    """Pieces of one stroke in Multiply under an edge batch, a rectangle on pixel edges and
+    one with fractional edges that overlaps it, and a pixel-aligned square through
+    fill_path, against all three filled as one path: the whole pieces join the batch too,
+    so that no pixel is blended twice where they overlap."""
+    rgba = (26, 77, 204, 255)
+    fractional = (60.3, 40.45, 110.7, 60.9)
+    failed = 0
+    for scale in SCALES:
+        whole = (40.0 / scale, 50.0 / scale, 90.0 / scale, 70.0 / scale)
+        square = (85.0 / scale, 60.0 / scale, 105.0 / scale, 80.0 / scale)
+        batched = target(scale)
+
+        def pieces(
+            raster: RasterTarget = batched,
+            whole: tuple[float, float, float, float] = whole,
+            square: tuple[float, float, float, float] = square,
+        ) -> None:
+            raster.fill_rect(whole, rgba, "Multiply")
+            raster.fill_rect(fractional, rgba, "Multiply")
+            raster.fill_path(rectangle(*square), rgba, "Multiply")
+
+        paint_as_one(batched, pieces, rgba, "Multiply")
+        union = target(scale)
+        subpaths = rectangle(*whole).subpaths + rectangle(*fractional).subpaths
+        subpaths += rectangle(*square).subpaths
+        union.fill_path(CapturedPath(subpaths), rgba, "Multiply")
+        failed += compare(
+            f"multiply batch of whole and partial pieces @{scale}",
+            batched.pixel_array,
+            union.pixel_array,
+        )
     return failed
 
 

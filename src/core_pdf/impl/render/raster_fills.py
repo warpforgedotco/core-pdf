@@ -51,10 +51,12 @@ def fill_rect(
     if box is None:
         return
     blend_mode = declared_blend(blend_mode)
-    if rect_paints_whole(self, box, rgba, blend_mode):
+    batch = self.edge_batch
+    # Under an open batch every piece joins it, a whole one too: painted now, it would be
+    # blended again where the batch's union covers it.
+    if batch is None and rect_paints_whole(self, box, rgba, blend_mode):
         paint_rect(self, box, rgba, blend_mode)
         return
-    batch = self.edge_batch
     if batch is not None:
         # Counter-clockwise, as every piece of the batch is.
         box = (min(box[0], box[2]), min(box[1], box[3]), max(box[0], box[2]), max(box[1], box[3]))
@@ -68,8 +70,8 @@ def fill_rect(
 
 
 class EdgeBatch:
-    """The pieces of one stroke, painted piece by piece, that fill_rect, fill_path
-    and fill_circle could not paint whole: their edges, each piece counter-clockwise,
+    """The pieces of one stroke, painted piece by piece, that fill_rect, fill_path and
+    fill_circle take while it is open, whole ones too: their edges, each piece counter-clockwise,
     filled once as one shape under the nonzero rule when the shape ends, so that pieces
     meeting inside a pixel cover it once rather than leaving a seam where two partial
     coverages are painted in turn."""
@@ -518,7 +520,8 @@ def fill_path(
     work follow the edges and the painted runs, not the pixel box."""
     blend_mode = declared_blend(blend_mode)
     rect = path.axis_aligned_rect()
-    if rect is not None and rect_paints_whole(self, rect, rgba, blend_mode):
+    batch = self.edge_batch
+    if rect is not None and batch is None and rect_paints_whole(self, rect, rgba, blend_mode):
         paint_rect(self, rect, rgba, blend_mode)
         return
     if edge_array is None:
@@ -534,15 +537,10 @@ def fill_path(
         bbox = self.clip.path_bbox(path)
     if bbox is None:
         return
-    batch = self.edge_batch
-    if (
-        batch is not None
-        and fill_rule == "nonzero"
-        and (blend_mode is not None or not self.clip.clip_paths_are_axis_aligned_rects())
-    ):
-        # A piece of the batch's shape the 4x4 samples cover: filled with the rest of it,
-        # counter-clockwise, as every piece of the batch is, so that pieces which overlap
-        # add to the winding number rather than cancel.
+    if batch is not None and fill_rule == "nonzero":
+        # A piece of the batch's shape: filled with the rest of it, counter-clockwise, as
+        # every piece of the batch is, so that pieces which overlap add to the winding
+        # number rather than cancel.
         area = float(
             numpy.sum(edge_array[:, 0] * edge_array[:, 3] - edge_array[:, 2] * edge_array[:, 1])
         )
