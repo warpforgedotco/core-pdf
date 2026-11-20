@@ -20,6 +20,7 @@ from core_pdf.impl.graphics.image_samples import (
     convert_integer_image,
     convert_integer_samples,
 )
+from core_pdf.impl.graphics.overprint import process_indices
 from core_pdf.impl.graphics.stream_decoding import (
     TOLERANT_FILTER_BY_NAME,
     decode_one_filter,
@@ -607,6 +608,82 @@ def decode_cmyk_samples(
     return convert_cmyk_bytes(native, space.icc_profile, profile, rendering=rendering).reshape(
         height, width, 4
     )
+
+
+def decode_process_samples(source: ImageSource) -> numpy.ndarray[Any, Any] | None:
+    """The CMYK bytes, (height, width, 4), an image in a Separation or DeviceN space naming
+    process colorants alone (or an Indexed space over one) paints directly: each sample's
+    tints after its Decode array, before the tint transform, in the components its colorants
+    name, and 0 in the others (ISO 32000-2 8.6.6.4, 8.9.5.2). None for any other image, and
+    for one whose samples a matte would change."""
+    dictionary = source.dictionary
+    if dictionary.get("ImageMask") is True:
+        return None
+    if source.soft_mask is not None and source.soft_mask.dictionary.get("Matte") is not None:
+        return None
+    header = ImageHeader(dictionary)
+    try:
+        space = header.space()
+    except ValueError:
+        return None
+    base = space.base if space.kind == "Indexed" else space
+    indices = process_indices(base)
+    if base is None or indices is None:
+        return None
+    width, height, bits = header.width, header.height, header.bits
+    count = len(space.component_ranges)
+    if width <= 0 or height <= 0 or bits not in {1, 2, 4, 8, 16}:
+        return None
+    samples = decode_image_samples(source.raw, dictionary, size=(width, height), header=header)
+    if isinstance(samples, DecodedImage):
+        if samples.array.dtype != numpy.uint8 or samples.array.size != width * height * count:
+            return None
+        integers = samples.array.reshape(-1, count)
+        bits = 8
+    elif samples is None:
+        return None
+    else:
+        try:
+            integers = unpack_image_samples(samples, bits, width, height, count).reshape(-1, count)
+        except ValueError:
+            return None
+        if len(integers) < width * height:
+            return None
+        integers = integers[: width * height]
+    maximum = (1 << bits) - 1
+    decode = dictionary.get("Decode")
+    try:
+        if decode is not None and image_decode_array_applies(
+            dictionary, context=source.semantic_context
+        ):
+            numbers = [float(value) for value in decode]
+            if len(numbers) != count * 2:
+                return None
+            pairs = tuple(batched(numbers, 2, strict=True))
+        elif space.kind == "Indexed":
+            pairs = ((0.0, float(maximum)),)
+        else:
+            pairs = space.component_ranges
+        values = decode_sample_values(integers, pairs, maximum)
+    except TypeError, ValueError:
+        return None
+    if space.kind == "Indexed":
+        lookup = space.lookup
+        components = len(base.component_ranges)
+        if lookup is None or components == 0:
+            return None
+        table = numpy.frombuffer(lookup, dtype=numpy.uint8).reshape(-1, components)
+        # An index is rounded and clamped to 0 to hival (8.6.6.3).
+        entries = numpy.clip(numpy.rint(values[:, 0]), 0, space.hival).astype(numpy.intp)
+        lows = numpy.array([low for low, _ in base.component_ranges])
+        highs = numpy.array([high for _, high in base.component_ranges])
+        values = lows + table[entries].astype(numpy.float64) / 255.0 * (highs - lows)
+    tints = numpy.rint(numpy.clip(values, 0.0, 1.0) * 255.0).astype(numpy.uint8)
+    cmyk = numpy.zeros((width * height, 4), dtype=numpy.uint8)
+    for component, index in enumerate(indices):
+        if index is not None:
+            cmyk[:, index] = tints[:, component]
+    return cmyk.reshape(height, width, 4)
 
 
 def decode_image(source: ImageSource) -> ImageRaster | None:

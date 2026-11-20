@@ -236,6 +236,11 @@ def tiling_pattern_uses_normal_blends(
         return False
     active.add(identity)
     try:
+        if pattern.overprints:
+            # An overprinting paint blends by the special mode of 11.7.4.3, not Normal, so
+            # the cell composites with the backdrop, in the non-isolated group 11.6.7 puts
+            # it in.
+            return False
         program = pattern.program
         modes = [drawing.blend_mode for drawing in program.drawings]
         modes.extend(glyph.blend_mode for glyph in program.glyphs)

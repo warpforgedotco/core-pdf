@@ -11,7 +11,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from core_pdf.impl.base.types import MISSING, MissingObject
-from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
+from core_pdf.impl.capture.records import PatternPaint, ShadingPattern, TilingPattern
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.graphics.overprint import (
@@ -19,6 +19,7 @@ from core_pdf.impl.graphics.overprint import (
     overprint_marks,
     process_color,
     raw_overprint_marks,
+    shading_space,
 )
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
@@ -110,12 +111,23 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
     graphics = self.graphics
     if not (graphics.stroke_overprint if stroke else graphics.fill_overprint):
         return None
-    marks = overprint_marks(
-        graphics.stroke_space if stroke else graphics.fill_space,
-        graphics.stroke_color if stroke else graphics.fill_color,
-        graphics.overprint_mode,
-        current_color=True,
-    )
+    space = graphics.stroke_space if stroke else graphics.fill_space
+    pattern = graphics.stroke_pattern if stroke else graphics.fill_pattern
+    if space is not None and space.kind == "Pattern":
+        # A shading pattern paints as its shading would with sh (11.6.7): it marks what
+        # the shading's colour space, remapped where it paints, names.
+        if not isinstance(pattern, model.ShadingPattern):
+            return None
+        marks = raw_overprint_marks(
+            shading_space(self.capture_shading_dictionary(pattern.dictionary))
+        )
+    else:
+        marks = overprint_marks(
+            space,
+            graphics.stroke_color if stroke else graphics.fill_color,
+            graphics.overprint_mode,
+            current_color=True,
+        )
     if marks is not None:
         self.uses_overprint = True
     return marks
@@ -224,6 +236,8 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
     )
     cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
     if not isinstance(cached, MissingObject):
+        if isinstance(cached, TilingPattern) and cached.overprints:
+            self.uses_overprint = True
         return cached
     result: PatternPaint | None = None
     if isinstance(pattern, model.ShadingPattern):
@@ -251,5 +265,8 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             )
         finally:
             nested.release()
+        if result is not None and result.overprints:
+            # Overprinting in a cell is the page's too, for simulation to see.
+            self.uses_overprint = True
     pins = tuple(spaces for spaces in (defaults, self.ancestor_spaces) if spaces is not None)
     return self.capture_patterns.put_key(pattern, cache_key, result, pins)

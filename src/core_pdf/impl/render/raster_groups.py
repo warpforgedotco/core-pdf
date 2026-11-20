@@ -18,6 +18,7 @@ from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import BlendOp, composite_blended_group_numpy
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SoftMaskPlane
 from core_pdf.impl.render.raster_overprint import composite_overprint_layer
+from core_pdf.impl.render.raster_spots import inherited_spots
 from core_pdf.impl.render.raster_support import (
     ElementaryScratch,
     PixelBox,
@@ -47,6 +48,13 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
     rows, columns = window
     if parent.painted_boxes is not None:
         self.record_knockout_paint((columns.start, rows.start, columns.stop, rows.stop))
+    # A group that changes spot plates (raster_spots) composites them once its colour has.
+    overprint = group.overprint
+    before = (
+        parent.view[rows, columns, 3].astype(numpy.float32) / 255.0
+        if parent.spots or group.spots or (overprint is not None and overprint[3])
+        else None
+    )
     shape = group.source_shape[rows, columns] if group.source_shape is not None else None
     if shape is not None and group.alpha_is_shape:
         shape = shape * group.source_scale
@@ -73,6 +81,9 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
             parent.source_shape[rows, columns] if parent.source_shape is not None else None,
         )
         self.extend_paint_window(rows, columns)
+        if before is not None:
+            effective = numpy.rint(group.source_alpha[rows, columns] * 255.0).astype(numpy.uint8)
+            self.composite_spots(parent, group, window, before, effective)
         return
     if parent.knockout:
         assert parent.source_alpha is not None
@@ -101,6 +112,8 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
         parent_shape = parent.source_shape[rows, columns]
         parent_shape += (1.0 - parent_shape) * shape
     self.extend_paint_window(rows, columns)
+    if before is not None:
+        self.composite_spots(parent, group, window, before, effective_alpha)
 
 
 def composite_group_into(
@@ -268,6 +281,7 @@ def push_scratch_group(
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             painted_boxes=[] if knockout else None,
+            spots=inherited_spots(parent) if parent.spots else None,
         )
     )
     self.sync_group_mirrors()
@@ -310,6 +324,7 @@ def push_group(
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             painted_boxes=[] if knockout else None,
+            spots=inherited_spots(parent) if parent.spots and backdrop is not None else None,
         )
     )
     self.sync_group_mirrors()

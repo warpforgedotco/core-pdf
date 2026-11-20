@@ -12,6 +12,7 @@ from core_pdf.impl.render import raster_images as images
 from core_pdf.impl.render import raster_overprint as overprint
 from core_pdf.impl.render import raster_shading as shading
 from core_pdf.impl.render import raster_spaces as spaces
+from core_pdf.impl.render import raster_spots as spots
 from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
@@ -254,3 +255,10 @@ class RasterTarget:
     paint_overprinting = overprint.paint_overprinting
     fill_stroke_channels = overprint.fill_stroke_channels
     paint_fill_stroke_apart = overprint.paint_fill_stroke_apart
+    plate_channels = overprint.plate_channels
+    has_spot_plates = overprint.has_spot_plates
+
+    # Spot colorant plates in a DeviceCMYK group.
+    group_plates = spots.group_plates
+    plate = spots.plate
+    composite_spots = spots.composite_spots

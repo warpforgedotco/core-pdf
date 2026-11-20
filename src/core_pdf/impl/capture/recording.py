@@ -794,6 +794,7 @@ class TextState(RecoveringTextState):
                 options=nested.options,
             ),
             matrix=None if matrix == IDENTITY_MATRIX else matrix,
+            overprints=nested.uses_overprint,
         )
 
     @cites(
