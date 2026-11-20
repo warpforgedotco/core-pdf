@@ -207,7 +207,14 @@ def push_scratch_group(
     mask_alpha: SoftMaskPlane | None,
     alpha_is_shape: bool,
     region: PixelBox | None = None,
+    sync_box: PixelBox | None = None,
 ) -> None:
+    """Push a non-isolated group on the scratch planes of its depth, its pixels the
+    backdrop's. A knockout group (region given) is a copy of the backdrop in region only.
+
+    sync_box, for a group that paints only inside it, limits a copy of the whole backdrop
+    to that box: paint_item checks the group painted nowhere else.
+    """
     parent = self.buffer_stack[-1]
     backdrop = parent.backdrop if parent.knockout else self.pixels
     knockout = region is not None
@@ -232,8 +239,15 @@ def push_scratch_group(
     buffer = scratch.buffer
     source_alpha = scratch.source_alpha
     source_shape = scratch.source_shape
-    if region is not None:
-        x0, y0, x1, y1 = region
+    window = region
+    if (
+        window is None
+        and sync_box is not None
+        and not (parent.knockout and scratch.synced_parent is parent)
+    ):
+        window = sync_box
+    if window is not None:
+        x0, y0, x1, y1 = window
         if x1 > x0 and y1 > y0:
             scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
             source_alpha[y0:y1, x0:x1] = 0.0

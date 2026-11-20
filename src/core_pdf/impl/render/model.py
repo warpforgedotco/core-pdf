@@ -810,6 +810,13 @@ class PixelWindow:
     def bounds(self) -> tuple[int, ...]:
         return () if self.empty else (self.y0, self.y1, self.x0, self.x1)
 
+    def within(self, box: tuple[int, int, int, int]) -> bool:
+        """Whether the window lies inside box, as (x0, y0, x1, y1); an empty one does."""
+        if self.empty:
+            return True
+        x0, y0, x1, y1 = box
+        return x0 <= self.x0 and y0 <= self.y0 and self.x1 <= x1 and self.y1 <= y1
+
     def slices(self) -> tuple[slice, slice] | None:
         if self.empty:
             return None
