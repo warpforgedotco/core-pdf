@@ -28,6 +28,7 @@ from core_pdf.impl.render.model import (
 )
 from core_pdf.impl.render.target import RasterTarget
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
+from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK
 from core_pdf.impl.spec.s_11_transparency.blending_space import (
     OUTPUT_BLENDING_SPACE,
     blending_profile,
@@ -175,6 +176,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         )
         rotate = self.rotate % 360
         raster_target.group_member_boxes = self.display_list.group_member_boxes
+        raster_target.overprint_enabled = self.metadata.get("overprint") != "ignore"
         items = self.render_items(crop, scale=device_scale)
         page_group = page_space_group(self.metadata.get("group_color_space"))
         if page_group is not None and raster_target.switches_space(page_group):
@@ -225,6 +227,15 @@ def page_space_group(color_space: ColorSpace | None) -> GroupBeginItem | None:
     return GroupBeginItem(-1, None, None, None, True, False, False, False, None, space, profile, {})
 
 
+def simulates_overprint(color_space: ColorSpace | None) -> bool:
+    """Whether overprint simulation composites a page whose group has color_space in
+    DeviceCMYK: a page with no group colour space, which composites in the output device's,
+    or with a CMYK one. In an RGB or gray page group overprinting changes nothing (ISO
+    32000-2 11.7.4.5, Table 146), so such a page renders as it is."""
+    space = blending_space_of(color_space)
+    return space is None or space == "DeviceCMYK"
+
+
 def compose_page(
     page: PdfPage,
     options: RenderOptions | None = None,
@@ -233,7 +244,10 @@ def compose_page(
     fields: Iterable[Any] | None = None,
     annotations: Iterable[Any] | None = None,
     semantic_context: SemanticContext | None = None,
+    simulate_overprint: bool = False,
 ) -> RenderedPage:
+    """The page's display list. simulate_overprint: composite the page in DeviceCMYK, for
+    which page_program was captured (PdfPage.render), unless its group already does."""
     options = options or RenderOptions()
     fields = tuple(fields) if fields is not None else None
     annotations = tuple(annotations) if annotations is not None else None
@@ -243,6 +257,9 @@ def compose_page(
     height = max(0.0, y1 - y0)
     user_unit = float(getattr(page, "user_unit", 1.0))
     display_list = DisplayList(width=width, height=height)
+    group_space = page.resolve_transparency_group_space()
+    if simulate_overprint and blending_space_of(group_space) is None:
+        group_space = DEVICE_CMYK
 
     if page_program is None:
         capture_inputs: dict[str, Any] = {}
@@ -328,9 +345,10 @@ def compose_page(
             "crop": options.crop,
             "media_box": media_box,
             "group_alpha": (page.resolve_transparency_group_alpha()),
-            "group_color_space": page.resolve_transparency_group_space(),
+            "group_color_space": group_space,
+            "overprint": options.overprint,
         },
     )
 
 
-__all__ = ("RenderedPage", "compose_page")
+__all__ = ("RenderedPage", "compose_page", "simulates_overprint")

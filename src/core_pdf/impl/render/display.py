@@ -360,6 +360,7 @@ class DisplayList:
                     source_metadata=metadata,
                     ctm=data.get("ctm"),
                     xobject_depth=data.get("xobject_depth"),
+                    fill_overprint=data.get("fill_overprint"),
                 )
             )
             return
@@ -395,6 +396,8 @@ class DisplayList:
                     fill_pattern=data.get("fill_pattern"),
                     stroke_pattern=data.get("stroke_pattern"),
                     edge_array=data.get("edge_array"),
+                    fill_overprint=data.get("fill_overprint"),
+                    stroke_overprint=data.get("stroke_overprint"),
                 )
             )
             return
@@ -470,6 +473,7 @@ class DisplayList:
                 and previous.blend_mode == drawing.blend_mode
                 and previous.soft_mask_alpha == drawing.soft_mask_alpha
                 and previous.alpha_is_shape == drawing.alpha_is_shape
+                and previous.stroke_overprint == drawing.stroke_overprint
                 # One stroke is one shape painted once, and two strokes are two: the kernel
                 # paints each of a coalesced path's in turn, so only strokes it paints, opaque
                 # and blending Normal without a stroke matrix, are joined. The previous one

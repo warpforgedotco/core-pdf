@@ -102,6 +102,10 @@ class GlyphStyle(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False):
     # page space, which the CTM alone sets, as the line width is in user space (9.3.6).
     miter_limit: float = 10.0
     stroke_matrix: tuple[float, float, float, float] | None = None
+    # The process components the glyph's fill and stroke mark while overprinting
+    # (graphics.overprint), or None for all four.
+    fill_overprint: int | None = None
+    stroke_overprint: int | None = None
 
 
 STYLE_FIELDS: tuple[str, ...] = GlyphStyle.__fields__
@@ -181,6 +185,8 @@ class GlyphObservation(ReprFields):
         graphics_soft_mask: object | None
         fill_pattern: object | None
         stroke_pattern: object | None
+        fill_overprint: int | None
+        stroke_overprint: int | None
 
     __fields__: ClassVar[tuple[str, ...]] = (
         "text",

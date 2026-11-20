@@ -25,6 +25,7 @@ from core_pdf.impl.render.model import (
     PathPaintKind,
     ScopeBeginItem,
     ShadingItem,
+    SpaceMode,
     is_plain_fill,
 )
 from core_pdf.impl.render.raster_images import blit_image
@@ -65,7 +66,30 @@ def paint_items(
 
 
 def paint_item(self: RasterTarget, item: DisplayItem) -> None:
-    if type(item) is PathPaintItem and item.edge_array is not None and self.paint_glyph_fill(item):
+    overprint = None
+    # In a DeviceCMYK group, a paint may overprint components (raster_overprint).
+    if (
+        self.space_mode is not SpaceMode.RGB
+        and self.space_mode is not SpaceMode.GRAY
+        and self.overprint_enabled
+        and isinstance(item, PaintItemBase)
+    ):
+        if (
+            type(item) is PathPaintItem
+            and item.paint_kind is PathPaintKind.FILL_STROKE
+            and (item.fill_overprint is not None or item.stroke_overprint is not None)
+        ):
+            # A fill and stroke that overprint paint one after the other.
+            self.paint_item(replace(item, paint_kind=PathPaintKind.FILL))
+            self.paint_item(replace(item, paint_kind=PathPaintKind.STROKE))
+            return
+        overprint = self.overprint_channels(item)
+    if (
+        overprint is None
+        and type(item) is PathPaintItem
+        and item.edge_array is not None
+        and self.paint_glyph_fill(item)
+    ):
         return
     if isinstance(item, PaintItemBase):
         previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
@@ -101,6 +125,7 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                 elementary_group
                 and knockout
                 and mask_alpha is None
+                and overprint is None
                 and self.knockout_glyph_fill(item)
             ):
                 return
@@ -113,7 +138,10 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                     alpha_is_shape=self.paint_alpha_is_shape,
                 )
             try:
-                self.paint_display_item(item)
+                if overprint is None:
+                    self.paint_display_item(item)
+                else:
+                    self.paint_overprinting(item, overprint)
             finally:
                 if elementary_group:
                     self.composite_group(self.pop_group())

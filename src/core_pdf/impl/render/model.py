@@ -41,6 +41,8 @@ from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_space_of,
 )
 
+OVERPRINT_MODES = frozenset({"groups", "simulate", "ignore"})
+
 
 class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
     page_number: int | None = None
@@ -49,12 +51,22 @@ class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=Fals
     include_annotations: bool = True
     include_layers: bool = True
     include_text: bool = True
+    # How overprinting paint renders (ISO 32000-2 8.6.7, 11.7.4). "groups": process
+    # colorants overprint where paint composites in a DeviceCMYK blending space -- a
+    # transparency group or page group whose colour space is CMYK -- and an RGB page ignores
+    # the overprint parameters, as a composite RGB device may (8.6.7) and as MuPDF,
+    # Ghostscript and Poppler render by default. "simulate": a page that overprints also
+    # composites in DeviceCMYK, as the overprint simulation of mutool draw, Ghostscript,
+    # pdftoppm and Acrobat's overprint preview do. "ignore": nothing overprints.
+    overprint: str = "groups"
 
     __hash__ = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.rotate % 90:
             raise ValueError("render rotation must be a multiple of 90 degrees")
+        if self.overprint not in OVERPRINT_MODES:
+            raise ValueError(f"overprint must be one of {sorted(OVERPRINT_MODES)}")
         self.rotate %= 360
 
 
@@ -176,6 +188,8 @@ PATH_PAINT_FIELDS = (
     "stroke_pattern",
     "miter_limit",
     "stroke_matrix",
+    "fill_overprint",
+    "stroke_overprint",
 )
 path_paint_values = attrgetter(*PATH_PAINT_FIELDS)
 
@@ -242,6 +256,10 @@ class PathPaintItem(
     edge_array: Any = None
     miter_limit: float = DEFAULT_MITER_LIMIT
     stroke_matrix: StrokeMatrix | None = None
+    # The process components the fill and the stroke mark while overprinting
+    # (graphics.overprint), or None for all four.
+    fill_overprint: int | None = None
+    stroke_overprint: int | None = None
 
     @property
     def kind(self) -> str:
@@ -311,6 +329,7 @@ class ImagePaintItem(PaintItemBase, ReplaceFields, ReprFields, metaclass=RecordT
     xobject_depth: Any = None
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
+    fill_overprint: int | None = None
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -349,6 +368,7 @@ class ImagePaintItem(PaintItemBase, ReplaceFields, ReprFields, metaclass=RecordT
             "source_metadata": self.source_metadata,
             "ctm": self.ctm,
             "xobject_depth": self.xobject_depth,
+            "fill_overprint": self.fill_overprint,
         }
 
 
@@ -809,6 +829,10 @@ class RasterGroup(GeneratedRecord, eq=False):
     mask_alpha: SoftMaskPlane | None
     paint_window: PixelWindow
     painted_boxes: list[tuple[int, int, int, int]] | None
+    # For a layer holding one overprinting paint (raster_overprint), which of the pass's
+    # three components the paint marks; it composites the others by the special blend mode
+    # of ISO 32000-2 11.7.4.3.
+    overprint: tuple[bool, bool, bool] | None
 
     __match_args__ = ("pixels", "composite_alpha", "blend_mode")
 
@@ -827,6 +851,7 @@ class RasterGroup(GeneratedRecord, eq=False):
         mask_alpha: SoftMaskPlane | None = None,
         paint_window: PixelWindow | None = None,
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
+        overprint: tuple[bool, bool, bool] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
         frozen_setattr(self, "view", view)
@@ -842,6 +867,7 @@ class RasterGroup(GeneratedRecord, eq=False):
             self, "paint_window", PixelWindow() if paint_window is None else paint_window
         )
         frozen_setattr(self, "painted_boxes", painted_boxes)
+        frozen_setattr(self, "overprint", overprint)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)
@@ -856,6 +882,7 @@ class RasterGroup(GeneratedRecord, eq=False):
         mask_alpha = changes.pop("mask_alpha", self.mask_alpha)
         paint_window = changes.pop("paint_window", self.paint_window)
         painted_boxes = changes.pop("painted_boxes", self.painted_boxes)
+        overprint = changes.pop("overprint", self.overprint)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
         return self.__class__(
@@ -871,6 +898,7 @@ class RasterGroup(GeneratedRecord, eq=False):
             mask_alpha=mask_alpha,
             paint_window=paint_window,
             painted_boxes=painted_boxes,
+            overprint=overprint,
         )
 
     @property

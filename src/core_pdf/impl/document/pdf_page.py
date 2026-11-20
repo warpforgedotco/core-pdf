@@ -34,7 +34,7 @@ lazy from core_pdf.impl.graphics.images import decode_image
 lazy from core_pdf.impl.output.media import DrawingRecord, ImageMetadata, ImageRecord
 lazy from core_pdf.impl.output.model import Page
 lazy from core_pdf.impl.render.model import RenderOptions
-lazy from core_pdf.impl.render.page import compose_page
+lazy from core_pdf.impl.render.page import compose_page, simulates_overprint
 lazy from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 lazy from core_pdf.impl.spec.s_08_graphics.default_spaces import (
     DEFAULT_SPACE_KEYS,
@@ -324,6 +324,7 @@ class PdfPage:
         fields: Iterable[RawFormField] | None = None,
         annotations: Iterable[RawAnnotation] | None = None,
         options: CaptureOptions = DEFAULT_CAPTURE,
+        cmyk_page: bool = False,
     ) -> PageProgram:
         return capture_page_program(
             self,
@@ -331,6 +332,7 @@ class PdfPage:
             fields=fields,
             annotations=annotations,
             options=options,
+            cmyk_page=cmyk_page,
         )
 
     def collect_inherited_values(self) -> InheritedValueMap:
@@ -539,11 +541,23 @@ class PdfPage:
             with suppress(ValueError):
                 fields = tuple(self.get_fields())
         annotations = tuple(self.get_annotations()) if options.include_annotations else None
+        program = self.get_page_program(fields=fields, annotations=annotations or None)
+        simulate = (
+            options.overprint == "simulate"
+            and program.overprints
+            and simulates_overprint(self.resolve_transparency_group_space())
+        )
+        if simulate:
+            # The page composites in DeviceCMYK, so its paint is captured for it.
+            program = self.get_page_program(
+                fields=fields, annotations=annotations or None, cmyk_page=True
+            )
         return compose_page(
             self,
             options,
-            page_program=self.get_page_program(fields=fields, annotations=annotations or None),
+            page_program=program,
             fields=fields,
             annotations=annotations,
             semantic_context=self.document.resolver.semantic_context,
+            simulate_overprint=simulate,
         )

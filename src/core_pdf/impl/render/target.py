@@ -9,12 +9,14 @@ from core_pdf.impl.render import raster_dispatch as dispatch
 from core_pdf.impl.render import raster_fills as fills
 from core_pdf.impl.render import raster_groups as groups
 from core_pdf.impl.render import raster_images as images
+from core_pdf.impl.render import raster_overprint as overprint
 from core_pdf.impl.render import raster_shading as shading
 from core_pdf.impl.render import raster_spaces as spaces
 from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SpaceMode
+from core_pdf.impl.render.raster_overprint import OverprintScratch
 from core_pdf.impl.render.raster_shading import PatternScratch
 from core_pdf.impl.render.raster_support import ElementaryScratch, FloatPlane, RenderResources
 from core_pdf.impl.spec.standards import SemanticContext
@@ -58,6 +60,8 @@ class RasterTarget:
         "space_profile",
         "space_colors",
         "space_images",
+        "overprint_enabled",
+        "overprint_scratch",
     )
     pixels: bytearray
     pixel_array: UInt8Array
@@ -95,6 +99,10 @@ class RasterTarget:
     space_profile: bytes | None
     space_colors: dict[tuple[int, int, int], tuple[int, int, int, int]]
     space_images: dict[tuple[int, int], tuple[object, UInt8Array]]
+    # Whether paint in a DeviceCMYK group overprints (raster_overprint), and the layers
+    # overprinting paint is painted into, by group depth.
+    overprint_enabled: bool
+    overprint_scratch: dict[int, OverprintScratch]
 
     KNOCKOUT_DISJOINT_LIMIT = 96
 
@@ -138,6 +146,8 @@ class RasterTarget:
         self.space_profile = None
         self.space_colors = {}
         self.space_images = {}
+        self.overprint_enabled = True
+        self.overprint_scratch = {}
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -231,3 +241,8 @@ class RasterTarget:
     space_samples = spaces.space_samples
     switches_space = spaces.switches_space
     paint_space_group = spaces.paint_space_group
+
+    # Overprinting paint in a DeviceCMYK group.
+    overprint_channels = overprint.overprint_channels
+    push_overprint_layer = overprint.push_overprint_layer
+    paint_overprinting = overprint.paint_overprinting

@@ -17,6 +17,7 @@ from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import BlendOp, composite_blended_group_numpy
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SoftMaskPlane
+from core_pdf.impl.render.raster_overprint import composite_overprint_layer
 from core_pdf.impl.render.raster_support import (
     ElementaryScratch,
     PixelBox,
@@ -108,6 +109,14 @@ def composite_group_into(
     child = group.view[rows, columns]
     group_alpha = group.composite_alpha
     normalized_blend_mode = self.resolved_blend(group.blend_mode, casefold=True)
+    if group.overprint is not None:
+        return composite_overprint_layer(
+            destination,
+            child,
+            group.overprint,
+            normalized_blend_mode,
+            semantic_context=self.semantic_context,
+        )
     source_scale = group.source_scale
     if group.mask_alpha is not None:
         return composite_masked_group(

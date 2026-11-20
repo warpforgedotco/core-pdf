@@ -352,6 +352,8 @@ class TextState(RecoveringTextState):
     # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
     cie_gray_groups_in_srgb: bool
     capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
+    # Whether a paint overprints some process component (capture_overprint).
+    uses_overprint: bool
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
@@ -399,6 +401,7 @@ class TextState(RecoveringTextState):
         self.capture_cmyk_profile = None
         self.cie_gray_groups_in_srgb = False
         self.capture_cmyk_frames = {}
+        self.uses_overprint = False
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
         resolver_context = getattr(document.resolver, "semantic_context", None)
@@ -847,12 +850,15 @@ class TextState(RecoveringTextState):
     # Painting images, inline images and shadings.
     captured_image_source = image_painting.captured_image_source
     paint_image = image_painting.paint_image
+    image_overprint = image_painting.image_overprint
     paint_inline_image = image_painting.paint_inline_image
     paint_shading = image_painting.paint_shading
 
     # The colors and patterns paint takes.
     initial_pattern = paint_sources.initial_pattern
     capture_color = paint_sources.capture_color
+    capture_overprint = paint_sources.capture_overprint
+    capture_space_overprint = paint_sources.capture_space_overprint
     capture_shading_dictionary = paint_sources.capture_shading_dictionary
     capture_pattern = paint_sources.capture_pattern
 

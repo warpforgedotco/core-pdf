@@ -1131,4 +1131,5 @@ def blank_sibling(
         semantic_context=self.semantic_context,
         resources=self.resources,
     )
+    sibling.overprint_enabled = self.overprint_enabled
     return sibling, view

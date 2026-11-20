@@ -177,6 +177,12 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 DRAWING_SHADING_MATRIX,
                 graphics.miter_limit,
                 stroke_matrix,
+                self.capture_overprint(stroke=False)
+                if graphics.fill_overprint and fills and fill_paints
+                else None,
+                self.capture_overprint(stroke=True)
+                if graphics.stroke_overprint and strokes and stroke_paints
+                else None,
             )
         )
     )

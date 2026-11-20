@@ -117,9 +117,22 @@ def paint_image(self: TextState, state: object, xobj: PdfStream) -> None:
                 bbox=bbox,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
+                fill_overprint=self.image_overprint(image_is_stencil, source),
             )
         )
         self.sequence += 1
+
+
+def image_overprint(self: TextState, stencil: bool, source: ImageSource) -> int | None:
+    """The process components an image marks while overprinting: an image mask, those of
+    the current colour; any other image, those of its colour space."""
+    if not self.graphics.fill_overprint:
+        return None
+    if stencil:
+        return self.capture_overprint(stroke=False)
+    return self.capture_space_overprint(
+        self.resolver.deep_resolve(source.dictionary.get("ColorSpace"))
+    )
 
 
 def paint_inline_image(self: TextState, state: object, image: InlineImage) -> None:
@@ -169,6 +182,7 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
                 else None,
                 fill_opacity=self.graphics.fill_opacity,
                 paints=paints,
+                fill_overprint=self.image_overprint(dictionary.get("ImageMask") is True, source),
             )
         )
         self.sequence += 1
@@ -204,6 +218,7 @@ def paint_shading(self: TextState, state: object, shading: PdfDict) -> None:
             stream_order=self.stream_order,
             xobject_depth=self.xobject_depth,
             shading_matrix=None if ctm == IDENTITY_MATRIX else ctm,
+            fill_overprint=self.capture_space_overprint(dictionary.get("ColorSpace")),
         )
     )
     self.sequence += 1

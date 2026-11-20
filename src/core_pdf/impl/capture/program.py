@@ -89,6 +89,8 @@ class AppearanceProgram(GeneratedRecord):
 class PageProgram:
     body: CapturedProgram = field(default_factory=CapturedProgram)
     appearances: tuple[AppearanceProgram, ...] = ()
+    # Whether a paint overprints some process component (graphics.overprint).
+    overprints: bool = False
     runs: tuple[TextRun, ...] = field(init=False)
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
     drawings: tuple[CapturedDrawing, ...] = field(init=False)

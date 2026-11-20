@@ -14,6 +14,7 @@ from core_pdf.impl.base.types import MISSING, MissingObject
 from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
+from core_pdf.impl.graphics.overprint import overprint_marks, raw_overprint_marks
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
@@ -82,6 +83,35 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
     else:
         self.last_fill_color = memo
     return result
+
+
+def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
+    """The process components a paint with the current stroking or nonstroking colour
+    marks while that overprint parameter is on (graphics.overprint.overprint_marks), or None
+    for all four, as when it is off."""
+    graphics = self.graphics
+    if not (graphics.stroke_overprint if stroke else graphics.fill_overprint):
+        return None
+    marks = overprint_marks(
+        graphics.stroke_space if stroke else graphics.fill_space,
+        graphics.stroke_color if stroke else graphics.fill_color,
+        graphics.overprint_mode,
+        current_color=True,
+    )
+    if marks is not None:
+        self.uses_overprint = True
+    return marks
+
+
+def capture_space_overprint(self: TextState, space: object) -> int | None:
+    """capture_overprint for an image or a shading painted in space, a resolved ColorSpace
+    entry, which the nonstroking overprint parameter governs."""
+    if not self.graphics.fill_overprint:
+        return None
+    marks = raw_overprint_marks(space)
+    if marks is not None:
+        self.uses_overprint = True
+    return marks
 
 
 # The entries of a shading dictionary the renderer reads, resolved when it is captured.

@@ -115,6 +115,12 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
         clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
         miter_limit=graphics.miter_limit,
         stroke_matrix=scale_cache[2],
+        fill_overprint=self.capture_overprint(stroke=False)
+        if graphics.fill_overprint and render_mode in {0, 2, 4, 6}
+        else None,
+        stroke_overprint=self.capture_overprint(stroke=True)
+        if graphics.stroke_overprint and render_mode in {1, 2, 5, 6}
+        else None,
     )
 
 

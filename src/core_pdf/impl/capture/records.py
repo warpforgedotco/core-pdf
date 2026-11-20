@@ -158,6 +158,7 @@ class CapturedInlineImage(GeneratedRecord):
     paints: bool = True
     alpha_is_shape: bool = False
     graphics_soft_mask: CapturedSoftMask | None = None
+    fill_overprint: int | None = None
 
 
 class CapturedSubpath:
@@ -533,6 +534,10 @@ class CapturedDrawing(ReprFields, ReplaceFields, metaclass=RecordType, frozen=Fa
     # its pen is a circle, to page space (path_painting.stroke_space), or None when that
     # is the identity: the CTM scales evenly.
     stroke_matrix: StrokeMatrix | None = None
+    # The process components the fill and the stroke mark while overprinting
+    # (graphics.overprint), or None for all four.
+    fill_overprint: int | None = None
+    stroke_overprint: int | None = None
 
     def __post_init__(self) -> None:
         if not self.items:
