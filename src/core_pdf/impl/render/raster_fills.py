@@ -365,11 +365,14 @@ def cell_edges(
     corners has them, in reading order, their x as columns from the left and their y as
     rows from the top, (x0, x1) and (y0, y1) of each edge; and the columns and rows they
     span, (first column, first row, last column, last row). None when no cell is set."""
-    # A row sets no cell past its highest bit.
+    # The bits of the bitmap's columns alone, a negative row's too; a row then sets no cell
+    # past its highest bit.
+    mask = (1 << max(0, bitmap_w)) - 1
+    rows = tuple(row & mask for row in rows)
     width = min(bitmap_w, max((row.bit_length() for row in rows), default=0))
     if width <= 0:
         return None
-    if width <= 63 and min(rows) >= 0:
+    if width <= 63:
         values = numpy.array(rows, dtype=numpy.uint64)
         shifts = numpy.arange(width, dtype=numpy.uint64)
         bits = ((values[:, None] >> shifts[None, :]) & numpy.uint64(1)).astype(bool)

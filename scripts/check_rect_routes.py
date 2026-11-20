@@ -18,9 +18,12 @@ opaque inside a transparency group under a triangular clip, which core paints pi
 piece, against the union of the pieces filled as one path; and, under the clip, strokes
 whose edges fall on the samples at scale 1: segments 1.25 wide, dashes at alpha 0.5 and a
 segment with square caps at alpha 0.5, each against its shape filled as one path; and
-opaque strokes of several pieces under the clip, collinear segments meeting inside a
-pixel, with and without square caps, and a right-angle miter, each against its union
-filled as one path. Then it
+opaque strokes of several pieces, collinear segments meeting inside a pixel, with and
+without square caps, and a right-angle miter, each against its union filled as one path:
+byte-identical under the clip, and unclipped and under a rectangular clip, where the
+union is filled by its exact area, within four samples; those strokes and a closed frame,
+unclipped and under a rectangular clip, must also be byte-identical to the same strokes
+through stroke_once, which paints each pixel once. Then it
 paints, on a raster target directly, square and round dots (fill_terminal), glyph bitmaps
 (draw_glyph_bitmap) whose cells have fractional device edges, each glyph against its cells
 filled as one path, and rectangles in a blend mode named Normal, against a rectangle
@@ -51,7 +54,7 @@ from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath  # noqa: E402
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid  # noqa: E402
 from core_pdf.impl.render.paths import circle_path, stroke_half_width  # noqa: E402
-from core_pdf.impl.render.raster_fills import paint_as_one  # noqa: E402
+from core_pdf.impl.render.raster_fills import cell_edges, paint_as_one  # noqa: E402
 from core_pdf.impl.render.raster_strokes import stroke_once  # noqa: E402
 from core_pdf.impl.render.target import RasterTarget  # noqa: E402
 from scripts.check_patterns import document, stream  # noqa: E402
@@ -193,6 +196,19 @@ def fills(before: bytes, pairs: tuple[tuple[bytes, bytes], ...]) -> bytes:
     return before + b"0.1 0.3 0.8 rg " + b" f ".join(fill for _, fill in pairs) + b" f"
 
 
+def compare_within(name: str, got: numpy.ndarray, want: numpy.ndarray, tolerance: int) -> int:
+    difference = numpy.abs(got.astype(numpy.int32) - want).max(axis=2)
+    worst = int(difference.max())
+    if worst <= tolerance:
+        return 0
+    y, x = numpy.unravel_index(int(difference.argmax()), difference.shape)
+    print(
+        f"{name}: ({x}, {y}) is {tuple(int(v) for v in got[y, x])}, "
+        f"{tuple(int(v) for v in want[y, x])} wanted, more than {tolerance} apart"
+    )
+    return 1
+
+
 def compare(name: str, got: numpy.ndarray, want: numpy.ndarray) -> int:
     if got.shape == want.shape and numpy.array_equal(got, want):
         return 0
@@ -226,10 +242,22 @@ def pdf_pairs() -> int:
         filled = render(group_page(fills(clip, CAPPED)), scale)
         failed += compare(f"grouped triangle square caps @{scale}", stroked, filled)
         for name, stroke, fill in PIECES:
-            before = b"q " + TRIANGLE_CLIP
-            stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
-            filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
-            failed += compare(f"triangle {name} @{scale}", stroked, filled)
+            for clip_name, before in (
+                ("unclipped", BACKDROP),
+                ("rectangle-clipped", BACKDROP + b"q 15.15 30.35 140.45 90.65 re W n "),
+                ("triangle", BACKDROP + b"q " + TRIANGLE_CLIP),
+            ):
+                stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
+                filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
+                label = f"{clip_name} {name} @{scale}"
+                if clip_name == "triangle":
+                    failed += compare(label, stroked, filled)
+                else:
+                    # Without a clip path the union is filled by its exact area and the
+                    # stroke by its samples: a pixel may differ by up to four samples of
+                    # the sixteen where both of its edges cross it. pieces_once checks
+                    # these strokes exactly.
+                    failed += compare_within(label, stroked, filled, 4 * 255 // 16 + 1)
         for name, before, stroke, fill in ON_SAMPLES:
             stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
             filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
@@ -364,7 +392,45 @@ def direct_pairs() -> int:
                     draw(raster, rgba, mode)
                     images.append(raster.pixel_array.copy())
                 failed += compare(f"{state} {shape} @{scale}", images[0], images[1])
-    return failed + kernel_round_caps() + batch_orientation()
+    return failed + kernel_round_caps() + batch_orientation() + pieces_once()
+
+
+# PIECES' strokes as paths: points, line cap and line join.
+PIECE_PATHS = (
+    ("collinear segments", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 0, 0),
+    ("collinear segments with square caps", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 2, 0),
+    ("right-angle miter", ((20.3, 50.37), (60.4, 50.37), (60.4, 90.6)), 0, 0),
+    ("square frame", ((30.3, 30.45), (130.6, 30.45), (130.6, 110.7), (30.3, 110.7)), 0, 0),
+)
+
+
+def pieces_once() -> int:
+    """PIECES' strokes, and a closed frame, opaque, unclipped and under a rectangular clip,
+    painted by the stroke kernel, against the same strokes through stroke_once, which
+    covers their pieces' samples once and blends them in one pass: byte-identical, so that
+    no two pieces blend a pixel they share in turn."""
+    rgba = (26, 77, 204, 255)
+    failed = 0
+    for scale in SCALES:
+        for name, points, cap, join in PIECE_PATHS:
+            closed = name == "square frame"
+            for clip_name, clip in (
+                ("unclipped", None),
+                ("rectangle-clipped", rectangle(15.15, 30.35, 155.6, 121.0)),
+            ):
+                images = []
+                for route in ("kernel", "once"):
+                    raster = target(scale)
+                    if clip is not None:
+                        raster.clip.push(clip, "nonzero")
+                    path = CapturedPath([CapturedSubpath(list(points), closed=closed)])
+                    if route == "kernel":
+                        raster.stroke_path(path, 1.3, rgba, None, None, cap, join, 10.0)
+                    else:
+                        stroke_once(raster, path, 1.3, rgba, None, None, cap, join, 10.0, None)
+                    images.append(raster.pixel_array.copy())
+                failed += compare(f"{clip_name} {name} once @{scale}", images[0], images[1])
+    return failed
 
 
 def batch_orientation() -> int:
@@ -467,12 +533,22 @@ def unchanged_pages() -> dict[str, numpy.ndarray]:
     }
 
 
+def negative_rows() -> int:
+    """A glyph bitmap's negative row sets each of the bitmap's columns, and no more."""
+    cells = cell_edges((-1,), 7)
+    found = 0 if cells is None else len(cells[0]) // 4
+    if found == 7:
+        return 0
+    print(f"a row of -1 in a bitmap 7 wide: {found} cells, 7 wanted")
+    return 1
+
+
 def digest(image: numpy.ndarray) -> str:
     return hashlib.sha256(f"{image.shape}".encode() + image.tobytes()).hexdigest()[:16]
 
 
 def main() -> int:
-    failures = pdf_pairs() + direct_pairs()
+    failures = pdf_pairs() + direct_pairs() + negative_rows()
     pages = unchanged_pages()
     if "--record" in sys.argv:
         for name, image in pages.items():

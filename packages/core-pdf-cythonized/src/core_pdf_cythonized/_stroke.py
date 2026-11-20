@@ -563,15 +563,9 @@ def fill_circle(
     opaque[1] = cython.cast(cython.uchar, p.green)
     opaque[2] = cython.cast(cython.uchar, p.blue)
     opaque[3] = 255
-    sx: cython.int
-    sy: cython.int
-    samples: cython.int
-    alpha: cython.int
-    painted: cython.bint = False
-    window = cython.declare(cython.Py_ssize_t[4])
     if p.clip_mode == CLIP_ROWS:
-        # Antialiased by the 4 x 4 samples, as a filled path is under a clip path.
         for py in range(iy0, iy1):
+            page_y = p.crop_y1 - (cython.cast(cython.double, py) + 0.5) / p.scale
             count = row_spans(p, py, cython.address(spans))
             for k in range(count):
                 start = cython.cast(cython.Py_ssize_t, spans[2 * k])
@@ -581,40 +575,12 @@ def fill_circle(
                 if end > ix1:
                     end = ix1
                 for px in range(start, end):
-                    samples = 0
-                    for sy in range(4):
-                        page_y = (
-                            p.crop_y1 - (cython.cast(cython.double, py) + (sy + 0.5) / 4) / p.scale
-                        )
-                        dy = page_y - cy
-                        for sx in range(4):
-                            page_x = (
-                                p.crop_x0
-                                + (cython.cast(cython.double, px) + (sx + 0.5) / 4) / p.scale
-                            )
-                            dx = page_x - cx
-                            if dx * dx + dy * dy <= radius2:
-                                samples += 1
-                    if not samples:
+                    page_x = p.crop_x0 + (cython.cast(cython.double, px) + 0.5) / p.scale
+                    dx = page_x - cx
+                    dy = page_y - cy
+                    if dx * dx + dy * dy > radius2:
                         continue
-                    alpha = coverage_alpha(p.alpha, samples)
-                    if alpha <= 0:
-                        continue
-                    blend_normal_pixel(
-                        p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, alpha
-                    )
-                    if not painted:
-                        painted = True
-                        window[0] = px
-                        window[1] = py
-                        window[2] = px + 1
-                        window[3] = py + 1
-                    else:
-                        window[0] = px if px < window[0] else window[0]
-                        window[2] = px + 1 if px + 1 > window[2] else window[2]
-                        window[3] = py + 1
-        if painted:
-            extend(p, window[1], window[3], window[0], window[2])
+                    blend_pixel(p, py, px)
         return 0
     if p.alpha >= 255 and (ix1 - ix0) * (iy1 - iy0) > 16:
         for py in range(iy0, iy1):
@@ -2076,6 +2042,55 @@ def paint_once(
 
 
 @cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def x_on_pixel_edge(p: cython.pointer[Paint], x: cython.double) -> cython.bint:
+    return on_pixel_edge((x - p.crop_x0) * p.scale)
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def y_on_pixel_edge(p: cython.pointer[Paint], y: cython.double) -> cython.bint:
+    return on_pixel_edge((p.crop_y1 - y) * p.scale)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def segment_on_pixels(
+    p: cython.pointer[Paint],
+    half: cython.double,
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+) -> cython.bint:
+    """Whether the rectangle around the segment, half a line width either side of it, has
+    its ends along the run and its sides on pixel edges; False for a segment off the axes.
+    A segment of no length has no rectangle."""
+    if x0 == x1 and y0 == y1:
+        return True
+    if y0 == y1:
+        return (
+            x_on_pixel_edge(p, x0)
+            and x_on_pixel_edge(p, x1)
+            and y_on_pixel_edge(p, y0 - half)
+            and y_on_pixel_edge(p, y0 + half)
+        )
+    if x0 == x1:
+        return (
+            y_on_pixel_edge(p, y0)
+            and y_on_pixel_edge(p, y1)
+            and x_on_pixel_edge(p, x0 - half)
+            and x_on_pixel_edge(p, x0 + half)
+        )
+    return False
+
+
+@cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def pieces_on_pixels(
@@ -2084,21 +2099,56 @@ def pieces_on_pixels(
     first: cython.Py_ssize_t,
     last: cython.Py_ssize_t,
 ) -> cython.bint:
-    """Whether every edge of the pieces of subpaths first to last, which in_pieces found
-    run along the axes, falls on a pixel edge, with no disc among them: under a clip path,
-    where fill_rect samples a piece whose edge falls inside a pixel, two such pieces
-    blended in turn would cover the pixel they share twice, or leave a seam."""
-    if w.line_cap == CAP_ROUND or w.line_join == JOIN_ROUND:
-        return False
-    if not on_pixel_edge(w.half * p.scale):
-        return False
+    """Whether painting the stroke of subpaths first to last piece by piece, as in_pieces
+    allows, covers each pixel once: it is one segment with butt caps, a single piece; or
+    its pieces run along the axes and every edge of them falls on a pixel edge, each
+    segment's ends along its run and its sides half a line width either way, and the sides
+    of each square cap and of each corner's square, half a line width around its point, so
+    that no two pieces share a partly covered pixel. Pieces meeting inside a pixel would
+    blend it in turn, leaving a seam where they abut and a darker edge where they overlap,
+    and a disc always meets the rectangle it caps inside pixels: paint_once covers such a
+    stroke's samples once instead."""
     k: cython.Py_ssize_t
     index: cython.Py_ssize_t
+    start: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    closed: cython.bint
+    segments: cython.Py_ssize_t = 0
     for k in range(first, last):
-        for index in range(w.bounds[3 * k], w.bounds[3 * k + 1]):
-            if not (
-                on_pixel_edge((w.xs[index] - p.crop_x0) * p.scale)
-                and on_pixel_edge((p.crop_y1 - w.ys[index]) * p.scale)
+        start = w.bounds[3 * k]
+        end = w.bounds[3 * k + 1]
+        for index in range(start, end - 1):
+            if w.xs[index] != w.xs[index + 1] or w.ys[index] != w.ys[index + 1]:
+                segments += 1
+        if w.bounds[3 * k + 2] and end - start >= 2:
+            segments += 1
+    if segments <= 1 and w.line_cap == CAP_BUTT:
+        return True
+    if w.line_cap == CAP_ROUND or w.line_join == JOIN_ROUND:
+        return False
+    half: cython.double = w.half
+    x: cython.double
+    y: cython.double
+    for k in range(first, last):
+        start = w.bounds[3 * k]
+        end = w.bounds[3 * k + 1]
+        closed = w.bounds[3 * k + 2] != 0
+        for index in range(start, end):
+            x = w.xs[index]
+            y = w.ys[index]
+            if index + 1 < end:
+                if not segment_on_pixels(p, half, x, y, w.xs[index + 1], w.ys[index + 1]):
+                    return False
+            elif closed and not segment_on_pixels(p, half, x, y, w.xs[start], w.ys[start]):
+                return False
+            # A corner's square, or a square cap's at an open end.
+            if (
+                closed or (index != start and index != end - 1) or w.line_cap == CAP_SQUARE
+            ) and not (
+                x_on_pixel_edge(p, x - half)
+                and x_on_pixel_edge(p, x + half)
+                and y_on_pixel_edge(p, y - half)
+                and y_on_pixel_edge(p, y + half)
             ):
                 return False
     return True
@@ -2125,8 +2175,8 @@ def walk_once(
     result: cython.int = 0
     for group in range(groups):
         last = ends[group]
-        if in_pieces(w, first, last, p.alpha >= 255, p.scale) and (
-            p.clip_mode != CLIP_ROWS or pieces_on_pixels(p, w, first, last)
+        if in_pieces(w, first, last, p.alpha >= 255, p.scale) and pieces_on_pixels(
+            p, w, first, last
         ):
             result = walk_range(p, w, calls, first, last)
         else:
