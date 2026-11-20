@@ -126,10 +126,11 @@ def stream(dictionary: bytes, data: bytes) -> bytes:
 
 def document(page: bytes, content: bytes, extra: Sequence[bytes] = ()) -> bytes:
     """A one-page PDF: the page dictionary's entries, its content, and objects 9 onwards;
-    objects 5 and 6 are the DeviceN spaces' tint transforms, 7 the soft mask's group and 8
-    the ICC profile, and the page's resources name the graphics states, colour spaces, a
-    font F and the XObjects of extra as X9, X10..."""
-    xobjects = b"".join(b"/X%d %d 0 R " % (number, number) for number in range(9, 9 + len(extra)))
+    objects 5 and 6 are the DeviceN spaces' tint transforms, 7 the soft mask's group, 8
+    the ICC profile and 9 the same profile with a Range beyond 0 to 1, and the page's
+    resources name the graphics states, colour spaces, a font F and the XObjects of extra as
+    X10, X11..."""
+    xobjects = b"".join(b"/X%d %d 0 R " % (number, number) for number in range(10, 10 + len(extra)))
     resources = (
         b"/Resources << "
         + EXTGSTATES
@@ -151,6 +152,7 @@ def document(page: bytes, content: bytes, extra: Sequence[bytes] = ()) -> bytes:
         stream(*CYAN_BLACK_FUNCTION),
         stream(*SOFT_MASK_GROUP),
         stream(b"/N 4 /Alternate /DeviceCMYK", built_in_cmyk_profile()),
+        stream(b"/N 4 /Alternate /DeviceCMYK /Range [0 1 0 1 0 1 0 2]", built_in_cmyk_profile()),
         *extra,
     ]
     out = bytearray(b"%PDF-1.7\n")
@@ -387,7 +389,7 @@ def group_cases() -> list[Case]:
             Case(
                 f"an isolated {'knockout' if knockout else 'non-knockout'} CMYK group on an "
                 "RGB page",
-                document(b"", b"/X9 Do", [form]),
+                document(b"", b"/X10 Do", [form]),
                 # In a knockout group magenta composites with the group's empty backdrop.
                 regions(CYAN, MAGENTA, overlap),
             )
@@ -402,12 +404,12 @@ IMAGE_MASK = stream(
 
 
 def image_cases() -> list[Case]:
-    place = b"q 120 0 0 80 60 60 cm /X9 Do Q"
+    place = b"q 120 0 0 80 60 60 cm /X10 Do Q"
     mask = IMAGE_MASK
     separation = stream(
         b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
-        b"/ColorSpace [/Separation /Magenta /DeviceCMYK "
-        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>]",
+        b"/ColorSpace [/Separation /Spot /DeviceCMYK "
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0.5 1 0] /N 1 >>]",
         bytes([153]),
     )
     cmyk = stream(
@@ -423,9 +425,9 @@ def image_cases() -> list[Case]:
             regions(CYAN, MAGENTA, add(CYAN, MAGENTA, "m")),
         ),
         Case(
-            "a Separation Magenta image marks magenta alone",
+            "a Separation spot image adds its alternate's tints",
             document(CMYK_GROUP, backdrop + b"/On0 gs " + place, [separation]),
-            regions(CYAN, (0, 0.6, 0, 0), (1.0, 0.6, 0.0, 0.0)),
+            regions(CYAN, (0, 0.3, 0.6, 0), (1.0, 0.3, 0.6, 0.0)),
         ),
         Case(
             "a DeviceCMYK image marks all four components, whatever OPM",
@@ -437,8 +439,8 @@ def image_cases() -> list[Case]:
 
 def shading_case() -> Case:
     shading = (
-        b"<< /ShadingType 2 /ColorSpace [/Separation /Magenta /DeviceCMYK "
-        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>] "
+        b"<< /ShadingType 2 /ColorSpace [/Separation /Spot /DeviceCMYK "
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0.5 1 0] /N 1 >>] "
         b"/Coords [60 0 180 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] "
         b"/N 1 >> >>"
     )
@@ -450,8 +452,8 @@ def shading_case() -> Case:
     samples = []
     for x in (70, 90, 150):
         tint = (x + 0.5 - 60) / 120
-        samples.append(((x, 100), (1.0 if x < 100 else 0.0, tint, 0.0, 0.0)))
-    return Case("a Separation Magenta shading marks magenta alone", data, tuple(samples))
+        samples.append(((x, 100), (1.0 if x < 100 else 0.0, tint / 2, tint, 0.0)))
+    return Case("a Separation spot shading adds its alternate's tints", data, tuple(samples))
 
 
 def text_failures() -> list[str]:
@@ -480,6 +482,43 @@ FILL_STROKE = (
 )
 
 
+PLACE = b"q 120 0 0 80 60 60 cm /X10 Do Q"
+# A 1 by 1 image in DeviceN Cyan and Magenta, through an RGB alternate whose tint transform,
+# object 11, takes c m to 1 - c, 1 - m, 1.
+CM_IMAGE = (
+    stream(
+        b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+        b"/ColorSpace [/DeviceN [/Cyan /Magenta] /DeviceRGB 11 0 R]",
+        bytes([153, 102]),
+    ),
+    stream(
+        b"/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1]",
+        b"{ 1 exch sub exch 1 exch sub exch 1 }",
+    ),
+)
+
+
+def cyan_shading(state: bytes) -> bytes:
+    """A Separation Cyan shading across the page, at tint 1, in a graphics state state."""
+    return document(CMYK_GROUP, state + b" gs /Sh sh").replace(
+        b"/XObject << >>",
+        b"/XObject << >> /Shading << /Sh << /ShadingType 2 "
+        b"/ColorSpace [/Separation /Cyan /DeviceCMYK "
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>] "
+        b"/Coords [0 0 200 0] "
+        b"/Function << /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [1] /N 1 >> >> >>",
+    )
+
+
+def cyan_shading_failures() -> list[str]:
+    """A Separation Cyan shading over white paints cyan, not black."""
+    page = render(cyan_shading(b"/On0"))
+    red, green, blue = (int(value) for value in page[100, 100])
+    if red > 80 or blue < 200:
+        return [f"Separation Cyan shading: {(red, green, blue)} is not cyan"]
+    return []
+
+
 def same_cases() -> list[Same]:
     return [
         Same(
@@ -504,7 +543,7 @@ def same_cases() -> list[Same]:
             document(
                 CMYK_GROUP,
                 b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /BlackGray cs 0.5 sc "
-                b"q 120 0 0 80 60 60 cm /X9 Do Q",
+                b"q 120 0 0 80 60 60 cm /X10 Do Q",
                 [IMAGE_MASK],
             ),
             two_fills(b"/On0 gs /BlackGray cs 0.5 sc"),
@@ -517,6 +556,30 @@ def same_cases() -> list[Same]:
             two_fills(b"/Off gs 0 1 0 0 k").replace(
                 b"/ColorSpace << ", b"/ColorSpace << /DefaultCMYK [/ICCBased 8 0 R] "
             ),
+        ),
+        Same(
+            "DefaultCMYK whose Range leaves the native operators to k's handler, likewise",
+            two_fills(b"/On1 gs 0 1 0 0 k").replace(
+                b"/ColorSpace << ", b"/ColorSpace << /DefaultCMYK [/ICCBased 9 0 R] "
+            ),
+            two_fills(b"/Off gs 0 1 0 0 k").replace(
+                b"/ColorSpace << ", b"/ColorSpace << /DefaultCMYK [/ICCBased 9 0 R] "
+            ),
+        ),
+        Same(
+            "a Separation Cyan shading paints as with overprint off",
+            cyan_shading(b"/On0"),
+            cyan_shading(b"/Off"),
+        ),
+        Same(
+            "a DeviceN Cyan and Magenta image paints as with overprint off",
+            document(CMYK_GROUP, b"0 0 0 0.5 k 0 0 200 200 re f /On0 gs " + PLACE, CM_IMAGE),
+            document(CMYK_GROUP, b"0 0 0 0.5 k 0 0 200 200 re f /Off gs " + PLACE, CM_IMAGE),
+        ),
+        Same(
+            "an Indexed index past hival paints entry hival",
+            two_fills(b"/On0 gs /IdxBlack cs 5 sc", backdrop=b"0.3 0 0 0 k"),
+            two_fills(b"/On0 gs /IdxBlack cs 1 sc", backdrop=b"0.3 0 0 0 k"),
         ),
         Same(
             "gray with overprint on changes nothing",
@@ -604,6 +667,7 @@ def main(argv: list[str]) -> int:
     for same in sames:
         failures.extend(check_same(same))
     failures.extend(text_failures())
+    failures.extend(cyan_shading_failures())
     for failure in failures:
         print(failure)
     if "--mupdf" in argv:
