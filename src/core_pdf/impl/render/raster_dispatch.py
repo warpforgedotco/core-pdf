@@ -135,7 +135,9 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                     None,
                     None,
                     track_shape=mask_alpha is not None,
-                    mask_alpha=None if fillstroke else mask_alpha,
+                    # A fill and stroke painted by paint_typed_path takes the mask in
+                    # each part's own paint_item; painted apart here, in this group.
+                    mask_alpha=None if fillstroke and apart is None else mask_alpha,
                     alpha_is_shape=self.paint_alpha_is_shape,
                 )
             try:

@@ -55,6 +55,7 @@ EXTGSTATES = (
     b"/Mul << /OP true /op true /OPM 1 /BM /Multiply >> "
     b"/Masked << /OP true /op true /OPM 1 /CA 0.5 /ca 0.5 "
     b"/SMask << /S /Luminosity /G 7 0 R >> >> "
+    b"/MaskOn << /OP true /op true /OPM 1 /SMask << /S /Luminosity /G 7 0 R >> >> "
     b">> "
 )
 SPACES = (
@@ -72,6 +73,8 @@ SPACES = (
     b"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 1 1] /N 1 >>] "
     b"/CK [/DeviceN [/Cyan /Black] /DeviceRGB 6 0 R] "
     b"/ICC [/ICCBased 8 0 R] "
+    b"/IdxBlack [/Indexed [/Separation /Black /DeviceGray "
+    b"<< /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>] 1 <0080>] "
     b">> "
 )
 # The DeviceN space's tint transform: c s to c, s / 2, s, 0.
@@ -85,11 +88,15 @@ CYAN_BLACK_FUNCTION = (
     b"/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1]",
     b"{ 1 exch sub exch 1 exch sub 1 index mul exch dup }",
 )
-# The soft mask's group: a fill of 0.6 gray over the page, which masks to 0.6 everywhere.
+# The soft mask's group: a gray ramp from 0 at the page's left edge to 1 at its right, so
+# a pixel at x masks to (x + 0.5) / SIZE.
 SOFT_MASK_GROUP = (
     b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
-    b"/Group << /S /Transparency /CS /DeviceGray >>",
-    b"0.6 g 0 0 200 200 re f",
+    b"/Group << /S /Transparency /CS /DeviceGray >> "
+    b"/Resources << /Shading << /Ramp << /ShadingType 2 /ColorSpace /DeviceGray "
+    b"/Coords [0 0 200 0] /Extend [true true] "
+    b"/Function << /FunctionType 2 /Domain [0 1] /C0 [0] /C1 [1] /N 1 >> >> >> >>",
+    b"/Ramp sh",
 )
 
 
@@ -294,6 +301,11 @@ def fill_cases() -> list[Case]:
             regions(MAGENTA, (0.4, 0, 0, 0.5), (0.4, 1.0, 0.0, 0.5)),
         ),
         Case(
+            "Indexed over Separation Black paints its entry's tint as black",
+            two_fills(b"/On0 gs /IdxBlack cs 1 sc", backdrop=b"0.3 0 0 0 k"),
+            regions((0.3, 0, 0, 0), (0, 0, 0, 128 / 255), (0.3, 0.0, 0.0, 128 / 255)),
+        ),
+        Case(
             "Multiply: the implicit group's result multiplies with the backdrop",
             two_fills(b"/Mul gs 0 1 0 0 k", backdrop=b"0.5 0 0 0 k"),
             # Cyan, unmarked, blends to 0.5 and multiplies with 0.5: additive 0.25. Magenta
@@ -350,6 +362,14 @@ def stroke_cases() -> list[Case]:
     return cases
 
 
+def masked_fill_stroke_case() -> Case:
+    """B overprinting magenta over cyan through a soft mask that ramps across the page:
+    fill and stroke overprint within one group, which composites through the mask."""
+    content = b"1 0 0 0 k 0 0 200 200 re f /MaskOn gs 0 1 0 0 k 0 1 0 0 K 10 w 60 60 120 80 re B"
+    samples = tuple(((x, 100), (1.0, (x + 0.5) / SIZE, 0.0, 0.0)) for x in (90, 120, 150))
+    return Case("B through a ramping soft mask", document(CMYK_GROUP, content), samples)
+
+
 def group_cases() -> list[Case]:
     inner = b"1 0 0 0 k " + BACKDROP_RECT + b"/On1 gs 0 1 0 0 k " + PAINT_RECT + b" f"
     cases = []
@@ -375,12 +395,15 @@ def group_cases() -> list[Case]:
     return cases
 
 
+IMAGE_MASK = stream(
+    b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1",
+    b"\x00",
+)
+
+
 def image_cases() -> list[Case]:
     place = b"q 120 0 0 80 60 60 cm /X9 Do Q"
-    mask = stream(
-        b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1",
-        b"\x00",
-    )
+    mask = IMAGE_MASK
     separation = stream(
         b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
         b"/ColorSpace [/Separation /Magenta /DeviceCMYK "
@@ -477,6 +500,25 @@ def same_cases() -> list[Same]:
             "ignore",
         ),
         Same(
+            "an image mask in Separation Black paints as the same shape filled",
+            document(
+                CMYK_GROUP,
+                b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /BlackGray cs 0.5 sc "
+                b"q 120 0 0 80 60 60 cm /X9 Do Q",
+                [IMAGE_MASK],
+            ),
+            two_fills(b"/On0 gs /BlackGray cs 0.5 sc"),
+        ),
+        Same(
+            "OPM 1 leaves no component of DeviceCMYK remapped through DefaultCMYK",
+            two_fills(b"/On1 gs 0 1 0 0 k").replace(
+                b"/ColorSpace << ", b"/ColorSpace << /DefaultCMYK [/ICCBased 8 0 R] "
+            ),
+            two_fills(b"/Off gs 0 1 0 0 k").replace(
+                b"/ColorSpace << ", b"/ColorSpace << /DefaultCMYK [/ICCBased 8 0 R] "
+            ),
+        ),
+        Same(
             "gray with overprint on changes nothing",
             two_fills(b"/On1 gs 0.5 g"),
             two_fills(b"/Off gs 0.5 g"),
@@ -547,7 +589,14 @@ def mupdf_distances(cases: Sequence[Case]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    cases = [*fill_cases(), *stroke_cases(), *group_cases(), *image_cases(), shading_case()]
+    cases = [
+        *fill_cases(),
+        *stroke_cases(),
+        masked_fill_stroke_case(),
+        *group_cases(),
+        *image_cases(),
+        shading_case(),
+    ]
     failures = []
     for case in cases:
         failures.extend(check_case(case))

@@ -181,9 +181,11 @@ def composite_overprint_layer(
     return the alpha it composited with.
 
     For each component of the pass the special blend mode gives B(cb, cs) = cs where the
-    paint marks it, and otherwise the backdrop's tint plus the paint's, clamped:
-    max(cb + cs - 1, 0) on the additive components, which is cb where the paint's tint is 0.
-    A blend mode other than Normal then blends the backdrop with that, as the implicit
+    paint marks it. A component it does not mark keeps cb, when the paint names process
+    colorants alone (channels[3] false); when it names a spot colorant, whose alternate's
+    tints stand for it, it takes the backdrop's tint plus the paint's, clamped:
+    max(cb + cs - 1, 0) on the additive components, cb where the paint's tint is 0. A blend
+    mode other than Normal then blends the backdrop with that, as the implicit
     group 11.7.4.3 puts the paint in composites with it. The result composites as any
     blend does (11.3.6): cs (1 - ab) + ab B, weighted by the paint's alpha.
     """
