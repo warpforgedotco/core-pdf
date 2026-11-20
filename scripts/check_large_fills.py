@@ -36,6 +36,7 @@ import sys
 import tracemalloc
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy
 
@@ -43,6 +44,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.fonts.glyph_geometry import outline_arrays  # noqa: E402
 from core_pdf.impl.render import raster_shading  # noqa: E402
+from core_pdf.impl.render.raster_support import PixelBox  # noqa: E402
+from core_pdf.impl.render.target import RasterTarget  # noqa: E402
 from core_pdf_cythonized import (  # noqa: E402
     SimpleEdges,
     area_coverage_plane,
@@ -1560,6 +1563,65 @@ def check_pattern_scratch() -> int:
     return failed
 
 
+def check_elementary_sync() -> int:
+    """A fill in a knockout group, or under a soft mask, paints in an elementary group that
+    copies the backdrop only inside the fill's clipped box, and paints again on a copy of
+    the whole backdrop when it paints outside it: its pixels must be those of a copy of
+    the whole backdrop, also when the box is too small. The pages include knockout groups
+    whose fills and strokes alternate, whose groups copy the backdrop in part and whole
+    by turns."""
+    original = RasterTarget.elementary_sync_box
+    pages = [case for case in cases() if case.knockout or case.before == b"/Mask gs"]
+    alternating = (
+        b"0 0 1 RG 8 w 20 20 m 300 300 l S 0 1 0 rg 50 50 200 200 re f "
+        b"1 0 1 RG 40 300 m 300 40 l S 1 1 0 rg 100 10 120 280 re f "
+        b"0 1 1 rg 150 150 100 100 re f 0 0 0 RG 160 20 m 160 300 l S"
+    )
+    pages += [
+        Case(
+            f"{case.name}, fills and strokes after",
+            case.shape,
+            case.expected,
+            knockout=True,
+            after=alternating,
+        )
+        for case in pages[:2]
+        if case.knockout
+    ]
+
+    def pixels(sync: Callable[[PixelBox | None], PixelBox | None]) -> list[bytes]:
+        def sync_box(self: RasterTarget, item: Any) -> PixelBox | None:
+            return sync(original(self, item))
+
+        RasterTarget.elementary_sync_box = sync_box  # type: ignore[method-assign]
+        try:
+            images = []
+            for case in pages:
+                with PdfDocument(case.pdf()) as opened:
+                    images.append(bytes(opened.pages[0].render().rasterize().pixels))
+            return images
+        finally:
+            RasterTarget.elementary_sync_box = original  # type: ignore[method-assign]
+
+    whole = pixels(lambda box: None)
+    failed = 0
+    tried = 0
+    for name, sync in (
+        ("the fill's box", lambda box: box),
+        (
+            "a box too small",
+            lambda box: None if box is None else (*box[:2], box[0] + 1, box[1] + 1),
+        ),
+    ):
+        for case, expected, image in zip(pages, whole, pixels(sync), strict=True):
+            tried += 1
+            if image != expected:
+                print(f"  {case.name}: copying the backdrop in {name} changes the pixels")
+                failed += 1
+    print(f"{tried} elementary group pages with the backdrop copied in part: {failed} differ")
+    return failed
+
+
 def check_memory() -> int:
     """A fill's memory must not follow its pixel box: the peak while rasterizing a page of
     large fills may exceed an empty page's by at most MEMORY_ALLOWANCE."""
@@ -1589,6 +1651,7 @@ def main(argv: Sequence[str]) -> int:
         + check_glyph_outlines()
         + check_engine_edges()
         + check_pattern_scratch()
+        + check_elementary_sync()
         + check_memory()
     )
     references: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}

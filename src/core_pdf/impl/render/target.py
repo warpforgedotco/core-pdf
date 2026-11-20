@@ -227,6 +227,8 @@ class RasterTarget:
     # Painting a display list: each item goes to the handler for its type.
     paint_items = dispatch.paint_items
     paint_item = dispatch.paint_item
+    elementary_sync_box = dispatch.elementary_sync_box
+    paint_member = dispatch.paint_member
     paint_display_item = dispatch.paint_display_item
     paint_scope_begin = dispatch.paint_scope_begin
     paint_clip = dispatch.paint_clip
