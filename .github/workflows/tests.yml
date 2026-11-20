@@ -2,6 +2,10 @@ name: Tests
 
 on:
   pull_request:
+  # Main runs the same checks after each merge, since pull requests are tested apart and two
+  # merged together are never tested as one.
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -19,10 +23,11 @@ env:
   # that install unstructured[pdf] set UV_FIND_LINKS to this; no other job needs the site.
   CPU_TORCH_FIND_LINKS: https://download.pytorch.org/whl/cpu/torch/,https://download.pytorch.org/whl/cpu/torchvision/
 
-# A new push supersedes the previous checks for the same pull request.
+# A new push supersedes the previous checks for the same pull request; on main every merge
+# keeps its own run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -41,7 +46,8 @@ jobs:
       - name: Decide whether anything besides documentation changed
         id: files
         run: |
-          # The pull request's merge commit has the base branch as its first parent.
+          # The pull request's merge commit, or a squash merge on main, has the base branch as its
+          # first parent.
           if git diff --name-only HEAD^1 HEAD | grep -qvE '^docs/|\.md$'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
