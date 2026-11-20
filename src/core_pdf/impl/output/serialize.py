@@ -873,24 +873,27 @@ class MarkdownFormatter:
 
     def format_page(self, page: Page) -> str:
         # Neighbouring lists alternate their markers, - and *, . and ): a blank line alone
-        # would join them into one loose list.
+        # would join them into one loose list. An element rendered empty is left out, so
+        # lists around it are neighbours.
         rendered: list[str] = []
-        alternate = False
-        for index, element in enumerate(page.elements):
+        previous_list: bool | None = None  # the last list's alternate, None after another
+        for element in page.elements:
             if isinstance(element, Block) and element.kind is BlockKind.LIST:
-                previous = page.elements[index - 1] if index else None
-                follows_list = isinstance(previous, Block) and previous.kind is BlockKind.LIST
-                alternate = follows_list and not alternate
-                rendered.append(block_to_markdown(element, alternate=alternate))
+                alternate = previous_list is False
+                text = block_to_markdown(element, alternate=alternate)
+                if text:
+                    rendered.append(text)
+                    previous_list = alternate
             else:
-                rendered.append(
-                    map_page_element(
-                        element,
-                        block=self.format_block,
-                        table=self.format_table,
-                        figure=self.format_figure,
-                    )
+                text = map_page_element(
+                    element,
+                    block=self.format_block,
+                    table=self.format_table,
+                    figure=self.format_figure,
                 )
+                if text:
+                    rendered.append(text)
+                    previous_list = None
         return "\n\n".join(rendered)
 
     def format_document(self, document: Document) -> str:
@@ -987,10 +990,11 @@ def heading_level(block: Block) -> int:
     return 2 if block.level is None else min(max(block.level, 1), 6)
 
 
-def heading_text(lines: Iterable[str]) -> str:
-    """A heading's rendered lines joined into its one line, as an ATX heading cannot
-    break; a line rendered empty is left out."""
-    return " ".join(text for text in lines if text)
+def heading_text(block: Block, render: Callable[[TextLine], str]) -> str:
+    """A heading's lines rendered and joined into its one line, as an ATX heading cannot
+    break; a line whose text is blank (CommonMark's whitespace, no-break spaces among it,
+    or none) is left out, whatever its markup."""
+    return " ".join(render(line) for line in block.lines if line.text and not is_space(line.text))
 
 
 def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
@@ -1000,13 +1004,12 @@ def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
             for line in block.lines
             for marker, start in (markdown_list_item(line, alternate=alternate),)
         )
-    # A line of spaces only would end the paragraph.
-    lines = [text for line in block.lines if (text := markdown_line(line))]
     if block.kind is BlockKind.HEADING:
         # An ATX heading is one line, and a run of # ending it would close it.
-        text = HEADING_CLOSING_RE.sub(r"\1\\\2", heading_text(lines))
+        text = HEADING_CLOSING_RE.sub(r"\1\\\2", heading_text(block, markdown_line))
         return f"{'#' * heading_level(block)} {text}"
-    return "\n".join(lines)
+    # A line of spaces only would end the paragraph.
+    return "\n".join(text for line in block.lines if (text := markdown_line(line)))
 
 
 def document_to_html(document: Document) -> str:
@@ -1018,26 +1021,33 @@ def page_to_html(page: Page) -> str:
 
 
 def block_to_html(block: Block) -> str:
-    """The block's HTML, read back with the structure of its Markdown: a heading at the
-    same level on one line, and a list block as the lists list_runs finds, each an <ol>
-    or a <ul> with the block's kind."""
+    """The block's HTML, one element per block, read back with the structure of its
+    Markdown: a heading at the same level on one line, and a list block as the lists
+    list_runs finds, an <ol> or a <ul> each, in a <div> when there are several."""
     attributes = f' data-block-kind="{escape(block.kind.value)}"'
 
     if block.kind is BlockKind.HEADING:
         tag = f"h{heading_level(block)}"
-        heading = heading_text(html_line(line).strip(" \t") for line in block.lines)
+        heading = heading_text(block, lambda line: html_line(line).strip(" \t"))
         return f"<{tag}{attributes}>{heading}</{tag}>"
     if block.kind is BlockKind.LIST:
+        runs = list_runs(block)
+        # The block's kind goes on its one element: its list, or the <div> around them.
+        inner = attributes if len(runs) <= 1 else ""
         lists: list[str] = []
-        for run in list_runs(block):
+        for run in runs:
             items = "".join(f"<li>{html_line(item.line, start=item.start)}</li>" for item in run)
             number = run[0].number
             if number is None:
-                lists.append(f"<ul{attributes}>{items}</ul>")
+                lists.append(f"<ul{inner}>{items}</ul>")
             else:
                 start = f' start="{int(number)}"' if int(number) != 1 else ""
-                lists.append(f"<ol{attributes}{start}>{items}</ol>")
-        return "".join(lists)
+                lists.append(f"<ol{inner}{start}>{items}</ol>")
+        if not lists:
+            return f"<ul{attributes}></ul>"
+        if len(lists) == 1:
+            return lists[0]
+        return f"<div{attributes}>{''.join(lists)}</div>"
     text = "<br />".join(html_line(line) for line in block.lines)
     return f"<p{attributes}>{text}</p>"
 

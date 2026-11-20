@@ -520,13 +520,18 @@ def structure_failure(line: TextLine, start: int = 0) -> str | None:
 
 # A block as a parser reads it: ("heading", level, [text]), ("paragraph", None, [text]),
 # ("ordered", start, [text per item]) or ("bullet", None, [text per item]), each text the
-# non-space characters with their markup. A paragraph with no such characters is left out.
+# non-space characters with their markup. A paragraph with no such characters, and a list
+# of no items, which Markdown cannot write, are left out.
 type Structure = list[tuple[str, int | None, list[Styled]]]
 HTML_HEADINGS = {f"h{level}": level for level in range(1, 7)}
 
 
-def without_blank_paragraphs(structure: Structure) -> Structure:
-    return [entry for entry in structure if entry[0] != "paragraph" or any(entry[2])]
+def without_empty(structure: Structure) -> Structure:
+    return [
+        (kind, start, texts)
+        for kind, start, texts in structure
+        if kind == "heading" or (any(texts) if kind == "paragraph" else texts)
+    ]
 
 
 def markdown_structure(markdown: str) -> Structure:
@@ -552,7 +557,7 @@ def markdown_structure(markdown: str) -> Structure:
             structure.append(("paragraph", None, [[]]))
         elif token.type == "inline" and structure:
             structure[-1][2][-1].extend(inline_styles(token.children or ()))
-    return without_blank_paragraphs(structure)
+    return without_empty(structure)
 
 
 class HtmlStructure(HTMLParser):
@@ -596,7 +601,7 @@ def html_structure(html: str) -> Structure:
     parser = HtmlStructure()
     parser.feed(html)
     parser.close()
-    return without_blank_paragraphs(parser.structure)
+    return without_empty(parser.structure)
 
 
 def lists_of(structure: Structure) -> Structure:
@@ -617,7 +622,7 @@ def expected_structure(block: Block) -> Structure:
     styled = [styled for line in block.lines for styled in span_styles(line)]
     if block.kind is BlockKind.HEADING:
         return [("heading", heading_level(block), [styled])]
-    return without_blank_paragraphs([("paragraph", None, [styled])])
+    return without_empty([("paragraph", None, [styled])])
 
 
 def block_failure(block: Block, level: int | None = None) -> str | None:
@@ -714,6 +719,30 @@ def check_pages() -> list[str]:
         failures.append(f"neighbouring lists: {failure}")
     if (failure := html_lists_failure(markdown, document_to_html(document))) is not None:
         failures.append(f"page joins: {failure}")
+    # Blocks Markdown writes as nothing leave their neighbours neighbours.
+    gaps = Page(
+        4,
+        blocks=(
+            block_of(BlockKind.LIST, plain("• a"), order=0),
+            block_of(BlockKind.PARAGRAPH, plain("   "), order=1),
+            block_of(BlockKind.LIST, plain("• b"), order=2),
+            block_of(BlockKind.LIST, order=3),
+            block_of(BlockKind.LIST, plain("• c"), order=4),
+            block_of(BlockKind.LIST, plain("1. d"), plain("• e"), order=5),
+        ),
+    )
+    expected = "- a\n\n* b\n\n- c\n\n1) d\n* e"
+    if (got := page_to_markdown(gaps)) != expected:
+        failures.append(f"lists around empty blocks: Markdown {got!r}, expected {expected!r}")
+    if (failure := lists_failure(page_to_markdown(gaps), 5, lists=5)) is not None:
+        failures.append(f"lists around empty blocks: {failure}")
+    if (failure := html_lists_failure(page_to_markdown(gaps), page_to_html(gaps))) is not None:
+        failures.append(f"lists around empty blocks: {failure}")
+    # One HTML element per block, a block of several lists one <div>.
+    for name, checked in (("neighbouring lists", page), ("lists around empty blocks", gaps)):
+        html = page_to_html(checked)
+        if (count := html.count("data-block-kind=")) != len(checked.elements):
+            failures.append(f"{name}: HTML has {count} block elements: {html!r}")
     return failures
 
 
@@ -762,6 +791,20 @@ BLOCK_CASES: tuple[tuple[str, Block, str, str, int | None], ...] = (
     (
         "heading with a blank line",
         block_of(BlockKind.HEADING, plain("A"), plain("   "), plain("B"), level=2),
+        "## A B",
+        f"<h2{H}>A B</h2>",
+        2,
+    ),
+    (
+        "heading with lines of no-break and styled spaces",
+        block_of(
+            BlockKind.HEADING,
+            plain("A"),
+            plain("  "),
+            styled_line((S("  ", underline=True), S("\t", bold=True))),
+            plain("B"),
+            level=2,
+        ),
         "## A B",
         f"<h2{H}>A B</h2>",
         2,
@@ -841,9 +884,11 @@ BLOCK_CASES: tuple[tuple[str, Block, str, str, int | None], ...] = (
         "numbered then bulleted then numbered",
         block_of(BlockKind.LIST, plain("1. a"), plain("2. b"), plain("• c"), plain("7) d")),
         "1. a\n2. b\n- c\n7. d",
-        f'<ol{L}><li>a</li><li>b</li></ol><ul{L}><li>c</li></ul><ol{L} start="7"><li>d</li></ol>',
+        f"<div{L}><ol><li>a</li><li>b</li></ol><ul><li>c</li></ul>"
+        '<ol start="7"><li>d</li></ol></div>',
         None,
     ),
+    ("empty list", block_of(BlockKind.LIST), "", f"<ul{L}></ul>", None),
     (
         "markers without a space after them",
         block_of(BlockKind.LIST, plain("1.5 million"), plain("-5 degrees"), plain("•")),
