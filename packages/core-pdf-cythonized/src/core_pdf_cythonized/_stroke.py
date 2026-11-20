@@ -593,7 +593,7 @@ def fill_circle(
                                 + (cython.cast(cython.double, px) + (sx + 0.5) / 4) / p.scale
                             )
                             dx = page_x - cx
-                            if dx * dx + dy * dy < radius2:
+                            if dx * dx + dy * dy <= radius2:
                                 samples += 1
                     if not samples:
                         continue
@@ -2077,6 +2077,35 @@ def paint_once(
 
 @cython.cfunc
 @cython.nogil
+@cython.exceptval(check=False)
+def pieces_on_pixels(
+    p: cython.pointer[Paint],
+    w: cython.pointer[Walk],
+    first: cython.Py_ssize_t,
+    last: cython.Py_ssize_t,
+) -> cython.bint:
+    """Whether every edge of the pieces of subpaths first to last, which in_pieces found
+    run along the axes, falls on a pixel edge, with no disc among them: under a clip path,
+    where fill_rect samples a piece whose edge falls inside a pixel, two such pieces
+    blended in turn would cover the pixel they share twice, or leave a seam."""
+    if w.line_cap == CAP_ROUND or w.line_join == JOIN_ROUND:
+        return False
+    if not on_pixel_edge(w.half * p.scale):
+        return False
+    k: cython.Py_ssize_t
+    index: cython.Py_ssize_t
+    for k in range(first, last):
+        for index in range(w.bounds[3 * k], w.bounds[3 * k + 1]):
+            if not (
+                on_pixel_edge((w.xs[index] - p.crop_x0) * p.scale)
+                and on_pixel_edge((p.crop_y1 - w.ys[index]) * p.scale)
+            ):
+                return False
+    return True
+
+
+@cython.cfunc
+@cython.nogil
 @cython.exceptval(-1, check=False)
 def walk_once(
     p: cython.pointer[Paint],
@@ -2096,7 +2125,9 @@ def walk_once(
     result: cython.int = 0
     for group in range(groups):
         last = ends[group]
-        if in_pieces(w, first, last, p.alpha >= 255, p.scale):
+        if in_pieces(w, first, last, p.alpha >= 255, p.scale) and (
+            p.clip_mode != CLIP_ROWS or pieces_on_pixels(p, w, first, last)
+        ):
             result = walk_range(p, w, calls, first, last)
         else:
             result = paint_once(p, w, calls, first, last, buffer, capacity)

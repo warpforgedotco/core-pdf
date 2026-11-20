@@ -17,13 +17,18 @@ paths: each pair must be byte-identical. It strokes segments with projecting squ
 opaque inside a transparency group under a triangular clip, which core paints piece by
 piece, against the union of the pieces filled as one path; and, under the clip, strokes
 whose edges fall on the samples at scale 1: segments 1.25 wide, dashes at alpha 0.5 and a
-segment with square caps at alpha 0.5, each against its shape filled as one path. Then it
+segment with square caps at alpha 0.5, each against its shape filled as one path; and
+opaque strokes of several pieces under the clip, collinear segments meeting inside a
+pixel, with and without square caps, and a right-angle miter, each against its union
+filled as one path. Then it
 paints, on a raster target directly, square and round dots (fill_terminal), glyph bitmaps
 (draw_glyph_bitmap) whose cells have fractional device edges, each glyph against its cells
 filled as one path, and rectangles in a blend mode named Normal, against a rectangle
 filled in none: in Multiply, in Multiply at alpha 0.5, at alpha 0.5, and at alpha 0.5,
-opaque and in Screen under a triangular clip. The stroke kernel's round caps under the
-clip, sampled discs, must be within three samples of the discs filled as polygons.
+opaque and in Screen under a triangular clip. Opaque strokes with round caps and joins
+under the clip, painted by the stroke kernel, must be byte-identical to the same strokes
+through stroke_once, and within a sample of their rectangles and discs filled as one path,
+where the discs are polygons.
 
 Rectangles fill_rect already painted as fill_path does, opaque in the Normal mode under no
 clip or a rectangular one, and in any mode with every device edge on a pixel edge, must
@@ -46,6 +51,8 @@ from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath  # noqa: E402
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid  # noqa: E402
 from core_pdf.impl.render.paths import circle_path, stroke_half_width  # noqa: E402
+from core_pdf.impl.render.raster_fills import paint_as_one  # noqa: E402
+from core_pdf.impl.render.raster_strokes import stroke_once  # noqa: E402
 from core_pdf.impl.render.target import RasterTarget  # noqa: E402
 from scripts.check_patterns import document, stream  # noqa: E402
 
@@ -79,6 +86,26 @@ DASHES = (
     b" ".join(b"%.6g 79.65 3 1.3 re" % (20.125 + 5 * index) for index in range(26))
     + b" "
     + b" ".join(b"59.65 %.6g 1.3 3 re" % (40.125 + 5 * index) for index in range(20))
+)
+# Opaque strokes of several pieces under a triangular clip, which the stroke kernel could
+# paint piece by piece, each against its union filled as one path: collinear segments
+# meeting inside a pixel, the same with projecting caps, and a right-angle miter.
+PIECES = (
+    (
+        "collinear segments",
+        b"1.3 w 20.3 50.37 m 60.4 50.37 l 100.6 50.37 l S",
+        b"20.3 49.72 80.3 1.3 re f",
+    ),
+    (
+        "collinear segments with square caps",
+        b"2 J 1.3 w 20.3 50.37 m 60.4 50.37 l 100.6 50.37 l S",
+        b"19.65 49.72 81.6 1.3 re f",
+    ),
+    (
+        "right-angle miter",
+        b"1.3 w 0 j 20.3 50.37 m 60.4 50.37 l 60.4 90.6 l S",
+        b"20.3 49.72 40.75 1.3 re 59.75 49.72 1.3 40.88 re f",
+    ),
 )
 ON_SAMPLES = (
     (
@@ -198,6 +225,11 @@ def pdf_pairs() -> int:
         stroked = render(group_page(strokes(clip, b"3.1", 2, CAPPED)), scale)
         filled = render(group_page(fills(clip, CAPPED)), scale)
         failed += compare(f"grouped triangle square caps @{scale}", stroked, filled)
+        for name, stroke, fill in PIECES:
+            before = b"q " + TRIANGLE_CLIP
+            stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
+            filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
+            failed += compare(f"triangle {name} @{scale}", stroked, filled)
         for name, before, stroke, fill in ON_SAMPLES:
             stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
             filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
@@ -332,44 +364,84 @@ def direct_pairs() -> int:
                     draw(raster, rgba, mode)
                     images.append(raster.pixel_array.copy())
                 failed += compare(f"{state} {shape} @{scale}", images[0], images[1])
-    return failed + kernel_round_caps()
+    return failed + kernel_round_caps() + batch_orientation()
+
+
+def batch_orientation() -> int:
+    """Overlapping pieces of one stroke, a rectangle and a clockwise polygon, painted in
+    Multiply under an edge batch, against both filled counter-clockwise as one path: the
+    batch turns each piece counter-clockwise, so that nonzero does not cancel them."""
+    clockwise = CapturedPath(
+        [CapturedSubpath([(60.3, 40.2), (60.3, 90.7), (110.6, 90.7), (110.6, 40.2)], closed=True)]
+    )
+    rgba = (26, 77, 204, 255)
+    failed = 0
+    for scale in SCALES:
+        batched = target(scale)
+
+        def pieces(raster: RasterTarget = batched) -> None:
+            raster.fill_rect((40.3, 50.45, 90.7, 70.9), rgba, "Multiply")
+            raster.fill_path(clockwise, rgba, "Multiply")
+
+        paint_as_one(batched, pieces, rgba, "Multiply")
+        union = target(scale)
+        subpaths = rectangle(40.3, 50.45, 90.7, 70.9).subpaths
+        subpaths += rectangle(60.3, 40.2, 110.6, 90.7).subpaths
+        union.fill_path(CapturedPath(subpaths), rgba, "Multiply")
+        failed += compare(
+            f"multiply batch of opposite pieces @{scale}", batched.pixel_array, union.pixel_array
+        )
+    return failed
 
 
 def kernel_round_caps() -> int:
-    """Opaque round-capped segments under a triangular clip, which the stroke kernel paints
-    piece by piece, a disc for each cap, against the rectangles and discs filled as one
-    path: the kernel samples a disc itself rather than the polygon fill_path fills, so a
-    pixel may differ by up to three samples along the arc, and never by more."""
+    """Opaque strokes with round caps and joins under a triangular clip, painted by the
+    stroke kernel, against the same strokes through stroke_once, which covers their pieces'
+    samples once and blends them in one pass: byte-identical. And against the rectangles and
+    discs filled as one path: the strokes sample a disc where fill_path fills a polygon of
+    32 sides, so a pixel may differ by a sample along an arc, and never more."""
     width = 3.1
-    segments = (((50.3, 100.6), (90.7, 100.6)), ((140.41, 60.3), (140.41, 100.7)))
+    strokes_ = (
+        CapturedPath([CapturedSubpath([(50.3, 100.6), (90.7, 100.6)])]),
+        CapturedPath([CapturedSubpath([(140.41, 60.3), (140.41, 100.7)])]),
+        CapturedPath([CapturedSubpath([(30.2, 140.3), (70.55, 140.3), (70.55, 170.1)])]),
+    )
+    rgba = (26, 77, 204, 255)
     failed = 0
     for scale in SCALES:
         half = stroke_half_width(scale, width)
         images = []
-        for stroked in (True, False):
+        for route in ("kernel", "once", "path"):
             raster = target(scale)
             raster.clip.push(triangle(), "nonzero")
-            rgba = (26, 77, 204, 255)
-            if stroked:
-                for start, end in segments:
-                    path = CapturedPath([CapturedSubpath([start, end])])
-                    raster.stroke_path(path, width, rgba, None, None, 1, 0, 10.0)
-            else:
-                for (x0, y0), (x1, y1) in segments:
-                    # The segments run along the axes, from low to high.
-                    across = half if x0 == x1 else 0.0
-                    along = half if y0 == y1 else 0.0
-                    subpaths = rectangle(x0 - across, y0 - along, x1 + across, y1 + along).subpaths
-                    subpaths += circle_path(x0, y0, half).subpaths
-                    subpaths += circle_path(x1, y1, half).subpaths
+            for path in strokes_:
+                points = path.subpaths[0].points
+                if route == "kernel":
+                    raster.stroke_path(path, width, rgba, None, None, 1, 1, 10.0)
+                elif route == "once":
+                    stroke_once(raster, path, width, rgba, None, None, 1, 1, 10.0, None)
+                else:
+                    subpaths = []
+                    for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
+                        across = half if x0 == x1 else 0.0
+                        along = half if y0 == y1 else 0.0
+                        subpaths += rectangle(
+                            min(x0, x1) - across,
+                            min(y0, y1) - along,
+                            max(x0, x1) + across,
+                            max(y0, y1) + along,
+                        ).subpaths
+                    for x, y in points:
+                        subpaths += circle_path(x, y, half).subpaths
                     raster.fill_path(CapturedPath(subpaths), rgba, None)
-            images.append(raster.pixel_array.astype(numpy.int32))
-        difference = numpy.abs(images[0] - images[1]).max(axis=2)
-        # Three samples of sixteen, rounded.
+            images.append(raster.pixel_array.copy())
+        failed += compare(f"triangle round caps and joins @{scale}", images[0], images[1])
+        difference = numpy.abs(images[0].astype(numpy.int32) - images[2]).max(axis=2)
+        # One sample of sixteen, rounded up.
         worst = int(difference.max())
-        if worst > 3 * 255 // 16 + 1:
+        if worst > 255 // 16 + 1:
             y, x = numpy.unravel_index(int(difference.argmax()), difference.shape)
-            print(f"triangle round caps @{scale}: ({x}, {y}) differs by {worst}")
+            print(f"triangle round caps and joins @{scale}: ({x}, {y}) differs by {worst}")
             failed += 1
     return failed
 
