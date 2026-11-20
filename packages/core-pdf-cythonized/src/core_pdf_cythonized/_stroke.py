@@ -3,6 +3,7 @@
 import typing
 
 import cython
+from cython.cimports.core_pdf_cythonized._alpha_blend import blend_one, opaque_channel
 from cython.cimports.core_pdf_cythonized._byte_clamp import float_to_byte
 from cython.cimports.core_pdf_cythonized._pixel_blend import blend_normal_pixel, coverage_alpha
 from cython.cimports.core_pdf_cythonized._pymath import py_max, py_min, raise_not_integral
@@ -38,7 +39,7 @@ from cython.cimports.libc.math import (
     sin,
     sqrt,
 )
-from cython.cimports.libc.stdlib import calloc, free, malloc, realloc
+from cython.cimports.libc.stdlib import calloc, free, malloc, qsort, realloc
 from cython.cimports.libc.string import memcpy, memset
 
 __all__ = ("axis_aligned_polylines", "short_subpaths", "stroke_coverage", "stroke_polylines")
@@ -1420,6 +1421,15 @@ Walk = cython.struct(
     union_count=cython.Py_ssize_t,
     union_capacity=cython.Py_ssize_t,
     union_box=cython.double[4],
+    # The collected pieces that are rectangles along the axes, (x0, y0, x1, y1) in page
+    # space, and whether any piece is not one.
+    union_rects=cython.p_double,
+    rect_count=cython.Py_ssize_t,
+    rect_capacity=cython.Py_ssize_t,
+    union_shapes=cython.bint,
+    # Whether collect_box records boxes alone, not their edges: a stroke with no round cap
+    # or join, whose pieces fill_rect_union fills.
+    boxes_only=cython.bint,
 )
 
 
@@ -1454,7 +1464,7 @@ def failed(p: cython.pointer[Paint], calls: typing.Optional[Callbacks]) -> cytho
 
 @cython.cfunc
 @cython.nogil
-@cython.exceptval(-1, check=False)
+@cython.exceptval(check=False)
 def collect_edge(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -1463,9 +1473,16 @@ def collect_edge(
     x1: cython.double,
     y1: cython.double,
 ) -> cython.int:
-    """Add the edge from (x0, y0) to (x1, y1) to the pieces' edges."""
+    """Add the edge from (x0, y0) to (x1, y1) to the pieces' edges: -1, with p.error set
+    and no exception raised, on a NaN or infinite coordinate, as the cover route fails,
+    when memory runs out, or once a piece has failed; its caller raises by failed()."""
     grown: cython.p_double
     capacity: cython.Py_ssize_t
+    if p.error != 0:
+        # A piece already failed: the stroke is not painted.
+        return -1
+    if not (checked(p, x0) and checked(p, y0) and checked(p, x1) and checked(p, y1)):
+        return -1
     if w.union_count == w.union_capacity:
         capacity = 64 if w.union_capacity == 0 else 2 * w.union_capacity
         grown = cython.cast(
@@ -1497,7 +1514,7 @@ def collect_edge(
 
 @cython.cfunc
 @cython.nogil
-@cython.exceptval(-1, check=False)
+@cython.exceptval(check=False)
 def collect_box(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -1508,7 +1525,12 @@ def collect_box(
 ) -> cython.int:
     """Add the rectangle (x0, y0, x1, y1), x0 <= x1 and y0 <= y1, counter-clockwise from
     its lower left corner, as a closed subpath of its corners has it: under a rectangular
-    clip, the part of it inside the clip, as fill_rect paints it."""
+    clip, the part of it inside the clip, as fill_rect paints it. -1, with p.error set and
+    no exception raised, as collect_edge fails."""
+    if p.error != 0:
+        return -1
+    if not (checked(p, x0) and checked(p, y0) and checked(p, x1) and checked(p, y1)):
+        return -1
     if p.clip_mode == CLIP_RECT:
         x0 = py_max(x0, p.clip[0])
         y0 = py_max(y0, p.clip[1])
@@ -1516,6 +1538,26 @@ def collect_box(
         y1 = py_min(y1, p.clip[3])
         if x1 <= x0 or y1 <= y0:
             return 0
+    grown: cython.p_double
+    capacity: cython.Py_ssize_t
+    if w.rect_count == w.rect_capacity:
+        capacity = 64 if w.rect_capacity == 0 else 2 * w.rect_capacity
+        grown = cython.cast(
+            cython.p_double, realloc(w.union_rects, capacity * 4 * cython.sizeof(cython.double))
+        )
+        if grown == cython.NULL:
+            p.error = FAILED_MEMORY
+            return -1
+        w.union_rects = grown
+        w.rect_capacity = capacity
+    rect: cython.p_double = w.union_rects + 4 * w.rect_count
+    rect[0] = x0
+    rect[1] = y0
+    rect[2] = x1
+    rect[3] = y1
+    w.rect_count += 1
+    if w.boxes_only:
+        return 0
     if (
         collect_edge(p, w, x0, y0, x1, y0) < 0
         or collect_edge(p, w, x1, y0, x1, y1) < 0
@@ -1526,9 +1568,79 @@ def collect_box(
     return 0
 
 
+# The most vertices a piece's polygon has, a disc's, and what cutting it to a rectangle
+# can add, one for each side of the rectangle.
+MAX_PIECE_VERTICES = cython.declare(cython.int, 40)
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def inside_clip_side(
+    side: cython.int, bound: cython.double, x: cython.double, y: cython.double
+) -> cython.bint:
+    """Whether (x, y) is inside the clip rectangle's side: 0 left, 1 bottom, 2 right, 3 top."""
+    if side == 0:
+        return x >= bound
+    if side == 1:
+        return y >= bound
+    if side == 2:
+        return x <= bound
+    return y <= bound
+
+
 @cython.cfunc
 @cython.nogil
-@cython.exceptval(-1, check=False)
+@cython.exceptval(check=False)
+def cut_to_clip_side(
+    side: cython.int,
+    bound: cython.double,
+    xs: cython.p_double,
+    ys: cython.p_double,
+    n: cython.int,
+    out_x: cython.p_double,
+    out_y: cython.p_double,
+) -> cython.int:
+    """The polygon of n vertices cut to one side of the clip rectangle (Sutherland and
+    Hodgman), into out_x and out_y: its vertex count. A crossing lies on the side's line,
+    at the fraction of the edge from its previous vertex that reaches it."""
+    count: cython.int = 0
+    k: cython.int
+    previous_x: cython.double = xs[n - 1]
+    previous_y: cython.double = ys[n - 1]
+    previous_inside: cython.bint = inside_clip_side(side, bound, previous_x, previous_y)
+    x: cython.double
+    y: cython.double
+    inside: cython.bint
+    t: cython.double
+    for k in range(n):
+        x = xs[k]
+        y = ys[k]
+        inside = inside_clip_side(side, bound, x, y)
+        if inside != previous_inside:
+            if side == 0 or side == 2:
+                t = (bound - previous_x) / (x - previous_x)
+                out_x[count] = bound
+                out_y[count] = previous_y + t * (y - previous_y)
+            else:
+                t = (bound - previous_y) / (y - previous_y)
+                out_x[count] = previous_x + t * (x - previous_x)
+                out_y[count] = bound
+            count += 1
+        if inside:
+            out_x[count] = x
+            out_y[count] = y
+            count += 1
+        previous_x = x
+        previous_y = y
+        previous_inside = inside
+    return count
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
 def collect_polygon(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -1536,16 +1648,40 @@ def collect_polygon(
     ys: cython.p_double,
     n: cython.int,
 ) -> cython.int:
-    """Add the polygon of n vertices, counter-clockwise."""
+    """Add the polygon of n <= 32 vertices, counter-clockwise: under a rectangular clip,
+    the part of it inside the clip, cut to its left, bottom, right and top sides in turn,
+    as collect_box cuts a rectangle."""
+    w.union_shapes = True
+    first_x = cython.declare(cython.double[40])
+    first_y = cython.declare(cython.double[40])
+    second_x = cython.declare(cython.double[40])
+    second_y = cython.declare(cython.double[40])
+    side: cython.int
+    vx: cython.p_double = xs
+    vy: cython.p_double = ys
+    if p.clip_mode == CLIP_RECT:
+        for side in range(4):
+            if n < 3:
+                return 0
+            if side % 2 == 0:
+                n = cut_to_clip_side(side, p.clip[side], vx, vy, n, first_x, first_y)
+                vx = first_x
+                vy = first_y
+            else:
+                n = cut_to_clip_side(side, p.clip[side], vx, vy, n, second_x, second_y)
+                vx = second_x
+                vy = second_y
+    if n < 3:
+        return 0
     area: cython.double = 0.0
     k: cython.int
     for k in range(n):
-        area += xs[k] * ys[(k + 1) % n] - xs[(k + 1) % n] * ys[k]
+        area += vx[k] * vy[(k + 1) % n] - vx[(k + 1) % n] * vy[k]
     for k in range(n):
         if area >= 0.0:
-            if collect_edge(p, w, xs[k], ys[k], xs[(k + 1) % n], ys[(k + 1) % n]) < 0:
+            if collect_edge(p, w, vx[k], vy[k], vx[(k + 1) % n], vy[(k + 1) % n]) < 0:
                 return -1
-        elif collect_edge(p, w, xs[(k + 1) % n], ys[(k + 1) % n], xs[k], ys[k]) < 0:
+        elif collect_edge(p, w, vx[(k + 1) % n], vy[(k + 1) % n], vx[k], vy[k]) < 0:
             return -1
     return 0
 
@@ -1558,7 +1694,7 @@ TAU = cython.declare(cython.double, 6.283185307179586)
 
 @cython.cfunc
 @cython.nogil
-@cython.exceptval(-1, check=False)
+@cython.exceptval(check=False)
 def collect_disc(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -1568,28 +1704,22 @@ def collect_disc(
 ) -> cython.int:
     """Add the disc of the radius around (cx, cy) as circle_path's polygon, whose vertices
     run counter-clockwise."""
+    xs = cython.declare(cython.double[32])
+    ys = cython.declare(cython.double[32])
     k: cython.int
     angle: cython.double
-    x0: cython.double = cx + radius * cos(0.0)
-    y0: cython.double = cy + radius * sin(0.0)
-    x: cython.double = x0
-    y: cython.double = y0
-    next_x: cython.double
-    next_y: cython.double
+    xs[0] = cx + radius * cos(0.0)
+    ys[0] = cy + radius * sin(0.0)
     for k in range(1, DISC_SIDES):
         angle = k * TAU / DISC_SIDES
-        next_x = cx + radius * cos(angle)
-        next_y = cy + radius * sin(angle)
-        if collect_edge(p, w, x, y, next_x, next_y) < 0:
-            return -1
-        x = next_x
-        y = next_y
-    return collect_edge(p, w, x, y, x0, y0)
+        xs[k] = cx + radius * cos(angle)
+        ys[k] = cy + radius * sin(angle)
+    return collect_polygon(p, w, xs, ys, DISC_SIDES)
 
 
 @cython.cfunc
 @cython.nogil
-@cython.exceptval(-1, check=False)
+@cython.exceptval(check=False)
 def collect_segment(
     p: cython.pointer[Paint],
     w: cython.pointer[Walk],
@@ -2370,6 +2500,366 @@ def pieces_on_pixels(
     return True
 
 
+# fill_rect_union works on the stack for up to this many rectangles, over up to this
+# many pixel columns: its stack arrays' sizes follow from them.
+SMALL_UNION = cython.declare(cython.int, 32)
+SMALL_WIDTH = cython.declare(cython.int, 512)
+# A rectangle in device space, left to right and top to bottom.
+DeviceRect = cython.struct(
+    left=cython.double, right=cython.double, top=cython.double, bottom=cython.double
+)
+Span = cython.struct(left=cython.double, right=cython.double)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def compare_tops(
+    first: cython.pointer[cython.const[cython.void]],
+    second: cython.pointer[cython.const[cython.void]],
+) -> cython.int:
+    a: cython.double = cython.cast(cython.pointer[cython.const[DeviceRect]], first).top
+    b: cython.double = cython.cast(cython.pointer[cython.const[DeviceRect]], second).top
+    return (a > b) - (a < b)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def compare_lefts(
+    first: cython.pointer[cython.const[cython.void]],
+    second: cython.pointer[cython.const[cython.void]],
+) -> cython.int:
+    a: cython.double = cython.cast(cython.pointer[cython.const[Span]], first).left
+    b: cython.double = cython.cast(cython.pointer[cython.const[Span]], second).left
+    return (a > b) - (a < b)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def compare_doubles(
+    first: cython.pointer[cython.const[cython.void]],
+    second: cython.pointer[cython.const[cython.void]],
+) -> cython.int:
+    a: cython.double = cython.cast(cython.pointer[cython.const[cython.double]], first)[0]
+    b: cython.double = cython.cast(cython.pointer[cython.const[cython.double]], second)[0]
+    return (a > b) - (a < b)
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def sort_doubles(values: cython.p_double, count: cython.Py_ssize_t) -> cython.void:
+    """Sort values ascending: by insertion for the few a pixel row holds, else qsort."""
+    if count > 16:
+        qsort(values, count, cython.sizeof(cython.double), compare_doubles)
+        return
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    value: cython.double
+    for i in range(1, count):
+        value = values[i]
+        j = i - 1
+        while j >= 0 and values[j] > value:
+            values[j + 1] = values[j]
+            j -= 1
+        values[j + 1] = value
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def sort_spans(spans: cython.pointer[Span], count: cython.Py_ssize_t) -> cython.void:
+    """Sort spans by their left ends: by insertion for a few, else qsort."""
+    if count > 16:
+        qsort(spans, count, cython.sizeof(Span), compare_lefts)
+        return
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    span: Span
+    for i in range(1, count):
+        span = spans[i]
+        j = i - 1
+        while j >= 0 and spans[j].left > span.left:
+            spans[j + 1] = spans[j]
+            j -= 1
+        spans[j + 1] = span
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def sort_tops(rects: cython.pointer[DeviceRect], count: cython.Py_ssize_t) -> cython.void:
+    """Sort rectangles by their tops: by insertion for a few, else qsort."""
+    if count > 16:
+        qsort(rects, count, cython.sizeof(DeviceRect), compare_tops)
+        return
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    rect: DeviceRect
+    for i in range(1, count):
+        rect = rects[i]
+        j = i - 1
+        while j >= 0 and rects[j].top > rect.top:
+            rects[j + 1] = rects[j]
+            j -= 1
+        rects[j + 1] = rect
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def span_coverage(index: cython.double, low: cython.double, high: cython.double) -> cython.double:
+    """The share of pixel index that [low, high) covers along one axis, as fill_rect_pixels
+    measures it."""
+    upper: cython.double = index + 1.0
+    if high < upper:
+        upper = high
+    lower: cython.double = index
+    if low > lower:
+        lower = low
+    span: cython.double = upper - lower
+    if span < 0.0:
+        return 0.0
+    if span > 1.0:
+        return 1.0
+    return span
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def fill_rect_union(p: cython.pointer[Paint], w: cython.pointer[Walk]) -> cython.int:
+    """Fill the union of the collected rectangles, opaque or at p.alpha in the Normal mode,
+    by its exact area: each pixel row is cut into bands at the rectangles' tops and
+    bottoms inside it, each band's rectangles' spans are merged, and a pixel's coverage is
+    the sum over the bands of the band's height times the share of the pixel its merged
+    spans cover. A pixel one rectangle covers alone gets the coverage, and the colour,
+    fill_rect_pixels gives it. -1 when memory runs out."""
+    n: cython.Py_ssize_t = w.rect_count
+    if n == 0:
+        return 0
+    k: cython.Py_ssize_t
+    box = cython.declare(cython.double[4])
+    box[0] = w.union_rects[0]
+    box[1] = w.union_rects[1]
+    box[2] = w.union_rects[2]
+    box[3] = w.union_rects[3]
+    for k in range(1, n):
+        box[0] = py_min(box[0], w.union_rects[4 * k])
+        box[1] = py_min(box[1], w.union_rects[4 * k + 1])
+        box[2] = py_max(box[2], w.union_rects[4 * k + 2])
+        box[3] = py_max(box[3], w.union_rects[4 * k + 3])
+    pixel_box = cython.declare(cython.Py_ssize_t[4])
+    found: cython.int = clipped_pixel_box(p, box, pixel_box)
+    if found <= 0:
+        return found
+    ix0: cython.Py_ssize_t = pixel_box[0]
+    iy0: cython.Py_ssize_t = pixel_box[1]
+    ix1: cython.Py_ssize_t = pixel_box[2]
+    iy1: cython.Py_ssize_t = pixel_box[3]
+    width: cython.Py_ssize_t = ix1 - ix0
+    # A stroke of a few pieces, a table cell's frame, works on the stack.
+    small_rects = cython.declare(cython.double[128])
+    small_active = cython.declare(cython.Py_ssize_t[32])
+    small_spans = cython.declare(cython.double[64])
+    small_cuts = cython.declare(cython.double[66])
+    small_coverage = cython.declare(cython.double[512])
+    heap: cython.bint = n > SMALL_UNION
+    wide: cython.bint = width > SMALL_WIDTH
+    rects: cython.pointer[DeviceRect] = cython.cast(cython.pointer[DeviceRect], small_rects)
+    active: cython.p_Py_ssize_t = small_active
+    spans: cython.pointer[Span] = cython.cast(cython.pointer[Span], small_spans)
+    cuts: cython.p_double = small_cuts
+    coverage: cython.p_double = small_coverage
+    if heap:
+        rects = cython.cast(cython.pointer[DeviceRect], malloc(n * cython.sizeof(DeviceRect)))
+        active = cython.cast(cython.p_Py_ssize_t, malloc(n * cython.sizeof(cython.Py_ssize_t)))
+        spans = cython.cast(cython.pointer[Span], malloc(n * cython.sizeof(Span)))
+        cuts = cython.cast(cython.p_double, malloc((2 * n + 2) * cython.sizeof(cython.double)))
+    if wide:
+        coverage = cython.cast(cython.p_double, calloc(width, cython.sizeof(cython.double)))
+    else:
+        memset(coverage, 0, width * cython.sizeof(cython.double))
+    if (
+        rects == cython.NULL
+        or active == cython.NULL
+        or spans == cython.NULL
+        or cuts == cython.NULL
+        or coverage == cython.NULL
+    ):
+        if heap:
+            free(rects)
+            free(active)
+            free(spans)
+            free(cuts)
+        if wide:
+            free(coverage)
+        p.error = FAILED_MEMORY
+        return -1
+    for k in range(n):
+        rects[k].left = (w.union_rects[4 * k] - p.crop_x0) * p.scale
+        rects[k].right = (w.union_rects[4 * k + 2] - p.crop_x0) * p.scale
+        rects[k].top = (p.crop_y1 - w.union_rects[4 * k + 3]) * p.scale
+        rects[k].bottom = (p.crop_y1 - w.union_rects[4 * k + 1]) * p.scale
+    sort_tops(rects, n)
+    alpha: cython.double = cython.cast(cython.double, p.alpha)
+    opaque_from: cython.int = 255 if p.alpha >= 255 else 256
+    red: cython.float = cython.cast(cython.float, p.red)
+    green: cython.float = cython.cast(cython.float, p.green)
+    blue: cython.float = cython.cast(cython.float, p.blue)
+    opaque = cython.declare(cython.uchar[4])
+    opaque[0] = opaque_channel(red)
+    opaque[1] = opaque_channel(green)
+    opaque[2] = opaque_channel(blue)
+    opaque[3] = 255
+    next_rect: cython.Py_ssize_t = 0
+    active_count: cython.Py_ssize_t = 0
+    kept: cython.Py_ssize_t
+    cut_count: cython.Py_ssize_t
+    span_count: cython.Py_ssize_t
+    merged: cython.Py_ssize_t
+    a: cython.Py_ssize_t
+    c: cython.Py_ssize_t
+    py: cython.Py_ssize_t
+    px: cython.Py_ssize_t
+    first: cython.Py_ssize_t
+    end: cython.Py_ssize_t
+    low_px: cython.Py_ssize_t
+    high_px: cython.Py_ssize_t
+    row_top: cython.double
+    row_bottom: cython.double
+    band_top: cython.double
+    band_bottom: cython.double
+    height: cython.double
+    left: cython.double
+    right: cython.double
+    value: cython.double
+    raw: cython.int
+    pixel: cython.p_uchar
+    rect: cython.pointer[DeviceRect]
+    painted: cython.bint = False
+    window = cython.declare(cython.Py_ssize_t[4])
+    for py in range(iy0, iy1):
+        row_top = cython.cast(cython.double, py)
+        row_bottom = row_top + 1.0
+        while next_rect < n and rects[next_rect].top < row_bottom:
+            active[active_count] = next_rect
+            active_count += 1
+            next_rect += 1
+        kept = 0
+        for a in range(active_count):
+            if rects[active[a]].bottom > row_top:
+                active[kept] = active[a]
+                kept += 1
+        active_count = kept
+        if active_count == 0:
+            continue
+        # The row cut at the tops and bottoms inside it.
+        cuts[0] = row_top
+        cuts[1] = row_bottom
+        cut_count = 2
+        for a in range(active_count):
+            rect = cython.address(rects[active[a]])
+            if row_top < rect.top < row_bottom:
+                cuts[cut_count] = rect.top
+                cut_count += 1
+            if row_top < rect.bottom < row_bottom:
+                cuts[cut_count] = rect.bottom
+                cut_count += 1
+        sort_doubles(cuts, cut_count)
+        low_px = ix1
+        high_px = ix0
+        for c in range(cut_count - 1):
+            band_top = cuts[c]
+            band_bottom = cuts[c + 1]
+            if band_bottom <= band_top:
+                continue
+            height = band_bottom - band_top
+            span_count = 0
+            for a in range(active_count):
+                rect = cython.address(rects[active[a]])
+                if rect.top <= band_top and rect.bottom >= band_bottom and rect.right > rect.left:
+                    spans[span_count].left = rect.left
+                    spans[span_count].right = rect.right
+                    span_count += 1
+            if span_count == 0:
+                continue
+            sort_spans(spans, span_count)
+            merged = 0
+            for a in range(1, span_count):
+                if spans[a].left <= spans[merged].right:
+                    if spans[a].right > spans[merged].right:
+                        spans[merged].right = spans[a].right
+                else:
+                    merged += 1
+                    spans[merged] = spans[a]
+            for a in range(merged + 1):
+                left = spans[a].left
+                right = spans[a].right
+                first = cython.cast(cython.Py_ssize_t, floor(left))
+                end = cython.cast(cython.Py_ssize_t, ceil(right))
+                if first < ix0:
+                    first = ix0
+                if end > ix1:
+                    end = ix1
+                for px in range(first, end):
+                    coverage[px - ix0] += height * span_coverage(
+                        cython.cast(cython.double, px), left, right
+                    )
+                if first < low_px:
+                    low_px = first
+                if end > high_px:
+                    high_px = end
+        for px in range(low_px, high_px):
+            value = coverage[px - ix0]
+            if value <= 0.0:
+                continue
+            coverage[px - ix0] = 0.0
+            if value > 1.0:
+                value = 1.0
+            raw = cython.cast(cython.int, cython.cast(cython.uchar, rint(value * alpha)))
+            if raw == 0:
+                continue
+            pixel = p.pixels + py * p.row_stride + px * 4
+            if raw >= opaque_from:
+                memcpy(pixel, opaque, 4)
+            else:
+                blend_one(
+                    cython.address(pixel[0]),
+                    cython.address(pixel[1]),
+                    cython.address(pixel[2]),
+                    cython.address(pixel[3]),
+                    raw,
+                    p.alpha,
+                    red,
+                    green,
+                    blue,
+                )
+            if not painted:
+                painted = True
+                window[0] = px
+                window[1] = py
+                window[2] = px + 1
+                window[3] = py + 1
+            else:
+                window[0] = px if px < window[0] else window[0]
+                window[2] = px + 1 if px + 1 > window[2] else window[2]
+                window[3] = py + 1
+    if heap:
+        free(rects)
+        free(active)
+        free(spans)
+        free(cuts)
+    if wide:
+        free(coverage)
+    if painted:
+        extend(p, window[1], window[3], window[0], window[2])
+    return 0
+
+
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(-1, check=False)
@@ -2383,13 +2873,33 @@ def paint_union(
     """Paint the stroke of subpaths first to last, whose pieces in_pieces allows but meet
     inside pixels, once: collect its pieces' rectangles, squares, polygons and discs (as
     circle_path's polygons), each counter-clockwise so that the nonzero rule fills their
-    union, and hand them to calls.union in one call, which fills them by their exact area
-    as fill_path fills the same pieces as one path, with the box they span."""
+    union. Rectangles alone, fill_rect_union fills by their exact area here; with any other
+    shape among them, calls.union takes their edges and the box they span in one call,
+    which fills them by their exact area as fill_path fills the same pieces as one path."""
     w.collect = True
     w.union_count = 0
-    walk_range(p, w, calls, first, last)
+    w.rect_count = 0
+    w.union_shapes = False
+    w.boxes_only = w.line_cap != CAP_ROUND and w.line_join != JOIN_ROUND
+    result: cython.int = walk_range(p, w, calls, first, last)
+    if result >= 0 and p.error == 0 and w.boxes_only and w.union_shapes:
+        # A polygon after all: collected again, every piece's edges in order.
+        w.union_count = 0
+        w.rect_count = 0
+        w.boxes_only = False
+        result = walk_range(p, w, calls, first, last)
     w.collect = False
-    if w.union_count == 0:
+    w.boxes_only = False
+    if result < 0 or p.error != 0:
+        return -1
+    if w.union_count == 0 and w.rect_count == 0:
+        return 0
+    if not w.union_shapes:
+        # Rectangles alone: their union filled here.
+        if fill_rect_union(p, w) < 0:
+            with cython.gil:
+                failed(p, calls)
+            return -1
         return 0
     with cython.gil:
         flush(p, calls)
@@ -2415,26 +2925,26 @@ def walk_once(
     buffer: cython.pointer[cython.p_ushort],
     capacity: cython.p_Py_ssize_t,
 ) -> cython.int:
-    """Paint each group of subpaths, the strokes ending at ends, once, each in turn: piece
-    by piece where that paints the same, and otherwise by paint_once, in buffer, which
-    holds capacity sample masks and which the caller frees, an error raised or not."""
+    """Paint each group of subpaths, the strokes ending at ends, once, each in turn, by
+    one of three routes. A group in_pieces allows, opaque along the axes, whose pieces
+    share no partly covered pixel (pieces_on_pixels), piece by piece (walk_range), each
+    piece by its exact area. One whose pieces meet inside pixels, without a clip path or
+    under a rectangular one, by paint_union: their union in one call, by its exact area,
+    as a filled path's. Every other group, and any under a clip path, by paint_once: its
+    pieces' 4 x 4 samples covered once, as a filled path's are under a clip path, in
+    buffer, which holds capacity sample masks and which the caller frees, an error raised
+    or not."""
     group: cython.Py_ssize_t
     first: cython.Py_ssize_t = 0
     last: cython.Py_ssize_t
     result: cython.int = 0
+    pieces: cython.bint
     for group in range(groups):
         last = ends[group]
-        if in_pieces(w, first, last, p.alpha >= 255, p.scale) and pieces_on_pixels(
-            p, w, first, last
-        ):
+        pieces = in_pieces(w, first, last, p.alpha >= 255, p.scale)
+        if pieces and pieces_on_pixels(p, w, first, last):
             result = walk_range(p, w, calls, first, last)
-        elif (
-            p.clip_mode != CLIP_ROWS
-            and calls.union is not None
-            and in_pieces(w, first, last, p.alpha >= 255, p.scale)
-        ):
-            # Without a clip path, its pieces' union by its exact area, as a filled
-            # path's; under one, paint_once samples it 4 x 4, as a filled path is.
+        elif pieces and p.clip_mode != CLIP_ROWS and calls.union is not None:
             result = paint_union(p, w, calls, first, last)
         else:
             result = paint_once(p, w, calls, first, last, buffer, capacity)
@@ -2511,6 +3021,11 @@ def stroke_polylines(
     w.union_edges = cython.NULL
     w.union_count = 0
     w.union_capacity = 0
+    w.union_rects = cython.NULL
+    w.rect_count = 0
+    w.rect_capacity = 0
+    w.union_shapes = False
+    w.boxes_only = False
     calls: Callbacks = Callbacks.__new__(Callbacks)
     calls.line = on_line
     calls.polygon = on_polygon
@@ -2598,6 +3113,7 @@ def stroke_polylines(
         flush(cython.address(p), calls)
     finally:
         free(w.union_edges)
+        free(w.union_rects)
         free(buffer)
         free(bounds)
 
@@ -2698,6 +3214,11 @@ def stroke_coverage(
     w.union_edges = cython.NULL
     w.union_count = 0
     w.union_capacity = 0
+    w.union_rects = cython.NULL
+    w.rect_count = 0
+    w.rect_capacity = 0
+    w.union_shapes = False
+    w.boxes_only = False
     no_calls: typing.Optional[Callbacks] = None
     try:
         for k in range(count):

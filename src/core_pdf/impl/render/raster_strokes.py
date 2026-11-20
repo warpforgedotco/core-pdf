@@ -8,6 +8,7 @@ Each function takes the target as self; RasterTarget lists them as its methods.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 lazy import numpy
@@ -24,7 +25,7 @@ from core_pdf.impl.render.paths import (
     stroke_half_width,
     stroke_reach,
 )
-from core_pdf.impl.render.raster_fills import fill_edges, paint_as_one
+from core_pdf.impl.render.raster_fills import EdgeBatch, fill_edges
 from core_pdf.impl.render.raster_support import subpath_columns
 from core_pdf.impl.spec.citations import cites
 lazy from core_pdf_cythonized import (
@@ -299,13 +300,22 @@ def stroke_path(
         radius = stroke_half_width(scale, float(line_width))
         self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
 
-    def union(data: bytes, box: tuple[float, float, float, float]) -> None:
-        # The pieces of a stroke that meet inside pixels, each counter-clockwise, and the
-        # box they span: their union filled once, by its exact area without a clip path.
-        edges = numpy.frombuffer(data, dtype=numpy.float64).reshape(-1, 4)
-        fill_edges(self, edges, box, rgba, blend_mode, "nonzero")
+    union: Callable[[bytes, tuple[float, float, float, float]], None] | None = None
+    if native:
 
-    def walk() -> None:
+        def union(data: bytes, box: tuple[float, float, float, float]) -> None:
+            # The pieces of a stroke that meet inside pixels, each counter-clockwise, and
+            # the box they span: their union filled once, by its exact area.
+            edges = numpy.frombuffer(data, dtype=numpy.float64).reshape(-1, 4)
+            fill_edges(self, edges, box, rgba, blend_mode, "nonzero")
+
+    # Painted piece by piece through the callbacks, the pieces fill_rect, fill_path and
+    # fill_circle cannot paint whole are filled together, as one shape, from a batch.
+    batch = previous = None
+    if not native:
+        previous = self.edge_batch
+        batch = self.edge_batch = EdgeBatch()
+    try:
         stroke_polylines(
             self.pixel_array,
             xs,
@@ -338,13 +348,11 @@ def stroke_path(
             self.extend_paint_box,
             union,
         )
-
-    if native:
-        walk()
-    else:
-        # Painted piece by piece through the callbacks: the pieces fill_rect, fill_path
-        # and fill_circle cannot paint whole are filled together, as one shape.
-        paint_as_one(self, walk, rgba, blend_mode)
+    finally:
+        if batch is not None:
+            self.edge_batch = previous
+    if batch is not None:
+        batch.fill(self, rgba, blend_mode)
 
 
 def single_segment(

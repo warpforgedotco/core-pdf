@@ -22,8 +22,11 @@ opaque strokes of several pieces, collinear segments meeting inside a pixel, wit
 without square caps, and a right-angle miter, each against its union filled as one path:
 byte-identical under the clip, and unclipped and under a rectangular clip, where the
 union is filled by its exact area, byte-identical too; and painted on a raster target
-directly, those strokes and a closed frame, unclipped and under a rectangular clip, must
-be byte-identical to the stroke kernel's pieces filled as one path. Then it
+directly, those strokes, square and round frames, and strokes with round joins and caps,
+unclipped and under a rectangular clip that cuts the frames, and a round cap ending on a
+clip's fractional side, must be byte-identical to the stroke kernel's pieces, cut to the
+clip, filled as one path. A stroke on that route through an infinite or NaN point must
+fail with the error stroke_once raises. Then it
 paints, on a raster target directly, square and round dots (fill_terminal), glyph bitmaps
 (draw_glyph_bitmap) whose cells have fractional device edges, each glyph against its cells
 filled as one path, and rectangles in a blend mode named Normal, against a rectangle
@@ -376,6 +379,8 @@ def direct_pairs() -> int:
 
 # A rectangular clip whose bottom edge cuts the frames' lower sides inside pixels.
 PIECES_CLIP = (15.15, 30.35, 155.6, 121.0)
+# A rectangular clip whose right side, inside a pixel, cuts a round cap's disc.
+ROUND_CAP_CLIP = (15.15, 30.35, 100.9, 121.0)
 # PIECES' strokes as paths: points, line cap and line join.
 PIECE_PATHS = (
     ("collinear segments", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 0, 0),
@@ -386,6 +391,40 @@ PIECE_PATHS = (
     ("round caps", ((20.3, 50.37), (60.4, 50.37), (100.6, 50.37)), 1, 0),
     ("round frame", ((30.3, 30.45), (130.6, 30.45), (130.6, 110.7), (30.3, 110.7)), 1, 1),
 )
+
+
+def cut_polygon(
+    corners: list[tuple[float, float]], clip: tuple[float, float, float, float]
+) -> list[tuple[float, float]]:
+    """The polygon cut to the clip rectangle's left, bottom, right and top sides in turn
+    (Sutherland and Hodgman), as the stroke kernel's collect_polygon cuts a piece, with
+    the same arithmetic: a crossing lies on the side's line, at the fraction of the edge
+    from its previous vertex that reaches it."""
+    for side in range(4):
+        if len(corners) < 3:
+            return []
+        bound = clip[side]
+        cut: list[tuple[float, float]] = []
+
+        def inside(point: tuple[float, float], side: int = side, bound: float = bound) -> bool:
+            x, y = point
+            return (x >= bound, y >= bound, x <= bound, y <= bound)[side]
+
+        previous = corners[-1]
+        for corner in corners:
+            if inside(corner) != inside(previous):
+                (px, py), (x, y) = previous, corner
+                if side in (0, 2):
+                    t = (bound - px) / (x - px)
+                    cut.append((bound, py + t * (y - py)))
+                else:
+                    t = (bound - py) / (y - py)
+                    cut.append((px + t * (x - px), bound))
+            if inside(corner):
+                cut.append(corner)
+            previous = corner
+        corners = cut
+    return corners
 
 
 def stroke_pieces(
@@ -400,9 +439,17 @@ def stroke_pieces(
     or round joins, in its order, each counter-clockwise: the rectangle around each
     segment, then each corner's square (a right angle's, under miter joins) or disc (every
     corner's, under round joins), then each open end's square or disc. A disc is
-    circle_path's polygon. Under a rectangular clip, each rectangle and square is cut to
-    it, as the kernel cuts them; a disc is not."""
+    circle_path's polygon. Under a rectangular clip, each piece is cut to it, as the
+    kernel cuts them: a rectangle by clamping, a disc by cut_polygon."""
     pieces: list[CapturedSubpath] = []
+
+    def disc(x: float, y: float) -> list[CapturedSubpath]:
+        corners = circle_path(x, y, half).subpaths[0].points
+        if clip is not None:
+            corners = cut_polygon(corners, clip)
+            if len(corners) < 3:
+                return []
+        return [CapturedSubpath(corners, closed=True)]
 
     def box(x0: float, y0: float, x1: float, y1: float) -> list[CapturedSubpath]:
         if clip is not None:
@@ -425,7 +472,7 @@ def stroke_pieces(
     for index in order:
         x, y = points[index]
         if join == 1:
-            pieces += circle_path(x, y, half).subpaths
+            pieces += disc(x, y)
             continue
         before = points[index - 1]
         after = points[(index + 1) % count]
@@ -434,7 +481,7 @@ def stroke_pieces(
     if not closed and cap:
         for x, y in (points[0], points[-1]):
             if cap == 1:
-                pieces += circle_path(x, y, half).subpaths
+                pieces += disc(x, y)
             else:
                 pieces += box(x - half, y - half, x + half, y + half)
     return pieces
@@ -442,10 +489,10 @@ def stroke_pieces(
 
 def pieces_once() -> int:
     """PIECES' strokes, closed frames, and strokes with round joins and caps, opaque,
-    unclipped and under a rectangular clip, painted by the stroke kernel, against the same
-    pieces filled as one path: their union by its exact area, byte-identical, so that no
-    two pieces blend a pixel they share in turn and no edge is coarser than a filled
-    path's."""
+    unclipped and under a rectangular clip, and a round cap ending on a clip's fractional
+    side, painted by the stroke kernel, against the same pieces, cut to the clip, filled as
+    one path: their union by its exact area, byte-identical, so that no two pieces blend a
+    pixel they share in turn and no edge is coarser than a filled path's."""
     rgba = (26, 77, 204, 255)
     failed = 0
     for scale in SCALES:
@@ -466,6 +513,20 @@ def pieces_once() -> int:
                         raster.fill_path(CapturedPath(pieces), rgba, None)
                     images.append(raster.pixel_array.copy())
                 failed += compare(f"{clip_name} {name} as one path @{scale}", images[0], images[1])
+        # A round cap ending on the clip's fractional right side, which cuts its disc.
+        points = ((20.3, 70.37), (100.6, 70.37))
+        images = []
+        for route in ("kernel", "path"):
+            raster = target(scale)
+            raster.clip.push(rectangle(*ROUND_CAP_CLIP), "nonzero")
+            if route == "kernel":
+                path = CapturedPath([CapturedSubpath(list(points))])
+                raster.stroke_path(path, 1.3, rgba, None, None, 1, 0, 10.0)
+            else:
+                pieces = stroke_pieces(points, False, 1, 0, half, ROUND_CAP_CLIP)
+                raster.fill_path(CapturedPath(pieces), rgba, None)
+            images.append(raster.pixel_array.copy())
+        failed += compare(f"round cap on a clip edge as one path @{scale}", images[0], images[1])
     return failed
 
 
@@ -569,6 +630,30 @@ def unchanged_pages() -> dict[str, numpy.ndarray]:
     }
 
 
+def nonfinite_union() -> int:
+    """A stroke whose pieces meet inside pixels, with an infinite or NaN point, fails on the
+    stroke kernel's union route as it does through stroke_once, the cover route: with the
+    same error, and no union painted."""
+    failed = 0
+    for value in (float("inf"), float("nan")):
+        errors = []
+        for route in ("kernel", "once"):
+            raster = target(1.0)
+            path = CapturedPath([CapturedSubpath([(20.3, 50.37), (60.4, 50.37), (60.4, value)])])
+            try:
+                if route == "kernel":
+                    raster.stroke_path(path, 1.3, (26, 77, 204, 255), None, None, 0, 0, 10.0)
+                else:
+                    stroke_once(raster, path, 1.3, (26, 77, 204, 255), None, None, 0, 0, 10.0, None)
+                errors.append(None)
+            except (OverflowError, ValueError) as error:
+                errors.append(type(error))
+        if errors[0] is None or errors[0] != errors[1]:
+            print(f"a stroke through {value}: the kernel raises {errors[0]}, {errors[1]} wanted")
+            failed += 1
+    return failed
+
+
 def negative_rows() -> int:
     """A glyph bitmap's negative row sets each of the bitmap's columns, and no more."""
     cells = cell_edges((-1,), 7)
@@ -584,7 +669,7 @@ def digest(image: numpy.ndarray) -> str:
 
 
 def main() -> int:
-    failures = pdf_pairs() + direct_pairs() + negative_rows()
+    failures = pdf_pairs() + direct_pairs() + negative_rows() + nonfinite_union()
     pages = unchanged_pages()
     if "--record" in sys.argv:
         for name, image in pages.items():
