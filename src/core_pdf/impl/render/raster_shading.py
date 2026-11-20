@@ -18,7 +18,9 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
 from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
+from core_pdf.impl.graphics.color_spec import ColorSpace
 from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
+from core_pdf.impl.graphics.overprint import SPOT, process_color, process_indices
 from core_pdf.impl.graphics.shading import (
     DEVICE_COMPONENTS,
     FunctionGeometry,
@@ -234,6 +236,15 @@ def blend_shading_colors(
     color_model = shading.color_model
     rendering = shading.color_rendering
     in_space = self.space_mode is not SpaceMode.RGB
+    evaluate = shading.evaluator
+    space = process_space(self, item, shading)
+    if space is not None:
+        # The shading's tints are painted directly, as DeviceCMYK colours of the group.
+        assert isinstance(evaluate, SpaceEvaluator)
+        evaluate = partial(process_tints, space, evaluate.function)
+        color_model = "DeviceCMYK"
+        if background is not None:
+            background = process_background(item, space)
     fill = None
     if background is not None:
         try:
@@ -249,7 +260,6 @@ def blend_shading_colors(
     colors = numpy.zeros((len(first) + (fill is not None), 4), dtype=numpy.int32)
     reached = len(keys)
     color_error: Exception | None = None
-    evaluate = shading.evaluator
     all_inputs = arguments(first[by_first]) if len(first) else []
     # The colours an earlier band found are taken as they were; the others are found here, in
     # the order they first appear, so a failing one stops where it would over the whole box.
@@ -343,6 +353,50 @@ def blend_shading_colors(
         raise blend_error
     if color_error is not None:
         raise color_error
+
+
+def process_space(
+    self: RasterTarget, item: ShadingItem, shading: PreparedShading
+) -> ColorSpace | None:
+    """The colour space of a shading that overprints in a CMYK group and names process
+    colorants alone, whose tints it paints directly: each colorant's in its component, 0 in
+    the others (graphics.overprint.process_color), rather than the alternate's conversion,
+    which would put ink in the components it does not name. None for any other shading, or
+    where it does not overprint."""
+    if self.space_mode is not SpaceMode.CMY and self.space_mode is not SpaceMode.BLACK:
+        return None
+    marks = item.payload.get("fill_overprint")
+    if not self.overprint_enabled or marks is None or marks & SPOT:
+        return None
+    evaluator = shading.evaluator
+    if not isinstance(evaluator, SpaceEvaluator) or process_indices(evaluator.space) is None:
+        return None
+    return evaluator.space
+
+
+def process_tints(
+    space: ColorSpace, function: Callable[..., Sequence[float]], *values: float
+) -> tuple[float, ...]:
+    """The CMYK a shading in space, which names process colorants alone, paints directly
+    where its function takes values."""
+    cmyk = process_color(space, function(*values))
+    if cmyk is None:
+        raise ValueError("a shading colour has the wrong number of tints")
+    return cmyk
+
+
+def process_background(item: ShadingItem, space: ColorSpace) -> tuple[float, ...] | None:
+    """The CMYK a shading painted directly fills its Background with: its components are
+    tints of the shading's colour space (8.7.4.3)."""
+    dictionary = item.dictionary
+    values = None
+    if isinstance(dictionary, dict):
+        for key, value in dictionary.items():
+            if str(key) == "Background":
+                values = value
+    if not isinstance(values, (list, tuple)) or not all(is_pdf_number(value) for value in values):
+        return None
+    return process_color(space, [float(value) for value in values])
 
 
 def device_palette(
@@ -699,7 +753,7 @@ def paint_tiling_pattern(
         bytearray(len(self.pixels)),
         alpha,
         blend_mode,
-        isolated=tiling_pattern_uses_normal_blends(pattern),
+        isolated=cell_is_isolated(self, pattern),
         alpha_is_shape=target_data.alpha_is_shape,
     )
     try:
@@ -737,6 +791,20 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+def cell_is_isolated(self: RasterTarget, pattern: TilingPattern) -> bool:
+    """Whether a tiling's cell may be painted as an isolated group, once for every cell: its
+    paint all blends Normal (11.6.7, NOTE 1). An overprinting paint blends by the special
+    mode of 11.7.4.3 instead, wherever overprinting takes effect -- a CMYK pass -- so there
+    the cell composites with the backdrop, in the non-isolated group 11.6.7 puts it in."""
+    if (
+        pattern.overprints
+        and self.overprint_enabled
+        and (self.space_mode is SpaceMode.CMY or self.space_mode is SpaceMode.BLACK)
+    ):
+        return False
+    return tiling_pattern_uses_normal_blends(pattern)
 
 
 @cites(
@@ -933,7 +1001,7 @@ def paint_pattern_fill(
         view[rows, columns] = 0
     del coverage, view
     # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
-    isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
+    isolated = isinstance(pattern, ShadingPattern) or cell_is_isolated(self, pattern)
     try:
         self.paint_pattern_through(
             pattern,
@@ -1055,6 +1123,11 @@ def paint_pattern_over(
             "soft_mask_alpha": data.soft_mask_alpha,
             "color_rendering": pattern.color_rendering,
             "background": True,
+            # The marks of the fill or stroke the pattern paints (raster_overprint), for
+            # paint_shading to find the tints it paints directly.
+            "fill_overprint": data.stroke_overprint
+            if data.paint_kind is PathPaintKind.STROKE
+            else data.fill_overprint,
         }
         if pattern.matrix is not None:
             shading_data["matrix"] = pattern.matrix

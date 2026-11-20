@@ -626,6 +626,8 @@ class TilingPattern(GeneratedRecord):
     program: CapturedProgram
     # The map from pattern space to default user space, or None for the identity.
     matrix: Matrix | None = None
+    # Whether a paint in the cell overprints some process component (graphics.overprint).
+    overprints: bool = False
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

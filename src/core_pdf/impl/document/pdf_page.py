@@ -557,8 +557,9 @@ class PdfPage:
                 fields = tuple(self.get_fields())
         annotations = tuple(self.get_annotations()) if options.include_annotations else None
         program = self.get_page_program(fields=fields, annotations=annotations or None)
+        mode = options.overprint
         simulate = (
-            options.overprint == "simulate"
+            (mode == "simulate" or (mode == "auto" and self.document.is_pdfx))
             and program.overprints
             and simulates_overprint(self.resolve_transparency_group_space())
         )

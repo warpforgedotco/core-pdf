@@ -15,8 +15,10 @@ from core_pdf.impl.base.exceptions import (
     ExtractionScope,
     PdfDocumentClosedError,
     PdfEmptySourceError,
+    PdfError,
 )
 from core_pdf.impl.base.types import PageScoped, PdfReference, PdfSource
+from core_pdf.impl.base.values import recover_pdf_name
 from core_pdf.impl.document.metadata import MetadataRecord, resolve_metadata
 from core_pdf.impl.document.pdf_page import PdfPage
 from core_pdf.impl.document.standards import discover_profile_claims
@@ -183,6 +185,26 @@ class PdfDocument(Generic[PageT]):
                 )
                 self.standards_complete = True
             return self._standards
+
+    @property
+    def is_pdfx(self) -> bool:
+        """Whether the document claims PDF/X: an output intent of subtype GTS_PDFX, which
+        every part of ISO 15930 requires, or a PDF/X version in its Info dictionary or its
+        XMP metadata (discover_profile_claims)."""
+        return bool(self.caches.get("is_pdfx", self.find_pdfx))
+
+    def find_pdfx(self) -> bool:
+        with contextlib.suppress(PdfError, RecursionError, TypeError, ValueError):
+            intents = self.resolver.resolve(self.catalog().get("OutputIntents"))
+            if isinstance(intents, (list, tuple)):
+                for intent in intents:
+                    entry = self.resolver.resolve(intent)
+                    if (
+                        isinstance(entry, dict)
+                        and recover_pdf_name(self.resolver.resolve(entry.get("S"))) == "GTS_PDFX"
+                    ):
+                        return True
+        return any(claim.family == "PDF/X" for claim in self.get_standards().profile_claims)
 
     def catalog_dict(self, key: str, *, recoverable: bool = False) -> PdfDict | None:
         value = self.resolver.resolve(self.catalog().get(key))

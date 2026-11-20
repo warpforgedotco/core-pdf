@@ -208,6 +208,9 @@ def capture_page_program(
             state.set_ancestor_spaces(ancestor_spaces(None, *page_entry))
         cmyk = blending_space_of(page_space) == "DeviceCMYK"
         state.set_capture_cmyk(cmyk or cmyk_page, blending_profile(page_space) if cmyk else None)
+        # A page group naming no colour space, or DeviceCMYK itself, composites in the
+        # device's (11.7.3).
+        state.set_capture_device(page_space is None or state.device_cmyk_group(page_space))
         page.consume_contents(state)
         state.run_accumulator.flush()
         body = state.captured_program()

@@ -47,7 +47,7 @@ from core_pdf.impl.graphics.device_profiles import (
     srgb_bytes_to_cmyk,
 )
 from core_pdf.impl.graphics.icc_profiles import IccProfileError
-from core_pdf.impl.graphics.images import decode_cmyk_samples
+from core_pdf.impl.graphics.images import decode_cmyk_samples, decode_process_samples
 from core_pdf.impl.render.blend import color_rgba
 from core_pdf.impl.render.model import (
     ControlItem,
@@ -177,12 +177,28 @@ def shading_space_color(self: RasterTarget, color_model: str, components: Any, r
 
 
 def space_samples(
-    self: RasterTarget, source: ImageSource, samples: UInt8Array, components: int
+    self: RasterTarget,
+    source: ImageSource,
+    samples: UInt8Array,
+    components: int,
+    *,
+    process: bool = False,
 ) -> tuple[UInt8Array, int]:
     """An image's decoded samples, sRGB (components 3) or gray (1), in the current space's
     components. A CMYK image keeps its own components in a CMYK group; a CMYK group finds
-    each image's CMYK once for both of its passes."""
+    each image's CMYK once for both of its passes. process: the image overprints in a
+    space naming process colorants alone, whose tints a CMYK group takes directly
+    (images.decode_process_samples)."""
     mode = self.space_mode
+    cmyk = (
+        self.process_samples(source, len(samples) // components)
+        if process and mode is not SpaceMode.GRAY
+        else None
+    )
+    if cmyk is not None:
+        if mode is SpaceMode.CMY:
+            return numpy.ascontiguousarray(255 - cmyk[:, :3]).reshape(-1), 3
+        return numpy.ascontiguousarray(255 - cmyk[:, 3]), 1
     if components == 1:
         if mode is SpaceMode.CMY:
             return numpy.full(samples.shape, 255, dtype=numpy.uint8), 1
@@ -201,9 +217,24 @@ def space_samples(
         )
         cached = self.space_images[key] = (source, cmyk)
     cmyk = cached[1]
+    assert cmyk is not None
     if mode is SpaceMode.CMY:
         return numpy.ascontiguousarray(255 - cmyk[:, :3]).reshape(-1), 3
     return numpy.ascontiguousarray(255 - cmyk[:, 3]), 1
+
+
+def process_samples(self: RasterTarget, source: ImageSource, pixels: int) -> UInt8Array | None:
+    """The CMYK, (pixels, 4), an image in a space naming process colorants alone paints
+    directly (images.decode_process_samples), found once for both passes of a CMYK group;
+    None when its tints cannot be had for its pixels: a matte, or samples of another size
+    than the image it is painted from."""
+    key = (id(source), -1)
+    cached = self.space_images.get(key)
+    if cached is None or cached[0] is not source:
+        native = decode_process_samples(source)
+        found = native.reshape(-1, 4) if native is not None and native.size == pixels * 4 else None
+        cached = self.space_images[key] = (source, found)
+    return cached[1]
 
 
 def switches_space(self: RasterTarget, item: GroupBeginItem) -> bool:

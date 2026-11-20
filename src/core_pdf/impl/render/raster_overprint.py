@@ -41,6 +41,7 @@ from core_pdf.impl.render.model import (
     ShadingItem,
     SpaceMode,
 )
+from core_pdf.impl.render.raster_support import prepared_image
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_11_transparency.blend import blend_colors
 from core_pdf.impl.spec.standards import SemanticContext
@@ -84,7 +85,30 @@ def overprint_channels(self: RasterTarget, item: PaintItemBase) -> Channels | No
     """Which components of the current pass item marks, when it overprints one of them;
     None when it marks them all and paints as usual. A fill and stroke paint apart first
     (raster_dispatch.paint_item)."""
-    return marks_channels(self.space_mode, paint_marks(item))
+    marks = paint_marks(item)
+    if (
+        type(item) is ImagePaintItem
+        and marks is not None
+        and not marks & SPOT
+        and not paints_process_samples(self, item)
+    ):
+        # An image whose tints cannot be painted directly paints its alternate's colour,
+        # which would put ink in the components it does not mark: it does not overprint.
+        return None
+    return marks_channels(self.space_mode, marks)
+
+
+def paints_process_samples(self: RasterTarget, item: ImagePaintItem) -> bool:
+    """Whether an image overprinting in a space naming process colorants alone paints its
+    tints directly (raster_spaces.process_samples); an image mask paints the current colour,
+    which capture found directly."""
+    if item.source is None:
+        return True
+    prepared = prepared_image(self.resources, item.source)
+    if prepared is None or prepared.is_stencil:
+        return True
+    raster = prepared.raster
+    return self.process_samples(item.source, raster.width * raster.height) is not None
 
 
 def marks_channels(mode: SpaceMode, marks: int | None) -> Channels | None:

@@ -103,7 +103,7 @@ class RasterTarget:
     space_mode: SpaceMode
     space_profile: bytes | None
     space_colors: dict[tuple[int, int, int], tuple[int, int, int, int]]
-    space_images: dict[tuple[int, int], tuple[object, UInt8Array]]
+    space_images: dict[tuple[int, int], tuple[object, UInt8Array | None]]
     # Whether paint in a DeviceCMYK group overprints (raster_overprint), and the layers
     # overprinting paint is painted into, by group depth.
     overprint_enabled: bool
@@ -247,6 +247,7 @@ class RasterTarget:
     item_fill_rgba = spaces.item_fill_rgba
     shading_space_color = spaces.shading_space_color
     space_samples = spaces.space_samples
+    process_samples = spaces.process_samples
     switches_space = spaces.switches_space
     paint_space_group = spaces.paint_space_group
 

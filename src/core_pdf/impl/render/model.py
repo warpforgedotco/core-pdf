@@ -41,7 +41,7 @@ from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_space_of,
 )
 
-OVERPRINT_MODES = frozenset({"groups", "simulate", "ignore"})
+OVERPRINT_MODES = frozenset({"groups", "simulate", "auto", "ignore"})
 
 
 class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=False):
@@ -55,9 +55,15 @@ class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=Fals
     # colorants overprint where paint composites in a DeviceCMYK blending space -- a
     # transparency group or page group whose colour space is CMYK -- and an RGB page ignores
     # the overprint parameters, as a composite RGB device may (8.6.7) and as MuPDF,
-    # Ghostscript and Poppler render by default. "simulate": a page that overprints also
-    # composites in DeviceCMYK, as the overprint simulation of mutool draw, Ghostscript,
-    # pdftoppm and Acrobat's overprint preview do. "ignore": nothing overprints.
+    # Ghostscript and Poppler render by default; a Separation or DeviceN space naming
+    # process colorants takes them as such only in a DeviceCMYK group, the device's native
+    # space, and is its alternate in an ICCBased CMYK one (11.7.3). "simulate": a page
+    # without a group colour space that overprints also composites in DeviceCMYK, as the
+    # overprint simulation of mutool draw, Ghostscript, pdftoppm and Acrobat's overprint
+    # preview do. "auto": "simulate" for a PDF/X document,
+    # made for print, whose overprinting is part of its appearance, and "groups" for any
+    # other, as Acrobat's default overprint preview, "Only for PDF/X files", chooses.
+    # "ignore": nothing overprints.
     overprint: str = "groups"
 
     __hash__ = None  # type: ignore[assignment]
