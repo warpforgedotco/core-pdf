@@ -59,6 +59,11 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
         and last[3] == black_point
     ):
         return last[4]
+    ancestors = self.paint_ancestors
+    if ancestors is not None and spec.kind in ancestors.spaces:
+        # A device colour set before the group it paints in is that group's CIE-based
+        # colour all the same (11.7.2); one set inside it was remapped as it was set.
+        spec, color = ancestors.remap(spec, color)
     if not color_space_paints(spec):
         return color
     cmyk = self.capture_cmyk
@@ -203,9 +208,9 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         initial_alpha_is_shape,
         initial_text_knockout,
         id(defaults),
-        # A tiling cell's colours are captured for the blending space it paints into; a
-        # shading pattern's do not depend on it.
-        (self.capture_cmyk, self.capture_cmyk_profile)
+        # A tiling cell's colours are captured for the blending space it paints into, and
+        # the groups it paints in (11.7.2); a shading pattern's do not depend on them.
+        (self.capture_cmyk, self.capture_cmyk_profile, id(self.ancestor_spaces))
         if isinstance(pattern, model.TilingPattern)
         else None,
     )
@@ -230,6 +235,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         )
     elif isinstance(pattern, model.TilingPattern):
         nested = self.nested_capture_state()
+        nested.set_ancestor_spaces(self.ancestor_spaces)
         nested.set_capture_cmyk(self.capture_cmyk, self.capture_cmyk_profile)
         try:
             result = self.capture_tiling_pattern(
@@ -237,6 +243,5 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             )
         finally:
             nested.release()
-    return self.capture_patterns.put_key(
-        pattern, cache_key, result, () if defaults is None else (defaults,)
-    )
+    pins = tuple(spaces for spaces in (defaults, self.ancestor_spaces) if spaces is not None)
+    return self.capture_patterns.put_key(pattern, cache_key, result, pins)

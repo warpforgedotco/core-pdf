@@ -62,6 +62,8 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
     group_isolated: bool
     group_knockout: bool
     group_color_space: ColorSpace | None
+    # The group's colour space as resolved from the PDF.
+    group_color_value: object
     form_bbox_operand: object
     form_bbox: Rectangle | None
     is_form: bool
@@ -84,6 +86,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         group_isolated: bool = True,
         group_knockout: bool = False,
         group_color_space: ColorSpace | None = None,
+        group_color_value: object = None,
         form_bbox_operand: object = None,
         form_bbox: Rectangle | None = None,
         is_form: bool = False,
@@ -99,6 +102,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         self.group_isolated = group_isolated
         self.group_knockout = group_knockout
         self.group_color_space = group_color_space
+        self.group_color_value = group_color_value
         self.form_bbox_operand = form_bbox_operand
         self.form_bbox = form_bbox
         self.is_form = is_form
@@ -119,6 +123,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
         group_isolated = changes.pop("group_isolated", self.group_isolated)
         group_knockout = changes.pop("group_knockout", self.group_knockout)
         group_color_space = changes.pop("group_color_space", self.group_color_space)
+        group_color_value = changes.pop("group_color_value", self.group_color_value)
         form_bbox_operand = changes.pop("form_bbox_operand", self.form_bbox_operand)
         form_bbox = changes.pop("form_bbox", self.form_bbox)
         is_form = changes.pop("is_form", self.is_form)
@@ -136,6 +141,7 @@ class ContentStreamFrame(ReprFields, metaclass=RecordType, frozen=False):
             group_isolated=group_isolated,
             group_knockout=group_knockout,
             group_color_space=group_color_space,
+            group_color_value=group_color_value,
             form_bbox_operand=form_bbox_operand,
             form_bbox=form_bbox,
             is_form=is_form,

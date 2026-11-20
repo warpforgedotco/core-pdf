@@ -60,6 +60,7 @@ from core_pdf.impl.spec.s_08_graphics.default_spaces import (
     default_space_values,
     remap_color_space,
     valid_default_space,
+    with_ancestor_spaces,
 )
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_08_graphics.shading import SHADING_STREAM_KEY
@@ -135,7 +136,16 @@ class ContentInterpreter:
         self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
         self.remapped_space_cache: dict[int, tuple[object, DefaultSpaces, ColorSpace]] = {}
         self.default_spaces_cache: dict[int, tuple[PdfDict, DefaultSpaces | None]] = {}
-        self.default_spaces_memo: tuple[object, DefaultSpaces | None] = (None, None)
+        self.default_spaces_memo: tuple[object, object, DefaultSpaces | None] = (None, None, None)
+        # The CIE-based colour spaces of the nearest enclosing transparency groups, by the
+        # device space with as many components (11.7.2), which a capture that renders
+        # keeps; None outside any such group. paint_ancestors: those device colour is
+        # painted in, which current_default_spaces lays the default spaces over.
+        self.ancestor_spaces: DefaultSpaces | None = None
+        self.paint_ancestors: DefaultSpaces | None = None
+        self.ancestor_defaults: dict[
+            tuple[int, int], tuple[object, object, DefaultSpaces | None]
+        ] = {}
         self.shading_streams: dict[int, tuple[PdfStream, PdfDict]] = {}
         self.operator_overrides: dict[str, OperationHandler] = {}
         self.default_handlers: dict[str, OperationHandler] = {
@@ -386,6 +396,7 @@ class ContentInterpreter:
         group_isolated = True
         group_knockout = False
         group_color_space = None
+        group_color_value: object = None
         group_cs: object = None
         group = xobj_dict.get("Group")
         if group is not None:
@@ -400,7 +411,11 @@ class ContentInterpreter:
                 group_cs = group_dict.get("CS") if group_isolated else None
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         if group_cs is not None:
-            group_color_space = self.group_color_space(group_cs, self.default_spaces_of(resources))
+            entry = self.group_color_entry(
+                group_cs, self.with_ancestor_spaces(self.default_spaces_of(resources))
+            )
+            if entry is not None:
+                group_color_space, group_color_value = entry
         xobj_matrix = xobj_dict.get("Matrix")
         nested_ctm = self.matrix_operand(xobj_matrix, "form").multiply(self.graphics.ctm)
         raw_form_bbox = xobj_dict.get("BBox")
@@ -427,6 +442,7 @@ class ContentInterpreter:
                 frame.group_isolated = group_isolated
                 frame.group_knockout = group_knockout
                 frame.group_color_space = group_color_space
+                frame.group_color_value = group_color_value
         return frame
 
     @cites(
@@ -441,28 +457,70 @@ class ContentInterpreter:
         """The colour space a group attributes dictionary's CS entry names, if it can be a
         blending space; None leaves the group in its parent's (11.6.6). A device space is
         remapped through defaults, those of the group XObject's resources (8.6.5.6)."""
+        entry = self.group_color_entry(value, defaults)
+        return None if entry is None else entry[0]
+
+    def group_color_entry(
+        self, value: object, defaults: DefaultSpaces | None = None
+    ) -> tuple[ColorSpace, object] | None:
+        """group_color_space, and the space's value as resolved from the PDF. defaults may
+        carry the CIE-based spaces of the enclosing groups too (with_ancestor_spaces), so a
+        device space no default space remaps takes the nearest ancestor's with as many
+        components (11.7.2), the search Annex P draws."""
         if value is None:
             return None
         try:
-            resolved = self.resolver.deep_resolve(value)
+            resolved: object = self.resolver.deep_resolve(value)
+            name = self.resolver.resolve_name(resolved)
             remapped = (
-                defaults.spaces.get(self.resolver.resolve_name(resolved) or "")
-                if defaults is not None
-                else None
+                defaults.spaces.get(name) if defaults is not None and name is not None else None
             )
-            space = remapped if remapped is not None else self.parse_color_space_value(resolved)
+            if remapped is not None:
+                assert defaults is not None and name is not None
+                space, resolved = remapped, defaults.values[name]
+            else:
+                space = self.parse_color_space_value(resolved)
         except ValueError, TypeError:
             return None
-        return space if blending_space_of(space) is not None else None
+        return (space, resolved) if blending_space_of(space) is not None else None
+
+    @cites(
+        "ISO 32000-2",
+        "11.7.2",
+        introduced="1.4",
+        rule="a device space is the nearest CIE-based ancestor group's unless a default remaps it",
+    )
+    def with_ancestor_spaces(
+        self, defaults: DefaultSpaces | None, ancestors: DefaultSpaces | None = None
+    ) -> DefaultSpaces | None:
+        """A resource dictionary's default spaces, defaults, laid over the CIE-based spaces
+        of the enclosing groups, ancestors or else ancestor_spaces
+        (default_spaces.with_ancestor_spaces): one object for each pair, so that what is
+        cached by it stays cached."""
+        if ancestors is None:
+            ancestors = self.ancestor_spaces
+            if ancestors is None:
+                return defaults
+        key = (id(ancestors), id(defaults))
+        cached = self.ancestor_defaults.get(key)
+        if cached is not None and cached[0] is ancestors and cached[1] is defaults:
+            return cached[2]
+        merged = with_ancestor_spaces(defaults, ancestors)
+        self.ancestor_defaults[key] = (ancestors, defaults, merged)
+        return merged
 
     def current_default_spaces(self) -> DefaultSpaces | None:
-        """The default colour spaces of the current resource dictionary (8.6.5.6)."""
+        """The default colour spaces of the current resource dictionary (8.6.5.6), laid
+        over the CIE-based spaces of the groups paint is in, paint_ancestors (11.7.2)."""
         resources = self.resources
+        ancestors = self.paint_ancestors
         memo = self.default_spaces_memo
-        if memo[0] is resources:
-            return memo[1]
+        if memo[0] is resources and memo[1] is ancestors:
+            return memo[2]
         found = self.default_spaces_of(resources)
-        self.default_spaces_memo = (resources, found)
+        if ancestors is not None:
+            found = self.with_ancestor_spaces(found, ancestors)
+        self.default_spaces_memo = (resources, ancestors, found)
         return found
 
     @cites(

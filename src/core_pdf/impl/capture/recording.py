@@ -46,6 +46,11 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import parse_float_stric
 from core_pdf.impl.spec.s_07_syntax_primitives.content_operators import CONTENT_OPERATOR_HANDLERS
 from core_pdf.impl.spec.s_08_graphics.color_rendering import ColorRendering
 from core_pdf.impl.spec.s_08_graphics.color_spec import DEVICE_CMYK, DEVICE_GRAY, DEVICE_RGB
+from core_pdf.impl.spec.s_08_graphics.default_spaces import (
+    DEFAULT_SPACE_KEYS,
+    ancestor_spaces,
+    without_device,
+)
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 lazy from core_pdf.impl.graphics.icc_profiles import readable_icc_profile
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
@@ -352,6 +357,12 @@ class TextState(RecoveringTextState):
     # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
     cie_gray_groups_in_srgb: bool
     capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
+    # The ancestor spaces to restore when each group that changed them ends; and each set
+    # of them less DeviceCMYK's, by the set's id: paint_ancestors, the spaces device colour
+    # is painted in, leaves DeviceCMYK's out in a CMYK blending space, where DeviceCMYK is
+    # the space's own CMYK already and keeps its overprinting (11.7.2).
+    ancestor_frames: dict[int, DefaultSpaces | None]
+    ancestors_without_cmyk: dict[int, tuple[DefaultSpaces, DefaultSpaces | None]]
     # Whether a paint overprints some process component (capture_overprint).
     uses_overprint: bool
     text_layout: TextLayout | None
@@ -401,6 +412,8 @@ class TextState(RecoveringTextState):
         self.capture_cmyk_profile = None
         self.cie_gray_groups_in_srgb = False
         self.capture_cmyk_frames = {}
+        self.ancestor_frames = {}
+        self.ancestors_without_cmyk = {}
         self.uses_overprint = False
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
@@ -563,6 +576,16 @@ class TextState(RecoveringTextState):
             )
             self.sequence += 1
         if (
+            frame.group_alpha is not None
+            and frame.group_color_space is not None
+            and self.options.render_details
+        ):
+            self.ancestor_frames[id(frame)] = self.ancestor_spaces
+            self.ancestor_spaces = ancestor_spaces(
+                self.ancestor_spaces, frame.group_color_space, frame.group_color_value
+            )
+            self.refresh_paint_ancestors()
+        if (
             self.cie_gray_groups_in_srgb
             and frame.group_color_space is not None
             and blending_space_of(frame.group_color_space) == "DeviceGray"
@@ -649,6 +672,9 @@ class TextState(RecoveringTextState):
         if old is not None and frame.form_bbox is not None:
             self.drawings.append(marker_drawing("scope-end", self.sequence))
             self.sequence += 1
+        if id(frame) in self.ancestor_frames:
+            self.ancestor_spaces = self.ancestor_frames.pop(id(frame))
+            self.refresh_paint_ancestors()
         if id(frame) in self.capture_cmyk_frames:
             self.set_capture_cmyk(*self.capture_cmyk_frames.pop(id(frame)))
 
@@ -661,6 +687,30 @@ class TextState(RecoveringTextState):
         ) and self.options.render_details:
             self.capture_cmyk = cmyk
             self.capture_cmyk_profile = profile
+            self.last_fill_color = None
+            self.last_stroke_color = None
+            self.shared_glyph_paint = None
+        self.refresh_paint_ancestors()
+
+    def set_ancestor_spaces(self, spaces: DefaultSpaces | None) -> None:
+        """Paint from now on inside groups whose CIE-based spaces are spaces (11.7.2)."""
+        if self.options.render_details:
+            self.ancestor_spaces = spaces
+            self.refresh_paint_ancestors()
+
+    def refresh_paint_ancestors(self) -> None:
+        """Find paint_ancestors again, after ancestor_spaces or the blending space changed."""
+        spaces = self.ancestor_spaces
+        if spaces is not None and self.capture_cmyk and "DeviceCMYK" in spaces.spaces:
+            cached = self.ancestors_without_cmyk.get(id(spaces))
+            if cached is None or cached[0] is not spaces:
+                cached = self.ancestors_without_cmyk[id(spaces)] = (
+                    spaces,
+                    without_device(spaces, "DeviceCMYK"),
+                )
+            spaces = cached[1]
+        if spaces is not self.paint_ancestors:
+            self.paint_ancestors = spaces
             self.last_fill_color = None
             self.last_stroke_color = None
             self.shared_glyph_paint = None
@@ -762,6 +812,7 @@ class TextState(RecoveringTextState):
             nested = self.nested_capture_state()
             nested.graphics = graphics
             if space is not None:
+                nested.set_ancestor_spaces(self.mask_ancestor_spaces(mask))
                 nested.set_capture_cmyk(space == "DeviceCMYK", blending_profile(mask.color_space))
             scope = caches.capture_mask_resources.get_key(mask, id(mask), MISSING)
             nested.resources = self.resources if isinstance(scope, MissingObject) else scope
@@ -795,6 +846,29 @@ class TextState(RecoveringTextState):
             caches.capture_active_mask_groups.remove(group_key)
             if nested is not None:
                 nested.release()
+
+    @cites(
+        "ISO 32000-2",
+        "11.6.6",
+        introduced="1.4",
+        rule="a soft mask's group has no parent group or page from which to inherit",
+    )
+    def mask_ancestor_spaces(self, mask: SoftMask) -> DefaultSpaces | None:
+        """The CIE-based spaces device colour takes in a Luminosity mask's group: its own CS
+        if that is CIE-based, and none of the groups or page the mask is used in (Table
+        145), so the ancestor search of 11.7.2 starts afresh there."""
+        space = mask.color_space
+        if space is None or space.kind in DEFAULT_SPACE_KEYS:
+            return None
+        dictionary = mask.group.dictionary
+        group = self.resolver.resolve_dict(dictionary.get("Group"))
+        if not isinstance(group, dict):
+            return None
+        own = self.resolve_resources(dictionary.get("Resources"))
+        entry = self.group_color_entry(
+            group.get("CS"), self.default_spaces_of(self.resources if own is None else own)
+        )
+        return None if entry is None else ancestor_spaces(None, *entry)
 
     @staticmethod
     def mask_is_colorimetric(mask: SoftMask) -> bool:
