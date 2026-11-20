@@ -548,6 +548,7 @@ class PdfPage:
                 )
         return tuple(images)
 
+    @pauses_collector
     def render(self, options: RenderOptions | None = None) -> Any:
         options = options or RenderOptions()
         fields: tuple[RawFormField, ...] = ()
