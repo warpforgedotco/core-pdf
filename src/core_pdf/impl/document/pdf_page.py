@@ -374,35 +374,49 @@ class PdfPage:
     def resolve_transparency_group_space(self) -> ColorSpace | None:
         """The colour space of the page group's CS entry, if it can blend (11.4.7): the
         page's blending space, or with None the output device's."""
+        entry = self.resolve_transparency_group_entry()
+        return None if entry is None else entry[0]
+
+    def resolve_transparency_group_entry(self) -> tuple[ColorSpace, object] | None:
+        """resolve_transparency_group_space, and the space's value as resolved from the
+        PDF."""
         resolver = self.document.resolver
         group = resolver.dict_at(self.page_dict, "Group")
         if group is None or resolver.name_at(group, "S") != "Transparency":
             return None
-        value = group.get("CS")
-        if value is None:
+        raw = group.get("CS")
+        if raw is None:
             return None
+        value: object = resolver.deep_resolve(raw)
         try:
-            space = parse_color_space(resolver.deep_resolve(value))
+            space = parse_color_space(value)
         except ValueError, TypeError:
             return None
-        space = self.default_color_space(space)
-        return space if blending_space_of(space) is not None else None
+        space, value = self.default_color_entry(space, value)
+        return (space, value) if blending_space_of(space) is not None else None
 
     def default_color_space(self, space: ColorSpace) -> ColorSpace:
         """A device space as the page resources' default space for it, if they name a valid
         one (8.6.5.6): the page group's CS is remapped as any group's is (11.6.6)."""
+        return self.default_color_entry(space, None)[0]
+
+    def default_color_entry(self, space: ColorSpace, value: object) -> tuple[ColorSpace, object]:
+        """default_color_space, with the value of space, as resolved from the PDF, and of
+        the space it is remapped to."""
         if space.kind not in DEFAULT_SPACE_KEYS:
-            return space
+            return space, value
         resolver = self.document.resolver
         color_spaces = resolve_resource_dict(self.resources.get("ColorSpace"), resolver)
-        value = default_space_values(color_spaces, resolver.deep_resolve).get(space.kind)
-        if value is None:
-            return space
+        remapped_value = default_space_values(color_spaces, resolver.deep_resolve).get(space.kind)
+        if remapped_value is None:
+            return space, value
         try:
-            remapped = parse_color_space(value)
+            remapped = parse_color_space(remapped_value)
         except ValueError, TypeError:
-            return space
-        return remapped if valid_default_space(space.kind, remapped) else space
+            return space, value
+        if valid_default_space(space.kind, remapped):
+            return remapped, remapped_value
+        return space, value
 
     @property
     def structure(self) -> PageStructure:

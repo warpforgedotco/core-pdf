@@ -24,7 +24,11 @@ from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
-from core_pdf.impl.spec.s_08_graphics.default_spaces import remap_color_space
+from core_pdf.impl.spec.s_08_graphics.default_spaces import (
+    DEFAULT_SPACE_KEYS,
+    clip_to_ranges,
+    remap_color_space,
+)
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 if TYPE_CHECKING:
@@ -59,6 +63,15 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
         and last[3] == black_point
     ):
         return last[4]
+    original_spec, original_color = spec, color
+    if self.paint_ancestors is not None:
+        # A device colour, or a special space's device base, is the nearest CIE-based
+        # ancestor group's where it is painted, wherever it was set (11.7.2).
+        remapped = self.paint_space(spec)
+        if remapped is not spec:
+            if spec.kind in DEFAULT_SPACE_KEYS:
+                color = clip_to_ranges(remapped, color)
+            spec = remapped
     if not color_space_paints(spec):
         return color
     cmyk = self.capture_cmyk
@@ -82,7 +95,7 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
             )
         result = converted if converted is not None else color
         caches.capture_colors.put(key, (spec, result))
-    memo = (spec, color, intent, black_point, result)
+    memo = (original_spec, original_color, intent, black_point, result)
     if stroke:
         self.last_stroke_color = memo
     else:
@@ -168,7 +181,7 @@ def capture_shading_dictionary(self: TextState, dictionary: dict) -> dict:
     """A shading dictionary with the entries the renderer reads resolved, and its ColorSpace
     remapped through the default spaces of the current resource dictionary."""
     shadings = self.caches.capture_shadings
-    defaults = self.current_default_spaces()
+    defaults = self.paint_default_spaces()
     pins = () if defaults is None else (defaults,)
     cached = shadings.get(dictionary, pins=pins)
     if cached is not None:
@@ -196,16 +209,16 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         pattern.text_knockout if isinstance(pattern, model.TilingPattern) else True
     )
     # A shading pattern's colour space remaps through the default spaces where it paints.
-    defaults = self.current_default_spaces() if isinstance(pattern, model.ShadingPattern) else None
+    defaults = self.paint_default_spaces() if isinstance(pattern, model.ShadingPattern) else None
     cache_key = (
         id(pattern),
         rendering,
         initial_alpha_is_shape,
         initial_text_knockout,
         id(defaults),
-        # A tiling cell's colours are captured for the blending space it paints into; a
-        # shading pattern's do not depend on it.
-        (self.capture_cmyk, self.capture_cmyk_profile)
+        # A tiling cell's colours are captured for the blending space it paints into, and
+        # the groups it paints in (11.7.2); a shading pattern's do not depend on them.
+        (self.capture_cmyk, self.capture_cmyk_profile, id(self.ancestor_spaces))
         if isinstance(pattern, model.TilingPattern)
         else None,
     )
@@ -230,6 +243,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         )
     elif isinstance(pattern, model.TilingPattern):
         nested = self.nested_capture_state()
+        nested.set_ancestor_spaces(self.ancestor_spaces)
         nested.set_capture_cmyk(self.capture_cmyk, self.capture_cmyk_profile)
         try:
             result = self.capture_tiling_pattern(
@@ -237,6 +251,5 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             )
         finally:
             nested.release()
-    return self.capture_patterns.put_key(
-        pattern, cache_key, result, () if defaults is None else (defaults,)
-    )
+    pins = tuple(spaces for spaces in (defaults, self.ancestor_spaces) if spaces is not None)
+    return self.capture_patterns.put_key(pattern, cache_key, result, pins)

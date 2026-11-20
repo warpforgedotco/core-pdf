@@ -24,6 +24,7 @@ from core_pdf.impl.spec.s_07_document.annotation_appearance import (
     normal_appearance_stream,
 )
 from core_pdf.impl.spec.s_07_syntax.stream import PdfStream
+from core_pdf.impl.spec.s_08_graphics.default_spaces import ancestor_spaces
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 lazy from core_pdf.impl.spec.s_11_transparency.blending_space import (
     blending_profile,
@@ -200,7 +201,11 @@ def capture_page_program(
         options=options,
     )
     try:
-        page_space = page.resolve_transparency_group_space()
+        page_entry = page.resolve_transparency_group_entry()
+        page_space = None if page_entry is None else page_entry[0]
+        if page_entry is not None:
+            # The page group is every group's ancestor, an annotation's included (11.6.6).
+            state.set_ancestor_spaces(ancestor_spaces(None, *page_entry))
         cmyk = blending_space_of(page_space) == "DeviceCMYK"
         state.set_capture_cmyk(cmyk or cmyk_page, blending_profile(page_space) if cmyk else None)
         page.consume_contents(state)

@@ -27,14 +27,19 @@ Where the clauses leave a choice open, this resolves it so:
 - A transparency group's CS is remapped through the default spaces of the group XObject's
   own resources: the resource dictionary that is current while its objects are painted into
   the group, and the one its CS entry sits beside. The page group's CS uses the page's.
-- The informative Annex P suggests that a group whose device CS has no valid default may
-  inherit an ancestor's CIE-based blending space; that is not done here, and such a group
-  blends in its device space.
+
+Device colour inside a transparency group whose colour space is CIE-based is remapped much
+as a default space remaps it (11.7.2): ancestor_spaces holds, for each device space, the
+CIE-based colour space of the nearest enclosing group with as many components, and
+with_ancestor_spaces lays a resource dictionary's own default spaces over it, so a default
+space still comes first. A group whose CS names a device space with no valid default
+therefore takes the nearest such ancestor's space too, as Annex P draws it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import replace
 
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -203,13 +208,104 @@ def remap_array(
     return remapped
 
 
+@cites(
+    "ISO 32000-2",
+    "11.7.2",
+    introduced="1.4",
+    rule="device colour in a group is the nearest CIE-based ancestor group's space",
+)
+def ancestor_spaces(
+    enclosing: DefaultSpaces | None, space: ColorSpace, value: object
+) -> DefaultSpaces | None:
+    """The CIE-based spaces device colour takes inside a group whose colour space is space
+    (value, as resolved from the PDF), within groups whose spaces are enclosing: space
+    replaces the enclosing one for the device space with as many components, if space is
+    CIE-based (not a device space) and has the components of a device space."""
+    if space.kind in DEFAULT_SPACE_KEYS:
+        return enclosing
+    count = len(space.component_ranges)
+    device = next((name for name, size in DEVICE_SPACE_COMPONENTS.items() if size == count), None)
+    if device is None or not valid_default_space(device, space):
+        return enclosing
+    if enclosing is None:
+        return DefaultSpaces({device: value}, {device: space})
+    return DefaultSpaces({**enclosing.values, device: value}, {**enclosing.spaces, device: space})
+
+
+@cites(
+    "ISO 32000-2",
+    "11.7.2",
+    introduced="1.4",
+    rule="a device space where paint selects it, or as a special space's base, is the ancestor's",
+)
+def remap_parsed_space(space: ColorSpace, spaces: DefaultSpaces, depth: int = 0) -> ColorSpace:
+    """A parsed colour space with each device space it selects replaced by spaces' space
+    for it, as remap_color_space does for a value from the PDF: the space itself, the base
+    of an Indexed space, the underlying space of a Pattern space, the alternate of a
+    Separation or DeviceN space, and the process colour space of an NChannel DeviceN
+    space, which its process components convert through. space itself when nothing
+    changes."""
+    remapped = spaces.spaces.get(space.kind)
+    if remapped is not None:
+        return remapped
+    kind = space.kind
+    if depth >= 8 or kind not in {"Indexed", "Pattern", "Separation", "DeviceN"}:
+        return space
+    if kind in {"Indexed", "Pattern"}:
+        base = space.base
+        changed = base if base is None else remap_parsed_space(base, spaces, depth + 1)
+        return space if changed is base else replace(space, base=changed)
+    alternate = space.alternate
+    changed = alternate if alternate is None else remap_parsed_space(alternate, spaces, depth + 1)
+    attributes = space.devicen_attributes
+    process = attributes.process if attributes is not None else None
+    if attributes is not None and process is not None:
+        process_space = remap_parsed_space(process.color_space, spaces, depth + 1)
+        if process_space is not process.color_space:
+            attributes = replace(attributes, process=replace(process, color_space=process_space))
+    if changed is alternate and attributes is space.devicen_attributes:
+        return space
+    return replace(space, alternate=changed, devicen_attributes=attributes)
+
+
+def with_ancestor_spaces(
+    defaults: DefaultSpaces | None, ancestors: DefaultSpaces | None
+) -> DefaultSpaces | None:
+    """A resource dictionary's default spaces, defaults, with each device space they leave
+    alone taking the ancestors' CIE-based space for it (11.7.2): a default space comes
+    first, as a device colour it remaps is no longer a device colour (8.6.5.6)."""
+    if ancestors is None:
+        return defaults
+    if defaults is None:
+        return ancestors
+    if all(device in defaults.spaces for device in ancestors.spaces):
+        return defaults
+    return DefaultSpaces(
+        {**ancestors.values, **defaults.values}, {**ancestors.spaces, **defaults.spaces}
+    )
+
+
+def without_device(spaces: DefaultSpaces | None, device: str) -> DefaultSpaces | None:
+    """spaces without the one for a device space, or None when none are left."""
+    if spaces is None or device not in spaces.spaces:
+        return spaces
+    rest = {name: space for name, space in spaces.spaces.items() if name != device}
+    if not rest:
+        return None
+    return DefaultSpaces({name: spaces.values[name] for name in rest}, rest)
+
+
 __all__ = (
     "DEFAULT_SPACE_KEYS",
     "DEVICE_INITIAL_COLORS",
     "DEVICE_SPACE_COMPONENTS",
     "DefaultSpaces",
+    "ancestor_spaces",
     "clip_to_ranges",
     "default_space_values",
+    "remap_parsed_space",
     "remap_color_space",
     "valid_default_space",
+    "with_ancestor_spaces",
+    "without_device",
 )
