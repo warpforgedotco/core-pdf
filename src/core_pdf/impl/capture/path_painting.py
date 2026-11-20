@@ -132,6 +132,20 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
         captured_stroke = last[4]
     else:
         captured_stroke = self.capture_color(stroke=True)
+    fill_overprint = (
+        self.capture_overprint(stroke=False)
+        if graphics.fill_overprint and fills and fill_paints
+        else None
+    )
+    stroke_overprint = (
+        self.capture_overprint(stroke=True)
+        if graphics.stroke_overprint and strokes and stroke_paints
+        else None
+    )
+    if fill_overprint is not None:
+        captured_fill = self.overprint_color(captured_fill, fill_overprint, stroke=False)
+    if stroke_overprint is not None:
+        captured_stroke = self.overprint_color(captured_stroke, stroke_overprint, stroke=True)
     self.drawings.append(
         # Built by its slots: CapturedDrawing's __init__ only assigns them, and its
         # __post_init__ keeps the default empty items as they are.
@@ -177,12 +191,8 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
                 DRAWING_SHADING_MATRIX,
                 graphics.miter_limit,
                 stroke_matrix,
-                self.capture_overprint(stroke=False)
-                if graphics.fill_overprint and fills and fill_paints
-                else None,
-                self.capture_overprint(stroke=True)
-                if graphics.stroke_overprint and strokes and stroke_paints
-                else None,
+                fill_overprint,
+                stroke_overprint,
             )
         )
     )

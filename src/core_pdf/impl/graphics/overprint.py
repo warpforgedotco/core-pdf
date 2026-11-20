@@ -17,12 +17,20 @@ specifies and the backdrop's for the rest, which Table 146 sums up:
 - Any other colour space -- DeviceGray, DeviceRGB, CIE-based, ICCBased, Indexed over one
   of those -- marks every process component, so overprinting changes nothing.
 
-A paint's marks are a mask of the process components, CYAN | MAGENTA | YELLOW | BLACK, or
-None when it marks all four. The renderer composites the components a paint does not mark
-by adding the paint's own tint to the backdrop's, clamped at full: a component the paint
-leaves at 0 keeps the backdrop's, and a spot colorant, which a CMYK raster has no plate
-for, adds its alternate colour's tints, as a press's separate plate of it would print over
-the process inks (the composite MuPDF's overprint simulation makes of spot plates).
+Nonzero overprint mode applies to DeviceCMYK alone, not to an ICCBased CMYK space: both
+editions limit it to "the current colour space is DeviceCMYK (or is implicitly converted to
+DeviceCMYK; see 8.6.5.7)", an implicit conversion of a CIE-based space whose conditions
+"cannot be specified in PDF" and which core never makes, and Table 146 gives "any process
+colour space (including other cases of DeviceCMYK)" the source's value in every component.
+
+A paint's marks are a mask of the process components, CYAN | MAGENTA | YELLOW | BLACK, with
+SPOT when its space also names a spot colorant, or None when it marks all four. A process
+colorant named in a Separation or DeviceN space is painted directly: its tint is that
+colorant's value (8.6.6.4), whatever the alternate space, and a component the space does not
+name keeps the backdrop's exactly. A spot colorant, which a CMYK raster has no plate for,
+adds its alternate colour's tints to the backdrop's, clamped at full, as a press's separate
+plate of it would print over the process inks (the composite MuPDF's overprint simulation
+makes of spot plates).
 """
 
 from __future__ import annotations
@@ -38,6 +46,8 @@ MAGENTA = 2
 YELLOW = 4
 BLACK = 8
 ALL_PROCESS = CYAN | MAGENTA | YELLOW | BLACK
+# A space that names a spot colorant, whose alternate's tints add to the unmarked components.
+SPOT = 16
 PROCESS_COLORANTS: dict[str, int] = {
     "Cyan": CYAN,
     "Magenta": MAGENTA,
@@ -50,14 +60,17 @@ CMYK_MARKS = (CYAN, MAGENTA, YELLOW, BLACK)
 
 def colorant_marks(kind: str, names: Sequence[str]) -> int | None:
     """The process components a Separation or DeviceN space naming names marks: each
-    process colorant it names, and none for a spot colorant or None (8.6.6.4, 8.6.6.5); the
-    separation All marks every component."""
+    process colorant it names, and none for a spot colorant or None (8.6.6.4, 8.6.6.5), with
+    SPOT for a spot colorant; the separation All marks every component."""
     if kind == "Separation" and tuple(names) == ("All",):
         return None
     marks = 0
     for name in names:
-        marks |= PROCESS_COLORANTS.get(name, 0)
-    return None if marks == ALL_PROCESS else marks
+        if name in PROCESS_COLORANTS:
+            marks |= PROCESS_COLORANTS[name]
+        elif name != "None":
+            marks |= SPOT
+    return None if marks & ALL_PROCESS == ALL_PROCESS else marks
 
 
 @cites(
@@ -79,7 +92,7 @@ def overprint_marks(
     """The process components a paint in space marks while overprinting, or None for all
     four. current_color: the paint uses the graphics state's current colour, color (a fill,
     stroke, text or image mask), whose zero DeviceCMYK components overprint mode 1 leaves;
-    an image or a shading does not (8.6.7)."""
+    an image or a shading does not (8.6.7), nor an ICCBased CMYK space."""
     while space is not None and space.kind == "Indexed":
         space = space.base
     if space is None:
@@ -96,6 +109,21 @@ def overprint_marks(
     if kind in {"Separation", "DeviceN"}:
         return colorant_marks(kind, space.colorants)
     return None
+
+
+def process_color(space: ColorSpace, color: Sequence[float]) -> tuple[float, ...] | None:
+    """The CMYK a Separation or DeviceN colour naming process colorants alone paints
+    directly: each named colorant's tint, and 0 for the others (8.6.6.4); None for any other
+    space or colour."""
+    if space.kind not in {"Separation", "DeviceN"} or len(color) != len(space.colorants):
+        return None
+    cmyk = [0.0, 0.0, 0.0, 0.0]
+    for name, tint in zip(space.colorants, color, strict=True):
+        if name in PROCESS_COLORANTS:
+            cmyk[CMYK_MARKS.index(PROCESS_COLORANTS[name])] = float(tint)
+        elif name != "None":
+            return None
+    return tuple(cmyk)
 
 
 def raw_overprint_marks(value: object) -> int | None:

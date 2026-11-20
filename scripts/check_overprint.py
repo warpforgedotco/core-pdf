@@ -31,12 +31,13 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from importlib import resources
 from typing import NamedTuple
 
 import numpy
 
 from core_pdf import PdfDocument
-from core_pdf.impl.graphics.device_profiles import cmyk_bytes_to_srgb
+from core_pdf.impl.graphics.device_profiles import INTERNAL_DEFAULT_CMYK_PROFILE, cmyk_bytes_to_srgb
 from core_pdf.impl.render.model import RenderOptions
 
 SIZE = 200
@@ -52,6 +53,8 @@ EXTGSTATES = (
     b"/Fill << /OP false /op true /OPM 1 >> "
     b"/Half << /OP true /op true /OPM 1 /ca 0.5 >> "
     b"/Mul << /OP true /op true /OPM 1 /BM /Multiply >> "
+    b"/Masked << /OP true /op true /OPM 1 /CA 0.5 /ca 0.5 "
+    b"/SMask << /S /Luminosity /G 7 0 R >> >> "
     b">> "
 )
 SPACES = (
@@ -63,6 +66,12 @@ SPACES = (
     b"/All [/Separation /All /DeviceCMYK "
     b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>] "
     b"/CS [/DeviceN [/Cyan /Spot] /DeviceCMYK 5 0 R] "
+    b"/BlackGray [/Separation /Black /DeviceGray "
+    b"<< /FunctionType 2 /Domain [0 1] /C0 [1] /C1 [0] /N 1 >>] "
+    b"/CyanRGB [/Separation /Cyan /DeviceRGB "
+    b"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 1 1] /N 1 >>] "
+    b"/CK [/DeviceN [/Cyan /Black] /DeviceRGB 6 0 R] "
+    b"/ICC [/ICCBased 8 0 R] "
     b">> "
 )
 # The DeviceN space's tint transform: c s to c, s / 2, s, 0.
@@ -70,6 +79,29 @@ DEVICEN_FUNCTION = (
     b"/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
     b"{ dup 0.5 mul exch 0 }",
 )
+# The DeviceN Cyan and Black space's tint transform to RGB: c k to (1 - c)(1 - k), 1 - k,
+# 1 - k.
+CYAN_BLACK_FUNCTION = (
+    b"/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1]",
+    b"{ 1 exch sub exch 1 exch sub 1 index mul exch dup }",
+)
+# The soft mask's group: a fill of 0.6 gray over the page, which masks to 0.6 everywhere.
+SOFT_MASK_GROUP = (
+    b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+    b"/Group << /S /Transparency /CS /DeviceGray >>",
+    b"0.6 g 0 0 200 200 re f",
+)
+
+
+def built_in_cmyk_profile() -> bytes:
+    """The built-in DeviceCMYK profile, for an ICCBased CMYK space."""
+    return (
+        resources.files("core_pdf.impl.data.icc")
+        .joinpath(INTERNAL_DEFAULT_CMYK_PROFILE)
+        .read_bytes()
+    )
+
+
 # The regions every page paints: the backdrop at x 20 to 100, the paint at x 60 to 180,
 # overlapping from 60 to 100, and the pixel sampled in each, at y 100.
 BACKDROP_ONLY = (40, 100)
@@ -86,10 +118,11 @@ def stream(dictionary: bytes, data: bytes) -> bytes:
 
 
 def document(page: bytes, content: bytes, extra: Sequence[bytes] = ()) -> bytes:
-    """A one-page PDF: the page dictionary's entries, its content, and objects 6 onwards;
-    object 5 is the DeviceN space's tint transform, and the page's resources name the
-    graphics states, colour spaces, a font F and the XObjects of extra as X6, X7..."""
-    xobjects = b"".join(b"/X%d %d 0 R " % (number, number) for number in range(6, 6 + len(extra)))
+    """A one-page PDF: the page dictionary's entries, its content, and objects 9 onwards;
+    objects 5 and 6 are the DeviceN spaces' tint transforms, 7 the soft mask's group and 8
+    the ICC profile, and the page's resources name the graphics states, colour spaces, a
+    font F and the XObjects of extra as X9, X10..."""
+    xobjects = b"".join(b"/X%d %d 0 R " % (number, number) for number in range(9, 9 + len(extra)))
     resources = (
         b"/Resources << "
         + EXTGSTATES
@@ -108,6 +141,9 @@ def document(page: bytes, content: bytes, extra: Sequence[bytes] = ()) -> bytes:
         + b"/Contents 4 0 R >>",
         stream(b"", content),
         stream(*DEVICEN_FUNCTION),
+        stream(*CYAN_BLACK_FUNCTION),
+        stream(*SOFT_MASK_GROUP),
+        stream(b"/N 4 /Alternate /DeviceCMYK", built_in_cmyk_profile()),
         *extra,
     ]
     out = bytearray(b"%PDF-1.7\n")
@@ -243,6 +279,21 @@ def fill_cases() -> list[Case]:
             regions(soft_backdrop, devicen, (0.4, 0.8, 1.0, 0.2)),
         ),
         Case(
+            "Separation Black over DeviceGray paints its tint as black, and keeps CMY",
+            two_fills(b"/On0 gs /BlackGray cs 0.5 sc", backdrop=b"0.3 0 0 0 k"),
+            regions((0.3, 0, 0, 0), (0, 0, 0, 0.5), (0.3, 0.0, 0.0, 0.5)),
+        ),
+        Case(
+            "Separation Cyan over DeviceRGB paints its tint as cyan, and keeps MYK",
+            two_fills(b"/On0 gs /CyanRGB cs 0.6 sc", backdrop=b"0 1 0 0 k"),
+            regions(MAGENTA, (0.6, 0, 0, 0), (0.6, 1.0, 0.0, 0.0)),
+        ),
+        Case(
+            "DeviceN Cyan and Black over DeviceRGB paints both tints, and keeps MY",
+            two_fills(b"/On0 gs /CK cs 0.4 0.5 sc", backdrop=b"0 1 0 0 k"),
+            regions(MAGENTA, (0.4, 0, 0, 0.5), (0.4, 1.0, 0.0, 0.5)),
+        ),
+        Case(
             "Multiply: the implicit group's result multiplies with the backdrop",
             two_fills(b"/Mul gs 0 1 0 0 k", backdrop=b"0.5 0 0 0 k"),
             # Cyan, unmarked, blends to 0.5 and multiplies with 0.5: additive 0.25. Magenta
@@ -316,7 +367,7 @@ def group_cases() -> list[Case]:
             Case(
                 f"an isolated {'knockout' if knockout else 'non-knockout'} CMYK group on an "
                 "RGB page",
-                document(b"", b"/X6 Do", [form]),
+                document(b"", b"/X9 Do", [form]),
                 # In a knockout group magenta composites with the group's empty backdrop.
                 regions(CYAN, MAGENTA, overlap),
             )
@@ -325,7 +376,7 @@ def group_cases() -> list[Case]:
 
 
 def image_cases() -> list[Case]:
-    place = b"q 120 0 0 80 60 60 cm /X6 Do Q"
+    place = b"q 120 0 0 80 60 60 cm /X9 Do Q"
     mask = stream(
         b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1",
         b"\x00",
@@ -398,12 +449,32 @@ def text_failures() -> list[str]:
     return []
 
 
+# A cyan backdrop, then B in a state %s with a fill and stroke whose black is 0: under
+# OPM 1 they overprint black alone, which is 0 in the backdrop too, so nothing changes, and
+# in the CMY pass they mark every component.
+FILL_STROKE = (
+    b"1 0 0 0 k " + BACKDROP_RECT + b"%s gs 0.2 0.3 0.4 0 k 0.5 0.4 0.3 0 K 10 w 60 60 120 80 re B"
+)
+
+
 def same_cases() -> list[Same]:
     return [
         Same(
             "RGB colour with overprint on changes nothing",
             two_fills(b"/On1 gs 1 0 0 rg"),
             two_fills(b"/Off gs 1 0 0 rg"),
+        ),
+        Same(
+            "OPM 1 leaves no ICCBased CMYK component: it is no DeviceCMYK",
+            two_fills(b"/On1 gs /ICC cs 0 1 0 0 sc"),
+            two_fills(b"/Off gs /ICC cs 0 1 0 0 sc"),
+        ),
+        Same(
+            "B with half alpha and a soft mask, overprinting nothing visible, paints as without",
+            document(CMYK_GROUP, FILL_STROKE % b"/Masked"),
+            document(CMYK_GROUP, FILL_STROKE % b"/Masked"),
+            "groups",
+            "ignore",
         ),
         Same(
             "gray with overprint on changes nothing",

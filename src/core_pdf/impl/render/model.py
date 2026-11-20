@@ -830,9 +830,9 @@ class RasterGroup(GeneratedRecord, eq=False):
     paint_window: PixelWindow
     painted_boxes: list[tuple[int, int, int, int]] | None
     # For a layer holding one overprinting paint (raster_overprint), which of the pass's
-    # three components the paint marks; it composites the others by the special blend mode
-    # of ISO 32000-2 11.7.4.3.
-    overprint: tuple[bool, bool, bool] | None
+    # three components the paint marks, and whether its spot colorants add to the others;
+    # it composites them by the special blend mode of ISO 32000-2 11.7.4.3.
+    overprint: tuple[bool, bool, bool, bool] | None
 
     __match_args__ = ("pixels", "composite_alpha", "blend_mode")
 
@@ -851,7 +851,7 @@ class RasterGroup(GeneratedRecord, eq=False):
         mask_alpha: SoftMaskPlane | None = None,
         paint_window: PixelWindow | None = None,
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
-        overprint: tuple[bool, bool, bool] | None = None,
+        overprint: tuple[bool, bool, bool, bool] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
         frozen_setattr(self, "view", view)

@@ -228,12 +228,12 @@ def page_space_group(color_space: ColorSpace | None) -> GroupBeginItem | None:
 
 
 def simulates_overprint(color_space: ColorSpace | None) -> bool:
-    """Whether overprint simulation composites a page whose group has color_space in
-    DeviceCMYK: a page with no group colour space, which composites in the output device's,
-    or with a CMYK one. In an RGB or gray page group overprinting changes nothing (ISO
-    32000-2 11.7.4.5, Table 146), so such a page renders as it is."""
-    space = blending_space_of(color_space)
-    return space is None or space == "DeviceCMYK"
+    """Whether overprint simulation changes the space a page whose group has color_space
+    composites in to DeviceCMYK: a page with no group colour space, which composites in the
+    output device's. A CMYK page group composites in CMYK already, and in an RGB or gray one
+    overprinting changes nothing (ISO 32000-2 11.7.4.5, Table 146), so such a page renders
+    as it is."""
+    return blending_space_of(color_space) is None
 
 
 def compose_page(
@@ -258,7 +258,8 @@ def compose_page(
     user_unit = float(getattr(page, "user_unit", 1.0))
     display_list = DisplayList(width=width, height=height)
     group_space = page.resolve_transparency_group_space()
-    if simulate_overprint and blending_space_of(group_space) is None:
+    cmyk_page = simulate_overprint and simulates_overprint(group_space)
+    if cmyk_page:
         group_space = DEVICE_CMYK
 
     if page_program is None:
@@ -267,6 +268,8 @@ def compose_page(
             capture_inputs["fields"] = fields
         if annotations is not None:
             capture_inputs["annotations"] = annotations
+        if cmyk_page:
+            capture_inputs["cmyk_page"] = True
         page_program = page.get_page_program(**capture_inputs)
     if page_program is None:
         raise ValueError("compose_page requires the canonical page program")

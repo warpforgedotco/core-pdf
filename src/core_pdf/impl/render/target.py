@@ -246,3 +246,5 @@ class RasterTarget:
     overprint_channels = overprint.overprint_channels
     push_overprint_layer = overprint.push_overprint_layer
     paint_overprinting = overprint.paint_overprinting
+    fill_stroke_channels = overprint.fill_stroke_channels
+    paint_fill_stroke_apart = overprint.paint_fill_stroke_apart

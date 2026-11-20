@@ -67,6 +67,7 @@ def paint_items(
 
 def paint_item(self: RasterTarget, item: DisplayItem) -> None:
     overprint = None
+    apart: tuple[Any, Any] | None = None
     # In a DeviceCMYK group, a paint may overprint components (raster_overprint).
     if (
         self.space_mode is not SpaceMode.RGB
@@ -74,18 +75,18 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
         and self.overprint_enabled
         and isinstance(item, PaintItemBase)
     ):
-        if (
-            type(item) is PathPaintItem
-            and item.paint_kind is PathPaintKind.FILL_STROKE
-            and (item.fill_overprint is not None or item.stroke_overprint is not None)
-        ):
-            # A fill and stroke that overprint paint one after the other.
-            self.paint_item(replace(item, paint_kind=PathPaintKind.FILL))
-            self.paint_item(replace(item, paint_kind=PathPaintKind.STROKE))
-            return
-        overprint = self.overprint_channels(item)
+        if type(item) is PathPaintItem and item.paint_kind is PathPaintKind.FILL_STROKE:
+            # A fill and stroke whose fill or stroke overprints in this pass paints them one
+            # after the other, inside its elementary group if it has one; where shape is
+            # tracked, paint_typed_path's knockout group paints them, and each overprints.
+            channels = self.fill_stroke_channels(item)
+            if channels != (None, None) and self.group_source_shape is None:
+                apart = channels
+        else:
+            overprint = self.overprint_channels(item)
     if (
         overprint is None
+        and apart is None
         and type(item) is PathPaintItem
         and item.edge_array is not None
         and self.paint_glyph_fill(item)
@@ -138,7 +139,10 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                     alpha_is_shape=self.paint_alpha_is_shape,
                 )
             try:
-                if overprint is None:
+                if apart is not None:
+                    assert type(item) is PathPaintItem
+                    self.paint_fill_stroke_apart(item, *apart)
+                elif overprint is None:
                     self.paint_display_item(item)
                 else:
                     self.paint_overprinting(item, overprint)

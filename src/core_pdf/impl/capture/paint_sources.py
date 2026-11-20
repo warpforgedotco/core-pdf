@@ -14,7 +14,12 @@ from core_pdf.impl.base.types import MISSING, MissingObject
 from core_pdf.impl.capture.records import PatternPaint, ShadingPattern
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
-from core_pdf.impl.graphics.overprint import overprint_marks, raw_overprint_marks
+from core_pdf.impl.graphics.overprint import (
+    SPOT,
+    overprint_marks,
+    process_color,
+    raw_overprint_marks,
+)
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
@@ -101,6 +106,24 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
     if marks is not None:
         self.uses_overprint = True
     return marks
+
+
+def overprint_color(
+    self: TextState, captured: tuple[float, ...] | None, marks: int | None, *, stroke: bool
+) -> tuple[float, ...] | None:
+    """The colour an overprinting paint with marks takes: in a CMYK blending space, a
+    Separation or DeviceN colour naming process colorants alone paints their tints directly
+    (graphics.overprint.process_color), not its alternate's conversion; any other paint keeps
+    captured."""
+    if marks is None or marks & SPOT or not self.capture_cmyk:
+        return captured
+    graphics = self.graphics
+    space = graphics.stroke_space if stroke else graphics.fill_space
+    color = graphics.stroke_color if stroke else graphics.fill_color
+    if space is None or color is None:
+        return captured
+    direct = process_color(space, color)
+    return captured if direct is None else direct
 
 
 def capture_space_overprint(self: TextState, space: object) -> int | None:
