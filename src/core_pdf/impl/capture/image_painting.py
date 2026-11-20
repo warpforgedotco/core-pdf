@@ -58,7 +58,7 @@ def remapped_image_dictionary(dictionary: PdfDict, defaults: DefaultSpaces) -> P
 def captured_image_source(self: TextState, xobj: PdfStream) -> tuple[ImageSource, float | None]:
     rendering = self.graphics.color_rendering
     cache = self.caches.capture_image_sources
-    defaults = self.current_default_spaces()
+    defaults = self.paint_default_spaces()
     pins: tuple[object, ...] = ()
     if defaults is None:
         key: tuple[object, ...] = (id(xobj), rendering)
@@ -151,7 +151,7 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
             )
             if color_resource is not None:
                 dictionary[PdfName.of("ColorSpace")] = color_resource
-        defaults = self.current_default_spaces()
+        defaults = self.paint_default_spaces()
         if defaults is not None:
             dictionary = remapped_image_dictionary(dictionary, defaults) or dictionary
         source = image_source_from_stream(

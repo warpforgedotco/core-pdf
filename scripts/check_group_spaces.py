@@ -99,7 +99,7 @@ def profile(device_class: bytes, space: bytes, tags: list[tuple[bytes, bytes]]) 
     """An ICC version 2 profile with an XYZ PCS, a D50 white and the given tags."""
     text = b"check_group_spaces\0"
     tags = [
-        (b"desc", b"desc\0\0\0\0" + struct.pack(">I", len(text)) + text + b"\0" * 79),
+        (b"desc", b"desc\0\0\0\0" + struct.pack(">I", len(text)) + text + b"\0" * 78),
         (b"wtpt", xyz_tag(D50)),
         (b"cprt", b"text\0\0\0\0none\0"),
         *tags,
@@ -319,6 +319,7 @@ def group_case(
     body: bytes | None = None,
     page_content: bytes = b"/G Do",
     page_group: bytes = b"",
+    page_resources: bytes = b"",
     extra: Sequence[bytes] = (),
     tolerance: float = 3,
 ) -> Case:
@@ -327,7 +328,8 @@ def group_case(
     objects, extra, are 10 onwards; /G is 9."""
     content = two_fills(paint) if body is None else body
     pdf = document(
-        b"%s/Resources << /XObject << /G 9 0 R >> >> /Contents 4 0 R" % page_group,
+        b"%s/Resources << /XObject << /G 9 0 R >> %s >> /Contents 4 0 R"
+        % (page_group, page_resources),
         page_content,
         [*PROFILES, form(group, resources, content), *extra],
     )
@@ -511,6 +513,117 @@ def device_color_cases() -> list[Case]:
     ]
 
 
+def stroke_mask_case(
+    name: str,
+    mask_group: bytes,
+    page_content: bytes,
+    expected: float,
+    *,
+    page_group: bytes = b"",
+    page_resources: bytes = b"",
+    extra: Sequence[bytes] = (),
+) -> Case:
+    """A black page masked by a Luminosity mask /M whose group (9, its attributes
+    mask_group) strokes FIRST in the stroking colour it inherits, whose luminosity is
+    expected; SECOND takes BC, black. page_content sets the mask and paints; further
+    objects, extra, are 10 onwards."""
+    page = (
+        b"%s/Resources << /ExtGState << /M << /SMask << /S /Luminosity /G 9 0 R >> >> >> %s "
+        b">> /Contents 4 0 R" % (page_group, page_resources)
+    )
+    group = stream(
+        b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] /Group << /S /Transparency %s >>"
+        % mask_group,
+        b"q 70 w 0 J 55 20 m 55 170 l S Q",
+    )
+    return Case(
+        name,
+        document(page, page_content, [*PROFILES, group, *extra]),
+        (Sample(FIRST, masked(expected), "inherited colour"), Sample(SECOND, masked(0.0), "BC")),
+        3,
+    )
+
+
+def paint_time_cases() -> list[Case]:
+    """11.7.2 takes a device colour as the nearest CIE-based ancestor's where it is painted,
+    not where it is set: a colour set in one group and painted in another, or inherited
+    into a soft mask's group, which has no ancestors (Table 145)."""
+    lookup = bytes(round(255 * value) for value in (*FIRST_RGB, *SECOND_RGB))
+    indexed = b"/ColorSpace << /X [/Indexed /DeviceRGB 1 <%s>] >>" % lookup.hex().encode()
+    calrgb_expected = (
+        srgb([value**1.8 for value in FIRST_RGB]),
+        srgb([value**1.8 for value in SECOND_RGB]),
+    )
+    linear_page = b"/Group << /S /Transparency /CS %s >> " % LINEAR_RGB
+    return [
+        group_case(
+            "DeviceRGB set in an ICCBased RGB page group, painted in a CalRGB group",
+            b"/I true /CS %s" % calrgb(1.8),
+            (b"", b""),
+            calrgb_expected,
+            body=rectangle(FIRST) + b" %s rg " % numbers(SECOND_RGB) + rectangle(SECOND),
+            page_content=b"%s rg /G Do" % numbers(FIRST_RGB),
+            page_group=linear_page,
+        ),
+        group_case(
+            "DeviceRGB selected by cs in an ICCBased RGB page group, sc in a CalRGB group",
+            b"/I true /CS %s" % calrgb(1.8),
+            (b"%s sc" % numbers(FIRST_RGB), b"%s sc" % numbers(SECOND_RGB)),
+            calrgb_expected,
+            page_content=b"/DeviceRGB cs /G Do",
+            page_group=linear_page,
+        ),
+        group_case(
+            "an Indexed space over DeviceRGB set outside an ICCBased RGB group, painted in it",
+            b"/I true /CS %s" % LINEAR_RGB,
+            (b"", b""),
+            (srgb(FIRST_RGB), srgb(SECOND_RGB)),
+            resources=indexed,
+            body=rectangle(FIRST) + b" /X cs 1 sc " + rectangle(SECOND),
+            page_content=b"/X cs 0 sc /G Do",
+            page_resources=indexed,
+        ),
+        group_case(
+            "an uncoloured pattern over DeviceRGB set outside an ICCBased RGB group",
+            b"/I true /CS %s" % LINEAR_RGB,
+            (b"", b""),
+            (srgb(FIRST_RGB), srgb(SECOND_RGB)),
+            body=rectangle(FIRST) + b" %s rg " % numbers(SECOND_RGB) + rectangle(SECOND),
+            page_content=b"/UC cs %s /U scn /G Do" % numbers(FIRST_RGB),
+            page_resources=b"/ColorSpace << /UC [/Pattern /DeviceRGB] >> /Pattern << /U 10 0 R >>",
+            extra=(
+                stream(
+                    b"/PatternType 1 /PaintType 2 /TilingType 1 /BBox [0 0 10 10] /XStep 10 "
+                    b"/YStep 10 /Resources << >>",
+                    b"0 0 10 10 re f",
+                ),
+            ),
+        ),
+        stroke_mask_case(
+            "a colour set in an ICCBased RGB page group, inherited into a DeviceRGB mask",
+            b"/CS /DeviceRGB",
+            b"%s RG /M gs 0 g 0 0 200 200 re f" % numbers(FIRST_RGB),
+            device_luminosity(FIRST_RGB),
+            page_group=linear_page,
+        ),
+        stroke_mask_case(
+            "a mask whose CS the page's DefaultRGB remaps, used in a form without one",
+            b"/CS /DeviceRGB",
+            b"/M gs /F Do",
+            luminance(*FIRST_RGB),
+            page_resources=b"/ColorSpace << /DefaultRGB %s >> /XObject << /F 10 0 R >>"
+            % LINEAR_RGB,
+            extra=(
+                stream(
+                    b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+                    b"/Resources << /ProcSet [/PDF] >>",
+                    b"%s RG 0 g 0 0 200 200 re f" % numbers(FIRST_RGB),
+                ),
+            ),
+        ),
+    ]
+
+
 def ancestor_cases() -> list[Case]:
     """11.7.2 and Annex P: a group whose CS is a device space, with no default space for
     it, blends in the CIE-based space of the nearest ancestor group with as many
@@ -635,7 +748,7 @@ def sample_failures(case: Case, pixels: numpy.ndarray) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    cases = [*device_color_cases(), *ancestor_cases()]
+    cases = [*device_color_cases(), *ancestor_cases(), *paint_time_cases()]
     failures = [failure for case in cases for failure in sample_failures(case, render(case.pdf))]
     for failure in failures:
         print(failure)

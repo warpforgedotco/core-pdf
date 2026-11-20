@@ -136,13 +136,16 @@ class ContentInterpreter:
         self.color_space_cache: dict[int, tuple[object, ColorSpace]] = {}
         self.remapped_space_cache: dict[int, tuple[object, DefaultSpaces, ColorSpace]] = {}
         self.default_spaces_cache: dict[int, tuple[PdfDict, DefaultSpaces | None]] = {}
-        self.default_spaces_memo: tuple[object, object, DefaultSpaces | None] = (None, None, None)
+        self.default_spaces_memo: tuple[object, DefaultSpaces | None] = (None, None)
         # The CIE-based colour spaces of the nearest enclosing transparency groups, by the
         # device space with as many components (11.7.2), which a capture that renders
-        # keeps; None outside any such group. paint_ancestors: those device colour is
-        # painted in, which current_default_spaces lays the default spaces over.
+        # keeps; None outside any such group. Each group's colour space, by its Group entry
+        # and the default spaces its CS was resolved through, so that every invocation of
+        # a group finds the same object.
         self.ancestor_spaces: DefaultSpaces | None = None
-        self.paint_ancestors: DefaultSpaces | None = None
+        self.group_entries: dict[
+            tuple[int, int], tuple[object, object, tuple[ColorSpace, object] | None]
+        ] = {}
         self.ancestor_defaults: dict[
             tuple[int, int], tuple[object, object, DefaultSpaces | None]
         ] = {}
@@ -411,9 +414,15 @@ class ContentInterpreter:
                 group_cs = group_dict.get("CS") if group_isolated else None
         resources = self.resolve_form_resources(xobj_dict.get("Resources"))
         if group_cs is not None:
-            entry = self.group_color_entry(
-                group_cs, self.with_ancestor_spaces(self.default_spaces_of(resources))
-            )
+            defaults = self.with_ancestor_spaces(self.default_spaces_of(resources))
+            # Keyed by the Group entry itself: resolving it copies what it holds.
+            key = (id(group), id(defaults))
+            cached = self.group_entries.get(key)
+            if cached is not None and cached[0] is group and cached[1] is defaults:
+                entry = cached[2]
+            else:
+                entry = self.group_color_entry(group_cs, defaults)
+                self.group_entries[key] = (group, defaults, entry)
             if entry is not None:
                 group_color_space, group_color_value = entry
         xobj_matrix = xobj_dict.get("Matrix")
@@ -510,17 +519,13 @@ class ContentInterpreter:
         return merged
 
     def current_default_spaces(self) -> DefaultSpaces | None:
-        """The default colour spaces of the current resource dictionary (8.6.5.6), laid
-        over the CIE-based spaces of the groups paint is in, paint_ancestors (11.7.2)."""
+        """The default colour spaces of the current resource dictionary (8.6.5.6)."""
         resources = self.resources
-        ancestors = self.paint_ancestors
         memo = self.default_spaces_memo
-        if memo[0] is resources and memo[1] is ancestors:
-            return memo[2]
+        if memo[0] is resources:
+            return memo[1]
         found = self.default_spaces_of(resources)
-        if ancestors is not None:
-            found = self.with_ancestor_spaces(found, ancestors)
-        self.default_spaces_memo = (resources, ancestors, found)
+        self.default_spaces_memo = (resources, found)
         return found
 
     @cites(

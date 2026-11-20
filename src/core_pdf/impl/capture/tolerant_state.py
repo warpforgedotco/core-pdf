@@ -23,7 +23,7 @@ from core_pdf.impl.spec.s_07_syntax.lexer import PdfLexer
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict, PdfValueResolver
 from core_pdf.impl.spec.s_08_graphics.color_rendering import BlackPointCompensation
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace
-from core_pdf.impl.spec.s_08_graphics.default_spaces import DEFAULT_SPACE_KEYS
+from core_pdf.impl.spec.s_08_graphics.default_spaces import DEFAULT_SPACE_KEYS, DefaultSpaces
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX, Matrix
 from core_pdf.impl.spec.s_09_fonts.service import FontProvider, FontService
 from core_pdf.impl.spec.standards import SemanticContext
@@ -96,6 +96,8 @@ class CaptureCaches:
         "capture_font_companions",
         "capture_colors",
         "capture_shadings",
+        "ancestor_spaces",
+        "ancestor_remaps",
     )
 
     parsed_soft_masks: IdentityCache[SoftMask | None]
@@ -110,6 +112,12 @@ class CaptureCaches:
         tuple[object, tuple[float, ...]],
     ]
     capture_shadings: IdentityCache[dict]
+    # The ancestor spaces (default_spaces.ancestor_spaces) inside a group, by the ids of
+    # those around it and of its colour space; and each colour space as those of a set of
+    # ancestor spaces remap it, by the ids of both: one object for each, held with the keys
+    # it is found by, so that what is cached by its id stays cached.
+    ancestor_spaces: dict[tuple[int, int], tuple[object, object, DefaultSpaces | None]]
+    ancestor_remaps: dict[tuple[int, int], tuple[object, object, ColorSpace]]
 
     def __init__(self) -> None:
         self.parsed_soft_masks = IdentityCache(SOFT_MASK_CACHE_LIMIT)
@@ -121,6 +129,8 @@ class CaptureCaches:
         self.capture_font_companions = IdentityCache()
         self.capture_colors = BoundedDict(COLOR_CACHE_LIMIT)
         self.capture_shadings = IdentityCache()
+        self.ancestor_spaces = {}
+        self.ancestor_remaps = {}
 
 
 class RecoveringTextState(ContentInterpreter):

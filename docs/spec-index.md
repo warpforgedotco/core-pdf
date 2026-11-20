@@ -90,6 +90,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.4 | a CMYK profile's luminosity is its Y, rescaled from its black to its white | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.graphics.device_profiles.cmyk_bytes_luminance` |
 | PDF 1.4 | a colour not in its group's colour space converts to it | ISO 32000-2 11.7.2 (Colour spaces for transparency groups) | `core_pdf.impl.graphics.device_profiles.convert_cmyk_words` |
 | PDF 1.4 | a device space is the nearest CIE-based ancestor group's unless a default remaps it | ISO 32000-2 11.7.2 (Colour spaces for transparency groups) | `core_pdf.impl.spec.s_07_content.interpreter.with_ancestor_spaces` |
+| PDF 1.4 | a device space where paint selects it, or as a special space's base, is the ancestor's | ISO 32000-2 11.7.2 (Colour spaces for transparency groups) | `core_pdf.impl.spec.s_08_graphics.default_spaces.remap_parsed_space` |
 | PDF 1.4 | a group's CS naming a device space is remapped through the default spaces | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_07_content.interpreter.group_color_space` |
 | PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a soft mask's group has no parent group or page from which to inherit | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.capture.recording.mask_ancestor_spaces` |
@@ -352,6 +353,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.graphics.device_profiles.convert_cmyk_words`: a colour not in its group's colour space converts to it
 - 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.spec.s_07_content.interpreter.with_ancestor_spaces`: a device space is the nearest CIE-based ancestor group's unless a default remaps it
 - 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.spec.s_08_graphics.default_spaces.ancestor_spaces`: device colour in a group is the nearest CIE-based ancestor group's space
+- 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.spec.s_08_graphics.default_spaces.remap_parsed_space`: a device space where paint selects it, or as a special space's base, is the ancestor's
 - 11.7.4.3 (Compatibility with opaque overprinting) `core_pdf.impl.render.raster_overprint.composite_overprint_layer`: an overprinting paint blends by a mode taking the source for the components it marks and the backdrop for the rest, then by the current blend mode
 - 11.7.4.5 (Summary of overprinting behavior) `core_pdf.impl.graphics.overprint.overprint_marks`: under overprint mode 1 a zero DeviceCMYK component of the current colour keeps the backdrop's
 - 12.5.6.2 (Markup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations.reply_relation`: IRT names the annotation this one replies to (RT R) or is grouped with (RT Group)

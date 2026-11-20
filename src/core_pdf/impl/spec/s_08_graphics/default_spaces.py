@@ -39,6 +39,7 @@ therefore takes the nearest such ancestor's space too, as Annex P draws it.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import replace
 
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.types import PdfDict
@@ -231,6 +232,37 @@ def ancestor_spaces(
     return DefaultSpaces({**enclosing.values, device: value}, {**enclosing.spaces, device: space})
 
 
+@cites(
+    "ISO 32000-2",
+    "11.7.2",
+    introduced="1.4",
+    rule="a device space where paint selects it, or as a special space's base, is the ancestor's",
+)
+def remap_parsed_space(space: ColorSpace, spaces: DefaultSpaces, depth: int = 0) -> ColorSpace:
+    """A parsed colour space with each device space it selects replaced by spaces' space
+    for it, as remap_color_space does for a value from the PDF: the space itself, the base
+    of an Indexed space, the underlying space of a Pattern space and the alternate of a
+    Separation or DeviceN space. space itself when nothing changes."""
+    remapped = spaces.spaces.get(space.kind)
+    if remapped is not None:
+        return remapped
+    kind = space.kind
+    if kind in {"Indexed", "Pattern"}:
+        inner = space.base
+    elif kind in {"Separation", "DeviceN"}:
+        inner = space.alternate
+    else:
+        return space
+    if inner is None or depth >= 8:
+        return space
+    changed = remap_parsed_space(inner, spaces, depth + 1)
+    if changed is inner:
+        return space
+    if kind in {"Indexed", "Pattern"}:
+        return replace(space, base=changed)
+    return replace(space, alternate=changed)
+
+
 def with_ancestor_spaces(
     defaults: DefaultSpaces | None, ancestors: DefaultSpaces | None
 ) -> DefaultSpaces | None:
@@ -266,6 +298,7 @@ __all__ = (
     "ancestor_spaces",
     "clip_to_ranges",
     "default_space_values",
+    "remap_parsed_space",
     "remap_color_space",
     "valid_default_space",
     "with_ancestor_spaces",

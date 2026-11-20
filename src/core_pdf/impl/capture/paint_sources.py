@@ -24,7 +24,11 @@ from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_content import model
 from core_pdf.impl.spec.s_08_graphics.color import color_space_paints
 from core_pdf.impl.spec.s_08_graphics.color_rendering import override_color_rendering
-from core_pdf.impl.spec.s_08_graphics.default_spaces import remap_color_space
+from core_pdf.impl.spec.s_08_graphics.default_spaces import (
+    DEFAULT_SPACE_KEYS,
+    clip_to_ranges,
+    remap_color_space,
+)
 from core_pdf.impl.spec.s_08_graphics.matrix import IDENTITY_MATRIX
 
 if TYPE_CHECKING:
@@ -59,11 +63,15 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
         and last[3] == black_point
     ):
         return last[4]
-    ancestors = self.paint_ancestors
-    if ancestors is not None and spec.kind in ancestors.spaces:
-        # A device colour set before the group it paints in is that group's CIE-based
-        # colour all the same (11.7.2); one set inside it was remapped as it was set.
-        spec, color = ancestors.remap(spec, color)
+    original_spec, original_color = spec, color
+    if self.paint_ancestors is not None:
+        # A device colour, or a special space's device base, is the nearest CIE-based
+        # ancestor group's where it is painted, wherever it was set (11.7.2).
+        remapped = self.paint_space(spec)
+        if remapped is not spec:
+            if spec.kind in DEFAULT_SPACE_KEYS:
+                color = clip_to_ranges(remapped, color)
+            spec = remapped
     if not color_space_paints(spec):
         return color
     cmyk = self.capture_cmyk
@@ -87,7 +95,7 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
             )
         result = converted if converted is not None else color
         caches.capture_colors.put(key, (spec, result))
-    memo = (spec, color, intent, black_point, result)
+    memo = (original_spec, original_color, intent, black_point, result)
     if stroke:
         self.last_stroke_color = memo
     else:
@@ -173,7 +181,7 @@ def capture_shading_dictionary(self: TextState, dictionary: dict) -> dict:
     """A shading dictionary with the entries the renderer reads resolved, and its ColorSpace
     remapped through the default spaces of the current resource dictionary."""
     shadings = self.caches.capture_shadings
-    defaults = self.current_default_spaces()
+    defaults = self.paint_default_spaces()
     pins = () if defaults is None else (defaults,)
     cached = shadings.get(dictionary, pins=pins)
     if cached is not None:
@@ -201,7 +209,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         pattern.text_knockout if isinstance(pattern, model.TilingPattern) else True
     )
     # A shading pattern's colour space remaps through the default spaces where it paints.
-    defaults = self.current_default_spaces() if isinstance(pattern, model.ShadingPattern) else None
+    defaults = self.paint_default_spaces() if isinstance(pattern, model.ShadingPattern) else None
     cache_key = (
         id(pattern),
         rendering,
