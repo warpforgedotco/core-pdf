@@ -12,7 +12,6 @@ from core_pdf.impl.render import raster_images as images
 from core_pdf.impl.render import raster_overprint as overprint
 from core_pdf.impl.render import raster_shading as shading
 from core_pdf.impl.render import raster_spaces as spaces
-from core_pdf.impl.render import raster_spots as spots
 from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
@@ -104,7 +103,7 @@ class RasterTarget:
     space_mode: SpaceMode
     space_profile: bytes | None
     space_colors: dict[tuple[int, int, int], tuple[int, int, int, int]]
-    space_images: dict[tuple[int, int], tuple[object, UInt8Array]]
+    space_images: dict[tuple[int, int], tuple[object, UInt8Array | None]]
     # Whether paint in a DeviceCMYK group overprints (raster_overprint), and the layers
     # overprinting paint is painted into, by group depth.
     overprint_enabled: bool
@@ -246,6 +245,7 @@ class RasterTarget:
     item_fill_rgba = spaces.item_fill_rgba
     shading_space_color = spaces.shading_space_color
     space_samples = spaces.space_samples
+    process_samples = spaces.process_samples
     switches_space = spaces.switches_space
     paint_space_group = spaces.paint_space_group
 
@@ -255,10 +255,3 @@ class RasterTarget:
     paint_overprinting = overprint.paint_overprinting
     fill_stroke_channels = overprint.fill_stroke_channels
     paint_fill_stroke_apart = overprint.paint_fill_stroke_apart
-    plate_channels = overprint.plate_channels
-    has_spot_plates = overprint.has_spot_plates
-
-    # Spot colorant plates in a DeviceCMYK group.
-    group_plates = spots.group_plates
-    plate = spots.plate
-    composite_spots = spots.composite_spots

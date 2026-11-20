@@ -753,7 +753,7 @@ def paint_tiling_pattern(
         bytearray(len(self.pixels)),
         alpha,
         blend_mode,
-        isolated=tiling_pattern_uses_normal_blends(pattern),
+        isolated=cell_is_isolated(self, pattern),
         alpha_is_shape=target_data.alpha_is_shape,
     )
     try:
@@ -791,6 +791,20 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+def cell_is_isolated(self: RasterTarget, pattern: TilingPattern) -> bool:
+    """Whether a tiling's cell may be painted as an isolated group, once for every cell: its
+    paint all blends Normal (11.6.7, NOTE 1). An overprinting paint blends by the special
+    mode of 11.7.4.3 instead, wherever overprinting takes effect -- a CMYK pass -- so there
+    the cell composites with the backdrop, in the non-isolated group 11.6.7 puts it in."""
+    if (
+        pattern.overprints
+        and self.overprint_enabled
+        and (self.space_mode is SpaceMode.CMY or self.space_mode is SpaceMode.BLACK)
+    ):
+        return False
+    return tiling_pattern_uses_normal_blends(pattern)
 
 
 @cites(
@@ -987,7 +1001,7 @@ def paint_pattern_fill(
         view[rows, columns] = 0
     del coverage, view
     # A tiling whose cells blend in other modes than Normal blends them with the backdrop.
-    isolated = isinstance(pattern, ShadingPattern) or tiling_pattern_uses_normal_blends(pattern)
+    isolated = isinstance(pattern, ShadingPattern) or cell_is_isolated(self, pattern)
     try:
         self.paint_pattern_through(
             pattern,

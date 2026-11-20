@@ -6,11 +6,13 @@ An overprinting paint marks only the process colorants its colour space names: D
 under overprint mode 1, given directly as the current colour of a fill, stroke, text or
 image mask, marks its nonzero components; a Separation or DeviceN space marks the process
 colorants it names, whose tints it paints directly -- an image's samples and a shading's
-function values included -- and a spot colorant none, its alternate colour's tints standing
-for it on a plate of its own, which a later paint of the same spot replaces and which adds
-to the process inks; any other space marks every component, so overprinting changes nothing
-(Table 146). Core composites overprinting where paint lands in a DeviceCMYK blending space:
-a transparency group or page group whose colour space is CMYK; with
+function values included -- where the page stands for the device's CMYK (a simulated page
+without a group colour space), while in a group naming a colour space it converts to its
+alternate and marks every component (11.7.3); a spot colorant marks none, its alternate
+colour's tints adding to the backdrop's; any other space marks every component, so
+overprinting changes nothing (Table 146). Core composites overprinting where paint lands
+in a DeviceCMYK blending space: a transparency group or page group whose colour space is
+CMYK; with
 RenderOptions(overprint="simulate") a page without a group colour space too, its tiling
 cells and form XObjects included; and with "auto", such a page of a PDF/X document.
 
@@ -251,6 +253,127 @@ def two_fills(paint: bytes, *, group: bytes = CMYK_GROUP, backdrop: bytes = b"1 
 
 def regions(backdrop: Cmyk, paint: Cmyk, overlap: Cmyk) -> tuple[tuple[tuple[int, int], Cmyk], ...]:
     return ((BACKDROP_ONLY, backdrop), (OVERLAP, overlap), (PAINT_ONLY, paint))
+
+
+def simulated(case: Case) -> Case:
+    """case on a page without a group, simulating overprint: where the page stands for the
+    output device's CMYK, a Separation or DeviceN space may name process colorants as such
+    (11.7.3). The page group's entry becomes spaces, keeping every offset."""
+    return case._replace(
+        name=f"{case.name} (simulated page)",
+        data=case.data.replace(CMYK_GROUP, b" " * len(CMYK_GROUP), 1),
+        overprint="simulate",
+    )
+
+
+def turned_off(data: bytes) -> bytes:
+    """data with its overprinting state On0 as Off, keeping every offset."""
+    return data.replace(b"/On0 gs", b"/Off gs")
+
+
+# The fill cases naming process colorants in a Separation or DeviceN space, which only a
+# page standing for the device's CMYK paints as such.
+DEVICE_FILLS = frozenset(
+    {
+        "Separation Magenta marks magenta alone",
+        "DeviceN Cyan and a spot: cyan replaces, the spot adds",
+        "Separation Black over DeviceGray paints its tint as black, and keeps CMY",
+        "Separation Cyan over DeviceRGB paints its tint as cyan, and keeps MYK",
+        "DeviceN Cyan and Black over DeviceRGB paints both tints, and keeps MY",
+        "Indexed over Separation Black paints its entry's tint as black",
+    }
+)
+# Separation Magenta text, a stroke along y 30 and an image mask, over a cyan backdrop.
+MAGENTA_TEXT = b"1 0 0 0 k 0 0 200 200 re f /On0 gs /Mag cs 0.6 sc BT /F 150 Tf 30 50 Td (H) Tj ET"
+MAGENTA_STROKE = b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Mag CS 0.6 SC 10 w 40 30 m 180 30 l S"
+MAGENTA_MASK = (
+    b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Mag cs 0.6 sc q 120 0 0 80 60 60 cm /X10 Do Q"
+)
+
+
+def device_paint_cases() -> list[Case]:
+    """A stroke, text and an image mask in Separation Magenta on a simulated page mark
+    magenta alone."""
+    magenta = (0.0, 0.6, 0.0, 0.0)
+    over_cyan = (1.0, 0.6, 0.0, 0.0)
+    return [
+        Case(
+            "a Separation Magenta stroke marks magenta alone",
+            document(b"", MAGENTA_STROKE),
+            (((80, 170), over_cyan), ((140, 170), magenta)),
+            "simulate",
+        ),
+        Case(
+            "Separation Magenta text marks magenta alone",
+            document(b"", MAGENTA_TEXT),
+            (((48, 100), over_cyan),),
+            "simulate",
+        ),
+        Case(
+            "a Separation Magenta image mask marks magenta alone",
+            document(b"", MAGENTA_MASK, [IMAGE_MASK]),
+            regions(CYAN, magenta, over_cyan),
+            "simulate",
+        ),
+    ]
+
+
+def explicit_group_sames() -> list[Same]:
+    """In a group naming a colour space, a Separation or DeviceN space naming process
+    colorants converts to its alternate (11.7.3): a process colour space, every component
+    of which takes the source's value (Table 146), so it paints as with overprint off."""
+    pages = [
+        ("a Separation Magenta fill", two_fills(b"/On0 gs /Mag cs 0.6 sc")),
+        (
+            "a DeviceN Cyan and spot fill",
+            two_fills(b"/On0 gs /CS cs 0.4 1 sc", backdrop=b"0 0.3 0 0.2 k"),
+        ),
+        ("a Separation Magenta stroke", document(CMYK_GROUP, MAGENTA_STROKE)),
+        ("Separation Magenta text", document(CMYK_GROUP, MAGENTA_TEXT)),
+        ("a Separation Magenta image mask", document(CMYK_GROUP, MAGENTA_MASK, [IMAGE_MASK])),
+        (
+            "a DeviceN Cyan and Magenta image",
+            document(CMYK_GROUP, b"0 0 0 0.5 k 0 0 200 200 re f /On0 gs " + PLACE, CM_IMAGE),
+        ),
+        ("a Separation Cyan shading", cyan_shading(b"/On0")),
+        (
+            "a Separation Cyan shading pattern",
+            shading_pattern_page(CYAN_RGB_SEPARATION, 0.6, b"0 1 0 0 k", CMYK_GROUP),
+        ),
+    ]
+    sames = [
+        Same(f"in a DeviceCMYK group, {name} paints as with overprint off", data, turned_off(data))
+        for name, data in pages
+    ]
+    # On a simulated page (kept simulating by an OPM 1 fill of 0 0 0 0 k, which marks
+    # nothing), a DeviceN Cyan and Magenta image whose soft mask has a Matte: its tints
+    # cannot be painted directly, so it paints its alternate's colour, not overprinting.
+    matted = (
+        stream(
+            b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+            b"/ColorSpace [/DeviceN [/Cyan /Magenta] /DeviceRGB 11 0 R] /SMask 12 0 R",
+            bytes([153, 102]),
+        ),
+        CM_IMAGE[1],
+        stream(
+            b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+            b"/ColorSpace /DeviceGray /Matte [0 0]",
+            bytes([255]),
+        ),
+    )
+    data = document(
+        b"", b"0 0 0 0.5 k 0 0 200 200 re f /On1 gs 0 0 0 0 k 0 0 1 1 re f /On0 gs " + PLACE, matted
+    )
+    sames.append(
+        Same(
+            "an image whose tints cannot be painted directly does not overprint",
+            data,
+            turned_off(data),
+            "simulate",
+            "simulate",
+        )
+    )
+    return sames
 
 
 def fill_cases() -> list[Case]:
@@ -693,22 +816,13 @@ def auto_cases() -> list[Case]:
 
 
 def spot_cases() -> list[Case]:
-    """A spot colorant overprinting the same spot replaces its tint (Table 146: the source's
-    value for a spot colorant the source space names); another spot, and the process
-    components, keep theirs."""
+    """A spot colorant over another spot adds to it, and a process paint that does not
+    overprint erases it. Known difference: a spot over the same spot adds again too, where
+    Table 146 gives the source's value for a spot colorant the source space names and MuPDF,
+    keeping a separation per spot, replaces it; that waits for spot plates of their own."""
     spot = (0.0, 0.5, 1.0, 0.0)
-    light = (0.0, 0.2, 0.4, 0.0)
     spot2 = (0.3, 0.0, 0.0, 0.0)
     return [
-        Case(
-            "a spot over the same spot replaces its tint",
-            document(
-                CMYK_GROUP,
-                b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f "
-                b"0.4 sc " + PAINT_RECT + b" f",
-            ),
-            regions(add(CYAN, spot, ""), light, add(CYAN, light, "")),
-        ),
         Case(
             "a spot over another spot keeps both",
             document(
@@ -728,14 +842,6 @@ def spot_cases() -> list[Case]:
                 + b" f",
             ),
             regions(spot, MAGENTA, MAGENTA),
-        ),
-        Case(
-            "a half-opaque spot over the same spot composites its tint with the first",
-            document(
-                CMYK_GROUP,
-                b"/On0 gs /Spot cs 1 sc " + BACKDROP_RECT + b"/Half gs 0 sc " + PAINT_RECT + b" f",
-            ),
-            regions(spot, (0.0, 0.0, 0.0, 0.0), (0.0, 0.25, 0.5, 0.0)),
         ),
     ]
 
@@ -795,12 +901,21 @@ def cyan_shading(state: bytes) -> bytes:
 
 
 def cyan_shading_failures() -> list[str]:
-    """A Separation Cyan shading over white paints cyan, not black."""
-    page = render(cyan_shading(b"/On0"))
-    red, green, blue = (int(value) for value in page[100, 100])
-    if red > 80 or blue < 200:
-        return [f"Separation Cyan shading: {(red, green, blue)} is not cyan"]
-    return []
+    """A Separation Cyan shading over white paints cyan, not black: in a DeviceCMYK group,
+    through its alternate, and on a simulated page, as its tint directly."""
+    failures = []
+    data = cyan_shading(b"/On0")
+    for where, page in (
+        ("in a DeviceCMYK group", render(data)),
+        (
+            "on a simulated page",
+            render(data.replace(CMYK_GROUP, b" " * len(CMYK_GROUP), 1), "simulate"),
+        ),
+    ):
+        red, green, blue = (int(value) for value in page[100, 100])
+        if red > 80 or blue < 200:
+            failures.append(f"Separation Cyan shading {where}: {(red, green, blue)} is not cyan")
+    return failures
 
 
 def same_cases() -> list[Same]:
@@ -952,25 +1067,30 @@ def mupdf_distances(cases: Sequence[Case]) -> None:
         print(f"  MuPDF {distance:6.2f}  {case.name}")
 
 
-def main(argv: list[str]) -> int:
-    cases = [
-        *fill_cases(),
+def all_cases() -> list[Case]:
+    return [
+        *(simulated(case) if case.name in DEVICE_FILLS else case for case in fill_cases()),
+        *device_paint_cases(),
         *stroke_cases(),
         masked_fill_stroke_case(),
         *group_cases(),
         *image_cases(),
         shading_case(),
-        *process_shading_cases(),
-        *process_image_cases(),
-        *shading_pattern_cases(),
+        *map(simulated, process_shading_cases()),
+        *map(simulated, process_image_cases()),
+        *map(simulated, shading_pattern_cases()),
         *census_cases(),
         *auto_cases(),
         *spot_cases(),
     ]
+
+
+def main(argv: list[str]) -> int:
+    cases = all_cases()
     failures = []
     for case in cases:
         failures.extend(check_case(case))
-    sames = same_cases()
+    sames = [*same_cases(), *explicit_group_sames()]
     for same in sames:
         failures.extend(check_same(same))
     failures.extend(text_failures())

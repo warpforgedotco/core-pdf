@@ -55,8 +55,11 @@ class RenderOptions(ReplaceFields, ReprFields, metaclass=RecordType, frozen=Fals
     # colorants overprint where paint composites in a DeviceCMYK blending space -- a
     # transparency group or page group whose colour space is CMYK -- and an RGB page ignores
     # the overprint parameters, as a composite RGB device may (8.6.7) and as MuPDF,
-    # Ghostscript and Poppler render by default. "simulate": a page that overprints also
-    # composites in DeviceCMYK, as the overprint simulation of mutool draw, Ghostscript,
+    # Ghostscript and Poppler render by default; there, a Separation or DeviceN space naming
+    # process colorants is its alternate, as in any group naming a colour space (11.7.3),
+    # and does not overprint. "simulate": a page that overprints also composites in
+    # DeviceCMYK, standing for the device's CMYK, where such a space marks the colorants it
+    # names, as the overprint simulation of mutool draw, Ghostscript,
     # pdftoppm and Acrobat's overprint preview do. "auto": "simulate" for a PDF/X document,
     # made for print, whose overprinting is part of its appearance, and "groups" for any
     # other, as Acrobat's default overprint preview, "Only for PDF/X files", chooses.
@@ -833,13 +836,9 @@ class RasterGroup(GeneratedRecord, eq=False):
     paint_window: PixelWindow
     painted_boxes: list[tuple[int, int, int, int]] | None
     # For a layer holding one overprinting paint (raster_overprint), which of the pass's
-    # three components the paint marks, the plate its spot colorants stand on, and whether
-    # it erases the spot plates; it composites them by the special blend mode of ISO
-    # 32000-2 11.7.4.3.
-    overprint: tuple[bool, bool, bool, int, bool] | None
-    # The group's spot plates in a CMYK pass (raster_spots), by plate, or None: each the
-    # tints, (height, width, 3), its spot colorants' alternate gives the pass's components.
-    spots: dict[int, numpy.ndarray[Any, numpy.dtype[numpy.float32]]] | None
+    # three components the paint marks, and whether its spot colorants add to the others;
+    # it composites them by the special blend mode of ISO 32000-2 11.7.4.3.
+    overprint: tuple[bool, bool, bool, bool] | None
 
     __match_args__ = ("pixels", "composite_alpha", "blend_mode")
 
@@ -858,8 +857,7 @@ class RasterGroup(GeneratedRecord, eq=False):
         mask_alpha: SoftMaskPlane | None = None,
         paint_window: PixelWindow | None = None,
         painted_boxes: list[tuple[int, int, int, int]] | None = None,
-        overprint: tuple[bool, bool, bool, int, bool] | None = None,
-        spots: dict[int, numpy.ndarray[Any, numpy.dtype[numpy.float32]]] | None = None,
+        overprint: tuple[bool, bool, bool, bool] | None = None,
     ) -> None:
         frozen_setattr(self, "pixels", pixels)
         frozen_setattr(self, "view", view)
@@ -876,7 +874,6 @@ class RasterGroup(GeneratedRecord, eq=False):
         )
         frozen_setattr(self, "painted_boxes", painted_boxes)
         frozen_setattr(self, "overprint", overprint)
-        frozen_setattr(self, "spots", spots)
 
     def __replace__(self, /, **changes: Any) -> Self:
         pixels = changes.pop("pixels", self.pixels)
@@ -892,7 +889,6 @@ class RasterGroup(GeneratedRecord, eq=False):
         paint_window = changes.pop("paint_window", self.paint_window)
         painted_boxes = changes.pop("painted_boxes", self.painted_boxes)
         overprint = changes.pop("overprint", self.overprint)
-        spots = changes.pop("spots", self.spots)
         if changes:
             raise TypeError(f"__replace__() got unexpected keyword arguments {sorted(changes)!r}")
         return self.__class__(
@@ -909,7 +905,6 @@ class RasterGroup(GeneratedRecord, eq=False):
             paint_window=paint_window,
             painted_boxes=painted_boxes,
             overprint=overprint,
-            spots=spots,
         )
 
     @property

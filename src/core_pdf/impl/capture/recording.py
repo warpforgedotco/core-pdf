@@ -357,7 +357,12 @@ class TextState(RecoveringTextState):
     # Whether an isolated group whose space is CIE-based gray composites in sRGB rather than
     # as device gray: inside a Luminosity mask taking the CIE 1931 Y of an sRGB raster.
     cie_gray_groups_in_srgb: bool
-    capture_cmyk_frames: dict[int, tuple[bool, bytes | None]]
+    capture_cmyk_frames: dict[int, tuple[bool, bytes | None, bool]]
+    # Whether paint lands where no transparency group, the page group included, names a
+    # colour space: the group "inherits the native colour space of the output device", the
+    # only place a Separation or DeviceN space may name process colorants as such (11.7.3;
+    # graphics.overprint.colorant_marks).
+    capture_device: bool
     # The ancestor spaces to restore when each group that changed them ends; and each set
     # of them less DeviceCMYK's, by the set's id: paint_ancestors, the spaces device colour
     # is painted in, leaves DeviceCMYK's out in a CMYK blending space, where DeviceCMYK is
@@ -414,6 +419,7 @@ class TextState(RecoveringTextState):
         self.capture_cmyk_profile = None
         self.cie_gray_groups_in_srgb = False
         self.capture_cmyk_frames = {}
+        self.capture_device = True
         self.paint_ancestors = None
         self.ancestor_frames = {}
         self.ancestors_without_cmyk = {}
@@ -598,11 +604,16 @@ class TextState(RecoveringTextState):
             # gray its family's device group takes colours to would not.
             frame.group_color_space = None
         if frame.group_alpha is not None and frame.group_color_space is not None:
-            self.capture_cmyk_frames[id(frame)] = (self.capture_cmyk, self.capture_cmyk_profile)
+            self.capture_cmyk_frames[id(frame)] = (
+                self.capture_cmyk,
+                self.capture_cmyk_profile,
+                self.capture_device,
+            )
             self.set_capture_cmyk(
                 blending_space_of(frame.group_color_space) == "DeviceCMYK",
                 blending_profile(frame.group_color_space),
             )
+            self.set_capture_device(False)
         if frame.group_alpha is not None:
             self.drawings.append(
                 marker_drawing(
@@ -679,7 +690,16 @@ class TextState(RecoveringTextState):
             self.ancestor_spaces = self.ancestor_frames.pop(id(frame))
             self.refresh_paint_ancestors()
         if id(frame) in self.capture_cmyk_frames:
-            self.set_capture_cmyk(*self.capture_cmyk_frames.pop(id(frame)))
+            cmyk, profile, device = self.capture_cmyk_frames.pop(id(frame))
+            self.set_capture_cmyk(cmyk, profile)
+            self.set_capture_device(device)
+
+    def set_capture_device(self, device: bool) -> None:
+        """Paint from now on where no group names a colour space (device) or inside one."""
+        if device is not self.capture_device:
+            self.capture_device = device
+            # A glyph paint keeps the marks it was captured with.
+            self.shared_glyph_paint = None
 
     def set_capture_cmyk(self, cmyk: bool, profile: bytes | None = None) -> None:
         """Capture paint from now on for a DeviceCMYK blending space (cmyk) whose CMYK is
@@ -855,6 +875,8 @@ class TextState(RecoveringTextState):
             if space is not None:
                 nested.set_ancestor_spaces(self.mask_ancestor_spaces(mask, nested.resources))
                 nested.set_capture_cmyk(space == "DeviceCMYK", blending_profile(mask.color_space))
+                # A Luminosity mask's group names its space (Table 144).
+                nested.set_capture_device(False)
             frame = nested.append_form_xobject(mask.group, 0)
             if frame is None:
                 return None

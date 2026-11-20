@@ -40,7 +40,6 @@ lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.base.geometry import clamp01
-from core_pdf.impl.base.types import frozen_setattr
 from core_pdf.impl.graphics.device_profiles import (
     cmyk_bytes_luminance,
     cmyk_bytes_to_srgb,
@@ -58,7 +57,6 @@ from core_pdf.impl.render.model import (
     RasterGroup,
     SpaceMode,
 )
-from core_pdf.impl.render.raster_spots import apply_spot_plates
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace, group_blending_space
@@ -192,16 +190,12 @@ def space_samples(
     space naming process colorants alone, whose tints a CMYK group takes directly
     (images.decode_process_samples)."""
     mode = self.space_mode
-    if process and mode is not SpaceMode.GRAY:
-        key = (id(source), -1)
-        cached = self.space_images.get(key)
-        if cached is None or cached[0] is not source:
-            native = decode_process_samples(source)
-            pixels = len(samples) // components
-            if native is None or native.size != pixels * 4:
-                return self.space_samples(source, samples, components)
-            cached = self.space_images[key] = (source, native.reshape(-1, 4))
-        cmyk = cached[1]
+    cmyk = (
+        self.process_samples(source, len(samples) // components)
+        if process and mode is not SpaceMode.GRAY
+        else None
+    )
+    if cmyk is not None:
         if mode is SpaceMode.CMY:
             return numpy.ascontiguousarray(255 - cmyk[:, :3]).reshape(-1), 3
         return numpy.ascontiguousarray(255 - cmyk[:, 3]), 1
@@ -223,9 +217,24 @@ def space_samples(
         )
         cached = self.space_images[key] = (source, cmyk)
     cmyk = cached[1]
+    assert cmyk is not None
     if mode is SpaceMode.CMY:
         return numpy.ascontiguousarray(255 - cmyk[:, :3]).reshape(-1), 3
     return numpy.ascontiguousarray(255 - cmyk[:, 3]), 1
+
+
+def process_samples(self: RasterTarget, source: ImageSource, pixels: int) -> UInt8Array | None:
+    """The CMYK, (pixels, 4), an image in a space naming process colorants alone paints
+    directly (images.decode_process_samples), found once for both passes of a CMYK group;
+    None when its tints cannot be had for its pixels: a matte, or samples of another size
+    than the image it is painted from."""
+    key = (id(source), -1)
+    cached = self.space_images.get(key)
+    if cached is None or cached[0] is not source:
+        native = decode_process_samples(source)
+        found = native.reshape(-1, 4) if native is not None and native.size == pixels * 4 else None
+        cached = self.space_images[key] = (source, found)
+    return cached[1]
 
 
 def switches_space(self: RasterTarget, item: GroupBeginItem) -> bool:
@@ -282,12 +291,6 @@ def paint_space_group(
         self.set_space_mode(parent_mode, parent_profile)
         if parent_mode is SpaceMode.RGB:
             self.space_images.clear()
-    for group in passes:
-        # A CMYK group's spot plates print over its process components (raster_spots); its
-        # parent, in another space, takes none of them.
-        if space == "DeviceCMYK":
-            apply_spot_plates(group.view, group.spots)
-        frozen_setattr(group, "spots", None)
     convert_group_space(passes, space, profile, parent_mode, parent_profile)
     self.composite_group(passes[0])
 
@@ -320,7 +323,6 @@ def luminosity_mask_channel(
         pixel = numpy.array((red, green, blue, 255), dtype=numpy.uint8).view(numpy.uint32)
         view.reshape(-1).view(numpy.uint32).fill(pixel[0])
         nested.paint_items(items, translation=mask.offset)
-        apply_spot_plates(view, nested.buffer_stack[0].spots)
         views.append(view)
     if mask.colorimetric:
         return colorimetric_luminosity_channel(views, profile, mask.transfer is not None)

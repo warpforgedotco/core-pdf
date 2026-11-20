@@ -119,7 +119,8 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
         if not isinstance(pattern, model.ShadingPattern):
             return None
         marks = raw_overprint_marks(
-            shading_space(self.capture_shading_dictionary(pattern.dictionary))
+            shading_space(self.capture_shading_dictionary(pattern.dictionary)),
+            device=self.capture_device,
         )
     else:
         marks = overprint_marks(
@@ -127,6 +128,7 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
             graphics.stroke_color if stroke else graphics.fill_color,
             graphics.overprint_mode,
             current_color=True,
+            device=self.capture_device,
         )
     if marks is not None:
         self.uses_overprint = True
@@ -156,7 +158,7 @@ def capture_space_overprint(self: TextState, space: object) -> int | None:
     entry, which the nonstroking overprint parameter governs."""
     if not self.graphics.fill_overprint:
         return None
-    marks = raw_overprint_marks(space)
+    marks = raw_overprint_marks(space, device=self.capture_device)
     if marks is not None:
         self.uses_overprint = True
     return marks
@@ -230,7 +232,12 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         id(defaults),
         # A tiling cell's colours are captured for the blending space it paints into, and
         # the groups it paints in (11.7.2); a shading pattern's do not depend on them.
-        (self.capture_cmyk, self.capture_cmyk_profile, id(self.ancestor_spaces))
+        (
+            self.capture_cmyk,
+            self.capture_cmyk_profile,
+            id(self.ancestor_spaces),
+            self.capture_device,
+        )
         if isinstance(pattern, model.TilingPattern)
         else None,
     )
@@ -259,6 +266,7 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
         nested = self.nested_capture_state()
         nested.set_ancestor_spaces(self.ancestor_spaces)
         nested.set_capture_cmyk(self.capture_cmyk, self.capture_cmyk_profile)
+        nested.set_capture_device(self.capture_device)
         try:
             result = self.capture_tiling_pattern(
                 nested, pattern, rendering, initial_alpha_is_shape, initial_text_knockout

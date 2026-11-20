@@ -13,7 +13,19 @@ specifies and the backdrop's for the rest, which Table 146 sums up:
   through a default space, it marks all four.
 - Separation and DeviceN: the colorants they name. A process colorant name (Cyan, Magenta,
   Yellow, Black) marks that process component alone; any other name is a spot colorant,
-  which marks no process component, and the separation All marks every component.
+  which marks no process component, and the separation All marks every component. A space
+  may name process colorants as such only where paint lands in the output device's own
+  colour space: "within a transparency group, this should be done only if the group
+  inherits the native colour space of the output device ... If any other colour space has
+  been specified for the group, the Separation or DeviceN colour space shall be converted
+  to its alternate colour space" (11.7.3). Inside a group, the page group included, that
+  names a colour space, such a space is its alternate -- "likewise for Separation and
+  DeviceN spaces that revert to their alternate colour space" (11.7.4.3, NOTE 2) -- a
+  process colour space reached through a tint transform, not "DeviceCMYK, specified
+  directly", which marks every component (Table 146); nonzero overprint mode does not apply
+  either, as the current colour space is not DeviceCMYK (8.6.7). Where the page stands for
+  the device's CMYK -- a page group without a colour space, under overprint simulation --
+  its colorants are marked as named.
 - Any other colour space -- DeviceGray, DeviceRGB, CIE-based, ICCBased, Indexed over one
   of those -- marks every process component, so overprinting changes nothing.
 
@@ -35,17 +47,15 @@ not name. A
 DeviceCMYK colour a DefaultCMYK space remaps is no DeviceCMYK colour: "Provisions in this
 standard that apply specifically to device colour spaces are then not applicable" (8.6.5.6),
 so its marks are those of the default space. A spot colorant, which a CMYK raster has no
-plate for, is kept on a plate of its own while the group paints, its alternate colour's
-tints standing for it (render.raster_spots): a spot overprinting the same spot replaces it,
-as Table 146 gives the source's value for "Spot colourant named in source space", and the
-plates add to the process inks, clamped at full, when the group ends, as a press's separate
-plate of the spot would print over them (the composite MuPDF's overprint simulation makes of
-spot plates).
+plate for, adds its alternate colour's tints to the backdrop's, clamped at full, as a press's
+separate plate of it would print over the process inks (the composite MuPDF's overprint
+simulation makes of spot plates). A spot overprinting the same spot therefore adds again,
+where Table 146 gives the source's value for "Spot colourant named in source space" and a
+press's plate would be replaced: a known difference, until spots get plates of their own.
 """
 
 from __future__ import annotations
 
-import zlib
 from collections.abc import Sequence
 
 from core_pdf.impl.base.values import recover_pdf_name
@@ -57,12 +67,9 @@ MAGENTA = 2
 YELLOW = 4
 BLACK = 8
 ALL_PROCESS = CYAN | MAGENTA | YELLOW | BLACK
-# Set in a paint's marks when its space names a spot colorant: its alternate colour's tints
-# in the components it does not mark stand for the spot, on a plate of its own
-# (render.raster_spots). The bits from SPOT_SHIFT up name the plate: spot_plate of the spot
-# colorants the space names.
+# Set in a paint's marks when its space names a spot colorant: the components it does not
+# mark take its alternate colour's tints added to the backdrop's, rather than keeping it.
 SPOT = 16
-SPOT_SHIFT = 5
 PROCESS_COLORANTS: dict[str, int] = {
     "Cyan": CYAN,
     "Magenta": MAGENTA,
@@ -73,31 +80,31 @@ PROCESS_COLORANTS: dict[str, int] = {
 CMYK_MARKS = (CYAN, MAGENTA, YELLOW, BLACK)
 
 
-def colorant_marks(kind: str, names: Sequence[str]) -> int | None:
+@cites(
+    "ISO 32000-2",
+    "11.7.3",
+    introduced="1.4",
+    rule="a Separation or DeviceN space naming process colourants converts to its alternate in "
+    "a group that names a colour space",
+)
+def colorant_marks(kind: str, names: Sequence[str], *, device: bool = True) -> int | None:
     """The process components a Separation or DeviceN space naming names marks: each
     process colorant it names, and none for a spot colorant or None (8.6.6.4, 8.6.6.5), with
-    SPOT for a spot colorant; the separation All marks every component."""
+    SPOT for a spot colorant; the separation All marks every component. device: the paint
+    lands where no group names a colour space; elsewhere a space naming a process colorant
+    "shall be converted to its alternate colour space" (11.7.3), a process colour space
+    whose every component takes the source's value (Table 146), so it marks all four."""
     if kind == "Separation" and tuple(names) == ("All",):
         return None
+    if not device and any(name in PROCESS_COLORANTS for name in names):
+        return None
     marks = 0
-    spots: set[str] = set()
     for name in names:
         if name in PROCESS_COLORANTS:
             marks |= PROCESS_COLORANTS[name]
         elif name != "None":
-            spots.add(name)
-    if marks & ALL_PROCESS == ALL_PROCESS:
-        return None
-    if spots:
-        marks |= SPOT | spot_plate(spots) << SPOT_SHIFT
-    return marks
-
-
-def spot_plate(names: set[str]) -> int:
-    """The plate a paint naming the spot colorants names paints on: a number from their
-    names, the same for the same set in any order (a CRC-32, whose collisions between the
-    few spots of a page are negligible); never 0."""
-    return zlib.crc32("\0".join(sorted(names)).encode("utf-8", "surrogatepass")) | 1 << 32
+            marks |= SPOT
+    return None if marks & ALL_PROCESS == ALL_PROCESS else marks
 
 
 @cites(
@@ -114,7 +121,12 @@ def spot_plate(names: set[str]) -> int:
     rule="an overprinting paint leaves the colorants its colour space does not name",
 )
 def overprint_marks(
-    space: ColorSpace | None, color: Sequence[float] | None, mode: int, *, current_color: bool
+    space: ColorSpace | None,
+    color: Sequence[float] | None,
+    mode: int,
+    *,
+    current_color: bool,
+    device: bool = True,
 ) -> int | None:
     """The process components a paint in space marks while overprinting, or None for all
     four. current_color: the paint uses the graphics state's current colour, color (a fill,
@@ -134,7 +146,7 @@ def overprint_marks(
                 marks |= bit
         return None if marks == ALL_PROCESS else marks
     if kind in {"Separation", "DeviceN"}:
-        return colorant_marks(kind, space.colorants)
+        return colorant_marks(kind, space.colorants, device=device)
     return None
 
 
@@ -200,12 +212,12 @@ def shading_space(shading: object) -> object | None:
     return None
 
 
-def raw_overprint_marks(value: object) -> int | None:
+def raw_overprint_marks(value: object, *, device: bool = True) -> int | None:
     """overprint_marks of an image's or a shading's ColorSpace, a resolved PDF object: no
     overprint mode applies to them (Table 146 lists DeviceCMYK "not in a sampled image"
     alone). A Separation or DeviceN space marks the colorants it names, as for any paint;
     its process colorants' tints are painted directly (process_color), and its spot
-    colorants stand on plates of their own (render.raster_spots)."""
+    colorants' alternate tints add to the backdrop's."""
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value and id(value) not in seen:
         seen.add(id(value))
@@ -215,11 +227,11 @@ def raw_overprint_marks(value: object) -> int | None:
             continue
         if kind == "Separation" and len(value) == 4:
             name = recover_pdf_name(value[1])
-            return None if name is None else colorant_marks(kind, (name,))
+            return None if name is None else colorant_marks(kind, (name,), device=device)
         if kind == "DeviceN" and len(value) in {4, 5} and isinstance(value[1], (list, tuple)):
             names = [recover_pdf_name(entry) for entry in value[1]]
             if not names or any(name is None for name in names):
                 return None
-            return colorant_marks(kind, [name for name in names if name is not None])
+            return colorant_marks(kind, [name for name in names if name is not None], device=device)
         return None
     return None
