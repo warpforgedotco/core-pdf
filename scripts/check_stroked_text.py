@@ -15,7 +15,19 @@ from 0 to thick, at a constant alpha and in Multiply, under CTMs that stretch, s
 rotate, and under text matrices and horizontal scaling that stretch and skew the glyphs.
 Each page is rendered with core, and so is a twin page that draws each glyph's outline, as
 core placed it on the page, as a path under the same CTM and graphics state, and paints it
-with S, or B for the modes that fill too. Every pixel of the two must match within a byte.
+with S, or B for the modes that fill too. Every pixel of the two must be the same, or,
+where the text is filled too, within a byte: the text object's glyphs are composited in a
+group, and the path's fill and stroke straight onto the page, which can round a pixel that
+both partly cover, where a dash leaves the fill's edge bare, a byte apart. The twin maps the
+outlines back to user space with the CTM as the page writes it, rounded to six decimals:
+inverting the unrounded CTM would move each point by up to 1e-4 of a pixel, enough to move a
+sample across a stroke's edge. The rest of the twin's arithmetic moves a point by an ulp or
+so, which must not move a sample: a seeded sweep of rotating, unevenly scaling CTMs, with
+each line width, join, cap, miter limit and dashes, checks that it does not. The sweep's
+pages are allowed a byte, as the filled pages are: a sample of an opaque stroke is 16 levels,
+so the byte hides no sample, while it spares the sweep's hundred-odd random pages any last-
+bit difference between one platform's maths library and another's that rounds a blended
+pixel the other way. The fixed pages, stroked only, must match exactly.
 A thin stroke is floored at one device pixel across the pen's narrower axis, as a path's
 is (8.4.3.2, 10.7.4): text stroked at a line width of 0 must also match, pixel for pixel,
 the same text stroked at a tiny width, upright and under a rotating, stretching CTM.
@@ -25,6 +37,7 @@ uv run --all-packages python scripts/check_stroked_text.py
 
 from __future__ import annotations
 
+import random
 import sys
 from pathlib import Path
 
@@ -33,7 +46,15 @@ import numpy
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.render.model import PathPaintItem  # noqa: E402
-from scripts.check_strokes import SIZE, Affine, document, numbers, rotation, stretched_rotation  # noqa: E402
+from scripts.check_strokes import (  # noqa: E402
+    SIZE,
+    Affine,
+    apply,
+    document,
+    numbers,
+    rotation,
+    stretched_rotation,
+)
 
 type Pixels = numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]
 type Point = tuple[float, float]
@@ -70,6 +91,7 @@ class Case:
         origin: Point = (14.137, 120.291),
         alpha: float = 1.0,
         blend: str | None = None,
+        exact: bool = True,
     ) -> None:
         self.name = name
         self.mode = mode
@@ -78,13 +100,17 @@ class Case:
         self.cap = cap
         self.limit = limit
         self.dash = dash
-        self.ctm = ctm
+        # The CTM as the page writes it, so that the twin maps its outlines back to user
+        # space with the matrix the page is drawn under.
+        self.ctm = written(ctm)
         self.tm = tm
         self.scaling = scaling
         self.size = size
         self.origin = origin
         self.alpha = alpha
         self.blend = blend
+        # Whether the twin must match byte for byte where the text is only stroked.
+        self.exact = exact
 
     def state(self) -> bytes:
         dash = b"[] 0 d"
@@ -114,7 +140,7 @@ class Case:
 
     def pdf(self) -> bytes:
         body = b"q %s cm %sBT /F %s Tf 14 Tc %s Tz %s Tm %s Td %d Tr %s ET Q" % (
-            numbers(self.ctm),
+            matrix(self.ctm),
             self.state(),
             numbers([self.size]),
             numbers([self.scaling]),
@@ -131,7 +157,7 @@ class Case:
         a, b, c, d, e, f = self.ctm
         determinant = a * d - b * c
         paint = b"B" if self.mode in {2, 6} else b"S"
-        body = b"q %s cm %s" % (numbers(self.ctm), self.state())
+        body = b"q %s cm %s" % (matrix(self.ctm), self.state())
         for glyph in outlines:
             for points, closed in glyph:
                 user = [
@@ -147,6 +173,17 @@ class Case:
                     body += b"h "
             body += paint + b" "
         return document(body + b"Q", self.resources())
+
+
+def written(ctm: Affine) -> Affine:
+    """ctm with each entry rounded to the decimals matrix writes."""
+    a, b, c, d, e, f = (float(f"{value:.6f}") for value in ctm)
+    return a, b, c, d, e, f
+
+
+def matrix(ctm: Affine) -> bytes:
+    """ctm's entries with six decimals, never an exponent, which a PDF number cannot have."""
+    return " ".join(f"{value:.6f}" for value in ctm).encode()
 
 
 def exact(point: Point) -> bytes:
@@ -215,6 +252,7 @@ def cases() -> list[Case]:
             ("stretched", STRETCH),
             ("skewed", SKEW),
             ("stretched and rotated", turned(20.0, 1.4, 0.7)),
+            ("stretched and rotated about the centre", stretched_rotation(20.0, 1.4, 0.7)),
         )
         for join in (MITER, ROUND, BEVEL)
     ]
@@ -225,6 +263,25 @@ def cases() -> list[Case]:
         Case("stretched, width 0", ctm=STRETCH, width=0.0),
         Case("stretched and rotated, width 0.05", ctm=turned(47.0, 1.2, 0.75), width=0.05),
         Case("skewed, fill, then stroke", ctm=SKEW, mode=2, width=4.0),
+        # A dash running on through a corner, where the position along the segment before
+        # it, plus the rest of that segment, rounds an ulp short of its length.
+        Case(
+            "rotated, dashes through a corner, miter joins",
+            ctm=(-0.693409, -0.720766, 0.683607, -0.65766, 117.245828, 307.255709),
+            dash=([7.07256, 4.83665], 0.331093),
+            cap=ROUND_CAP,
+            width=5.0,
+        ),
+        # Dashes ending in segments along the pen's axes shorter than half its width.
+        Case(
+            "stretched and rotated, short dashes, square caps",
+            ctm=(0.466183, 0.228833, -0.573215, 1.167767, 189.253987, -33.174055),
+            dash=([1.19024, 6.10734], 3.53978),
+            cap=SQUARE,
+            join=BEVEL,
+            limit=1.2,
+            width=5.0,
+        ),
     ]
     # The text matrix and horizontal scaling shape the glyphs, not the pen.
     found += [
@@ -243,6 +300,49 @@ def cases() -> list[Case]:
             dash=([10.0, 4.0], 0.0),
         ),
     ]
+    return found + sweep()
+
+
+# Seeded, so that a failure is found again.
+SWEEP_SEED = 457
+SWEEP_PAGES = 120
+
+
+def sweep() -> list[Case]:
+    """Pages under CTMs that rotate by any angle and scale each axis by its own factor, with
+    the text centred on the page, a quarter of them dashed and a quarter filled too."""
+    rng = random.Random(SWEEP_SEED)
+    found = []
+    for _ in range(SWEEP_PAGES):
+        degrees = rng.uniform(0.0, 360.0)
+        x_scale, y_scale = rng.uniform(0.5, 1.6), rng.uniform(0.5, 1.6)
+        x, y = apply(stretched_rotation(degrees, x_scale, y_scale, 0.0, 0.0), (90.0, 140.0))
+        ctm = stretched_rotation(
+            degrees, x_scale, y_scale, SIZE / 2.0 - x + rng.random(), SIZE / 2.0 - y + rng.random()
+        )
+        width = rng.choice((0.0, 0.05, 0.3, 1.0, 2.5, 5.0, 8.0))
+        join = rng.choice((MITER, ROUND, BEVEL))
+        cap = rng.choice((BUTT, ROUND_CAP, SQUARE))
+        limit = rng.choice((1.2, 2.0, 10.0))
+        dash = ([rng.uniform(0.0, 9.0), rng.uniform(2.0, 8.0)], rng.uniform(0.0, 5.0))
+        dashed = rng.random() < 0.25
+        mode = 2 if rng.random() < 0.25 else 1
+        found.append(
+            Case(
+                f"sweep: rotated {degrees:.2f}, scaled {x_scale:.3f} by {y_scale:.3f},"
+                f" width {width}, join {join}, cap {cap}, miter limit {limit}"
+                + (", dashed" if dashed else "")
+                + (", filled" if mode == 2 else ""),
+                mode=mode,
+                width=width,
+                join=join,
+                cap=cap,
+                limit=limit,
+                dash=dash if dashed else None,
+                ctm=ctm,
+                exact=False,
+            )
+        )
     return found
 
 
@@ -253,7 +353,7 @@ def check(case: Case) -> int:
         return 1
     twin, _ = render(case.twin(outlines))
     difference = numpy.abs(pixels.astype(int) - twin.astype(int)).max(axis=2)
-    wrong = numpy.argwhere(difference > 1)
+    wrong = numpy.argwhere(difference > (0 if case.exact and case.mode in {1, 5} else 1))
     for row, column in wrong[:3]:
         print(
             f"  {case.name}: pixel {column},{row}: {tuple(int(v) for v in pixels[row, column])},"

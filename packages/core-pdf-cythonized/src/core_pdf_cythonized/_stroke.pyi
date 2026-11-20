@@ -72,4 +72,5 @@ def axis_aligned_polylines(
     ys: numpy.ndarray[Any, numpy.dtype[numpy.float64]],
     spans: list[tuple[int, int, bool]],
     outline: bool,
+    shortest: float,
 ) -> bool: ...
