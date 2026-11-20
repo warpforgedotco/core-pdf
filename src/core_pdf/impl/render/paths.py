@@ -108,32 +108,27 @@ def dash_subpath(
     return pieces
 
 
-# The thinnest pen, in device pixels, that core's samples, a quarter of a pixel apart, never
-# miss: a band this wide holds a row or column of them wherever it lies.
-HAIRLINE_PIXELS = 0.25
-
-
 @cites(
     "ISO 32000-2",
     "8.4.3.2",
     introduced="1.0",
-    rule="a line width of 0 is the thinnest line the device renders: 1 device pixel wide",
+    rule="a line width of 0 is 1 device pixel wide, and thinner strokes are floored there too",
 )
 @cites(
     "ISO 32000-2",
     "10.7.4",
     introduced="1.0",
-    rule="a stroke of non-zero width never disappears, whatever its place on the pixel grid",
+    rule="a stroke never disappears: thin strokes are floored at 1 device pixel, like Acrobat",
 )
 def stroke_half_width(scale: float, line_width: float) -> float:
     """Half the width of the pen that strokes a line width, where a unit is scale device
-    pixels long: a line width of 0 one device pixel (ISO 32000-2 8.4.3.2), any other its
-    own, but no thinner than HAIRLINE_PIXELS, the thinnest band the samples always meet, so
-    that a hairline covers its pixels in part, by about its width, and never drops out
-    (10.7.4)."""
-    if line_width == 0.0:
-        return 0.5 / scale
-    return max(HAIRLINE_PIXELS * 0.5 / scale, line_width * 0.5)
+    pixels long: its own, but no thinner than one device pixel. A line width of 0 is one
+    device pixel (ISO 32000-2 8.4.3.2), and a thinner stroke of non-zero width is floored
+    there too, as Acrobat draws it, so that it never drops out (10.7.4) and a width of 0
+    and a tiny width draw the same line. Under a stroke matrix, scale is the device pixels
+    a unit spans along the matrix's narrower axis, so that the pen is at least a device
+    pixel across in every direction."""
+    return max(0.5 / scale, line_width * 0.5)
 
 
 def seamless_in_pieces(path: CapturedPath, line_join: int, miter_limit: float) -> bool:

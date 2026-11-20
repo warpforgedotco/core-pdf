@@ -89,13 +89,10 @@ def extend(
 @cython.exceptval(check=False)
 def pen_half(scale: cython.double, line_width: cython.double) -> cython.double:
     """Half the width of the pen that strokes a line width, where a unit is scale device
-    pixels long, as render.paths.stroke_half_width works it out: a line width of 0 one
-    device pixel (ISO 32000-2 8.4.3.2), any other its own, but no thinner than a quarter of
-    a pixel, the thinnest band the samples always meet, so that a hairline covers its pixels
-    in part and never drops out (10.7.4)."""
-    if line_width == 0.0:
-        return 0.5 / scale
-    return py_max(0.125 / scale, line_width * 0.5)
+    pixels long, as render.paths.stroke_half_width works it out: its own, but no thinner
+    than one device pixel, the width of a line width of 0 (ISO 32000-2 8.4.3.2), as Acrobat
+    floors thin strokes, so that none drops out (10.7.4)."""
+    return py_max(0.5 / scale, line_width * 0.5)
 
 
 @cython.cfunc
@@ -1104,9 +1101,10 @@ def cover_nearest(
     p: cython.pointer[Paint], c: cython.pointer[Cover], x: cython.double, y: cython.double
 ) -> cython.int:
     """Cover the sample nearest the stroke-space point (x, y). A dot, a subpath or dash of
-    no length, covers it as well as the samples inside it: a disc or square thinner than
-    the samples' spacing can fall between them all, and a stroke of non-zero width never
-    disappears (ISO 32000-2 10.7.4)."""
+    no length, or a subpath shorter than a pixel, covers it as well as the samples inside
+    it, so that it never disappears (ISO 32000-2 10.7.4). The pen is a device pixel across
+    or more, so a dot already holds that sample, but a butt-capped segment shorter than the
+    samples' spacing can fall between them all."""
     page_x: cython.double = x
     page_y: cython.double = y
     if c.transformed:
@@ -2021,7 +2019,8 @@ def stroke_coverage(
         c.inverse[2] = -c.forward[2] / determinant
         c.inverse[3] = c.forward[0] / determinant
         # The matrix's smaller singular value: the least it shrinks a length by, which
-        # pen_half widens a thin pen by to keep it as wide on the page in every direction.
+        # pen_half widens a thin pen by to keep it a device pixel wide on the page in
+        # every direction.
         total: cython.double = (
             c.forward[0] * c.forward[0]
             + c.forward[1] * c.forward[1]

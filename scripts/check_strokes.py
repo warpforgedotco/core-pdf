@@ -31,19 +31,22 @@ of a stroke's edge, or with any of the points an eighth of a pixel apart within 
 both sides of it, are skipped; every other pixel must be the stroke painted once over the
 backdrop, within a byte, or the backdrop.
 
-A thin stroke covers its pixels in part, by its width, and never disappears (8.4.3.2,
-10.7.4); a line width of 0 is 1 device pixel wide (8.4.3.2). This also writes pages of a
-dozen parallel lines of widths from 0 to 0.8 device pixels, at several angles, opaque, at
-a constant alpha of 0.5, in Multiply, in a knockout group, dashed, and under CTMs that
-stretch, skew and scale down, and checks the area they cover, the sum of the pixels'
-alpha, against the lines' length times their width: a line width of 0 one device pixel,
-any other its own, but no thinner than a quarter of a pixel, the thinnest band core's
-samples always meet. And it writes dotted hairlines, dashes of no length with round and
-projecting square caps along lines at 0 and 45 degrees, and subpaths of one point with
-round caps, widths 0.05 to 0.2, centred on whole pixels, half pixels and in between, opaque,
-at alpha 0.5, in Multiply and under a stretching CTM, and the same with segments a tenth of
-a pixel long, subpaths and dashes, with each cap: each dot must cover between 0.03 and 0.3
-of a pixel, never disappearing between the samples.
+A line width of 0 is 1 device pixel wide (8.4.3.2), and a thinner stroke of non-zero width
+is floored there too, as Acrobat draws it, so that it never disappears (10.7.4): under a
+CTM that scales unevenly, the pen is at least a device pixel across its narrower axis. This
+also writes pages of a dozen parallel lines of widths from 0 to 1.5 device pixels, at
+several angles, opaque, at a constant alpha of 0.5, in Multiply, in a knockout group,
+dashed, and under CTMs that stretch, skew, stretch and rotate, and scale down, and checks
+the area they cover, the sum of the pixels' alpha, against the lines' length times their
+width, no thinner than one device pixel. It checks that a line 0.1 units wide is a pixel
+wide at scales 1 and 4, that a line width of 0 paints the same pixels as a tiny one, and
+that a thin line under a rotating, unevenly scaling CTM is a pixel wide along the pen's
+narrower axis. And it writes dotted hairlines, dashes of no length with round and projecting
+square caps along lines at 0 and 45 degrees, and subpaths of one point with round caps,
+widths 0.05 to 0.2, centred on whole pixels, half pixels and in between, opaque, at alpha
+0.5, in Multiply and under a stretching CTM, and the same with segments a tenth of a pixel
+long, subpaths and dashes, with each cap: each dot must cover the area of its pen, a pixel
+across, and never disappear between the samples.
 
 uv run --all-packages python scripts/check_strokes.py
 """
@@ -931,15 +934,15 @@ def eroded(
 type Pixels = numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]
 
 
-def rendered(case: Case | Hairline | Dots) -> Pixels:
+def rendered(case: Case | Hairline | Dots | ThinLine, scale: float = 1.0) -> Pixels:
     with PdfDocument(case.pdf()) as pdf:
-        image = pdf.pages[0].render().rasterize()
+        image = pdf.pages[0].render().rasterize(scale=scale)
     return numpy.frombuffer(bytes(image.pixels), numpy.uint8).reshape(image.height, image.width, 4)
 
 
-# The thinnest band, in device pixels, that core's samples, a quarter of a pixel apart, always
-# meet: a thinner stroke of non-zero width is widened to it, never to a whole pixel.
-HAIRLINE_FLOOR = 0.25
+# The thinnest pen, in device pixels: a line width of 0 is this wide, and a thinner stroke
+# of non-zero width is widened to it, across the pen's narrower axis.
+HAIRLINE_FLOOR = 1.0
 HAIRLINE_LENGTH = 200.0
 HAIRLINE_COUNT = 12
 # Apart by more than a pixel and by no multiple of the samples' spacing, so that the lines
@@ -953,8 +956,8 @@ class Hairline:
     `width`, under `ctm` (by default, centred on the page): at a constant alpha `alpha`, in
     the blend mode `blend`, with caps `cap`, dashed by `dash`, or in a knockout group. A
     stroke covers the points within half the line width of its path in user space (ISO
-    32000-2 8.4.3.2): a thin one covers its pixels in part, by its width, and never
-    disappears (10.7.4); a line width of 0 is 1 device pixel wide (8.4.3.2)."""
+    32000-2 8.4.3.2); a line width of 0 is 1 device pixel wide (8.4.3.2), and so is a
+    thinner one, so that it never disappears (10.7.4)."""
 
     def __init__(
         self,
@@ -1027,7 +1030,7 @@ class Hairline:
         the page, dashes and caps included, times the width of its pen across it there. The
         pen is a circle a line width across in stroke space, user space scaled by the mean
         of the CTM's scales along the axes, widened to HAIRLINE_FLOOR on the page across
-        the CTM's least stretch, or to one device pixel for a line width of 0."""
+        the CTM's least stretch, a line width of 0 included."""
         a, b, c, d = self.ctm[:4]
         scale = self.scale()
         forward = (a / scale, b / scale, c / scale, d / scale)
@@ -1038,8 +1041,7 @@ class Hairline:
         # The line's direction on the page, and how much the stroke matrix stretches it.
         along = math.hypot(forward[0] * ux + forward[2] * uy, forward[1] * ux + forward[3] * uy)
         width = self.width * scale
-        floor = 1.0 if width == 0.0 else HAIRLINE_FLOOR
-        half = max(floor / 2.0 / smallest, width / 2.0)
+        half = max(HAIRLINE_FLOOR / 2.0 / smallest, width / 2.0)
         across = 2.0 * half * determinant / along
         length = HAIRLINE_LENGTH * along
         if self.dash is not None:
@@ -1063,7 +1065,7 @@ def matrix_stretches(matrix: tuple[float, float, float, float]) -> tuple[float, 
 
 
 def hairlines() -> list[Hairline]:
-    widths = (0.0, 0.05, 0.12, 0.2, 0.3, 0.5, 0.8)
+    widths = (0.0, 0.05, 0.12, 0.2, 0.3, 0.5, 0.8, 1.5)
     found = [
         Hairline(f"opaque, width {width}, {degrees} degrees", width, degrees)
         for width in widths
@@ -1090,7 +1092,11 @@ def hairlines() -> list[Hairline]:
     # its narrower axis.
     found += [
         Hairline(f"{name}, width {width}", width, 15.0, ctm=ctm)
-        for name, ctm in (("stretched", (1.0, 0.0, 0.0, 0.4, 150.0, 150.0)), ("skewed", SKEW))
+        for name, ctm in (
+            ("stretched", (1.0, 0.0, 0.0, 0.4, 150.0, 150.0)),
+            ("skewed", SKEW),
+            ("stretched and rotated", stretched_rotation(35.0, 2.5, 0.4)),
+        )
         for width in widths
     ]
     # Scaled down by the CTM: the line width is in user space.
@@ -1099,6 +1105,13 @@ def hairlines() -> list[Hairline]:
         for width in (0.0, 0.5, 1.2, 3.0, 8.0)
     ]
     return found
+
+
+def stretched_rotation(degrees: float, x_scale: float, y_scale: float) -> Affine:
+    """Scale by x_scale and y_scale along the axes, then rotate by degrees, about the page's
+    centre."""
+    a, b, c, d, _, _ = rotation(degrees)
+    return (a * x_scale, b * x_scale, c * y_scale, d * y_scale, SIZE / 2.0, SIZE / 2.0)
 
 
 # Sampling a quarter of a pixel apart, the samples a band meets vary with where it lies: the
@@ -1118,10 +1131,11 @@ def check_hairline(hairline: Hairline) -> bool:
 
 DOT_ROWS = 12
 DOT_SPACING = 8.0
-# A dot thinner than the samples' spacing covers at least the sample nearest its centre,
-# 1/16 of a pixel, or its area, filled; at most the 4 samples around it on its edge.
+# A dot or short segment covers the area of its pen, a pixel across or more, to within
+# what the samples miss along its edge; and never less than the sample nearest its centre,
+# 1/16 of a pixel, so that it never disappears.
+DOT_SLACK = 0.2
 DOT_LEAST = 0.03
-DOT_MOST = 0.3
 
 
 class Dots:
@@ -1132,7 +1146,8 @@ class Dots:
     projecting square caps a square along the path; one of non-zero width never disappears
     (ISO 32000-2 8.4.3.6, 8.5.3.2, 10.7.4), wherever it lies on the pixel grid. With
     `length`, each dot is instead a segment that long, a subpath or a dash of [length,
-    DOT_SPACING - length], shorter than a pixel: nor does it."""
+    DOT_SPACING - length], shorter than a pixel: nor does it. A line width this thin is
+    widened to a pen a device pixel across its narrower axis (8.4.3.2)."""
 
     def __init__(
         self,
@@ -1169,6 +1184,26 @@ class Dots:
             for row in range(DOT_ROWS)
             for column in range(DOT_ROWS)
         ]
+
+    def expected_area(self) -> float:
+        """The page area, in square device pixels, of each dot: its pen, a circle a line
+        width across in stroke space (user space scaled by the mean of the CTM's scales
+        along the axes) widened to HAIRLINE_FLOOR on the page across the CTM's least
+        stretch, swept along its length, with its caps."""
+        a, b, c, d = self.ctm[:4]
+        scale = (math.hypot(a, b) + math.hypot(c, d)) / 2.0
+        forward = (a / scale, b / scale, c / scale, d / scale)
+        smallest, _ = matrix_stretches(forward)
+        determinant = abs(forward[0] * forward[3] - forward[1] * forward[2])
+        half = max(HAIRLINE_FLOOR / 2.0 / smallest, self.width * scale / 2.0)
+        length = self.length * scale
+        if self.cap == ROUND:
+            area = math.pi * half * half + 2.0 * half * length
+        elif self.cap == SQUARE:
+            area = 2.0 * half * (2.0 * half + length)
+        else:
+            area = 2.0 * half * length
+        return area * determinant
 
     def pdf(self) -> bytes:
         paint = []
@@ -1310,23 +1345,102 @@ def dots() -> list[Dots]:
 
 
 def check_dots(case: Dots) -> bool:
-    """Each dot's coverage, the alpha in the 3 x 3 pixels around its centre, must be at
-    least DOT_LEAST and at most DOT_MOST of a pixel."""
+    """Each dot's coverage, the alpha in the 3 x 3 pixels around its centre, must be its
+    expected area within DOT_SLACK and a tenth of it, and at least DOT_LEAST."""
     pixels = rendered(case)
     alpha = pixels[..., 3].astype(numpy.float64) / 255.0 / case.alpha
     height = alpha.shape[0]
+    expected = case.expected_area()
+    slack = DOT_SLACK + 0.1 * expected
     wrong = []
     for centre in case.centres():
         x, y = apply(case.ctm, centre)
         column, row = math.floor(x), math.floor(height - y)
         ink = float(alpha[row - 1 : row + 2, column - 1 : column + 2].sum())
-        if not DOT_LEAST <= ink <= DOT_MOST:
+        if ink < DOT_LEAST or abs(ink - expected) > slack:
             wrong.append((centre, ink))
     for centre, ink in wrong[:2]:
-        print(f"  {case.name}: the dot at {centre[0]:g}, {centre[1]:g} covers {ink:.3f} of a pixel")
+        print(
+            f"  {case.name}: the dot at {centre[0]:g}, {centre[1]:g} covers {ink:.3f} of a"
+            f" pixel, not {expected:.3f}"
+        )
     if wrong:
         print(f"{case.name}: {len(wrong)} of {DOT_ROWS * DOT_ROWS} dots wrong")
     return not wrong
+
+
+class ThinLine:
+    """One line from `start` to `end` in user space, a line width of `width`, under `ctm`."""
+
+    def __init__(self, width: float, start: Point, end: Point, ctm: Affine = IDENTITY) -> None:
+        self.width = width
+        self.start = start
+        self.end = end
+        self.ctm = ctm
+
+    def pdf(self) -> bytes:
+        body = b"q %s cm %s w %s m %s l S Q" % (
+            numbers(self.ctm),
+            numbers([self.width]),
+            numbers(self.start),
+            numbers(self.end),
+        )
+        return document(body, b"<< >>")
+
+    def device_length(self, scale: float) -> float:
+        (x0, y0), (x1, y1) = apply(self.ctm, self.start), apply(self.ctm, self.end)
+        return math.hypot(x1 - x0, y1 - y0) * scale
+
+
+# The ink of a pixel-wide line, at every phase of the sample grid along it, is within this
+# fraction of its length.
+THIN_TOLERANCE = 0.05
+
+
+def check_thin_lines() -> int:
+    """A line thinner than a device pixel is a pixel wide, at any scale; a line width of 0
+    paints the very pixels a tiny one does; and under a CTM that rotates and scales
+    unevenly, a thin line along the pen's narrower axis is a pixel wide (ISO 32000-2
+    8.4.3.2, 10.7.4). Returns the failures."""
+    turned = stretched_rotation(30.0, 3.0, 0.4)
+    wide = [
+        (f"width 0.1 at scale {scale:g}, {name}", ThinLine(0.1, start, end), scale)
+        for scale in (1.0, 4.0)
+        for name, start, end in (
+            ("sloping", (50.0, 100.0), (250.0, 130.0)),
+            ("horizontal", (50.0, 150.3), (250.0, 150.3)),
+        )
+    ]
+    # The user space x axis runs along the pen's wider axis, so the line is as wide as the
+    # narrower one: a pixel.
+    wide += [
+        (
+            f"width {width:g}, rotated and stretched",
+            ThinLine(width, (-40.0, 0.0), (40.0, 0.0), turned),
+            1.0,
+        )
+        for width in (0.0, 0.05)
+    ]
+    failures = 0
+    for name, line, scale in wide:
+        pixels = rendered(line, scale)
+        across = (
+            float(pixels[..., 3].astype(numpy.float64).sum()) / 255.0 / line.device_length(scale)
+        )
+        if abs(across - 1.0) > THIN_TOLERANCE:
+            failures += 1
+            print(f"  {name}: {across:.3f} device pixels wide, not 1")
+    same = [
+        (f"scale {scale:g}", (50.0, 100.0), (250.0, 130.0), IDENTITY, scale) for scale in (1.0, 4.0)
+    ]
+    same.append(("rotated and stretched", (-30.0, -20.0), (40.0, 60.0), turned, 1.0))
+    for name, start, end, ctm, scale in same:
+        zero = rendered(ThinLine(0.0, start, end, ctm), scale)
+        tiny = rendered(ThinLine(1e-4, start, end, ctm), scale)
+        if not numpy.array_equal(zero, tiny):
+            failures += 1
+            print(f"  width 0 and width 0.0001 differ, {name}")
+    return failures
 
 
 def once(case: Case) -> Case:
@@ -1386,7 +1500,9 @@ def main() -> int:
     dotted = dots()
     dot_failures = sum(not check_dots(case) for case in dotted)
     print(f"{len(dotted)} dotted hairline pages: {dot_failures} failures")
-    return 1 if failures or thin_failures or dot_failures else 0
+    line_failures = check_thin_lines()
+    print(f"thin lines: {line_failures} failures")
+    return 1 if failures or thin_failures or dot_failures or line_failures else 0
 
 
 if __name__ == "__main__":

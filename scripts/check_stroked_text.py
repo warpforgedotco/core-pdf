@@ -16,6 +16,9 @@ rotate, and under text matrices and horizontal scaling that stretch and skew the
 Each page is rendered with core, and so is a twin page that draws each glyph's outline, as
 core placed it on the page, as a path under the same CTM and graphics state, and paints it
 with S, or B for the modes that fill too. Every pixel of the two must match within a byte.
+A thin stroke is floored at one device pixel across the pen's narrower axis, as a path's
+is (8.4.3.2, 10.7.4): text stroked at a line width of 0 must also match, pixel for pixel,
+the same text stroked at a tiny width, upright and under a rotating, stretching CTM.
 
 uv run --all-packages python scripts/check_stroked_text.py
 """
@@ -197,6 +200,7 @@ def cases() -> list[Case]:
         Case("width 0.12", width=0.12),
         Case("width 0.4", width=0.4),
         Case("width 0", width=0.0),
+        Case("width 0.05", width=0.05),
         Case("alpha 0.5", alpha=0.5, width=6.0, join=BEVEL),
         Case("Multiply", blend="Multiply", width=6.0, join=ROUND),
         Case("fill, then stroke", mode=2, width=5.0, limit=1.5),
@@ -218,6 +222,10 @@ def cases() -> list[Case]:
         Case("stretched, dashes", ctm=STRETCH, dash=([8.0, 5.0], 2.0), cap=SQUARE),
         Case("skewed, alpha 0.5", ctm=SKEW, alpha=0.5, width=6.0),
         Case("stretched, width 0.12", ctm=STRETCH, width=0.12),
+        Case("stretched, width 0", ctm=STRETCH, width=0.0),
+        Case(
+            "stretched and rotated, width 0.05", ctm=stretched_rotation(47.0, 1.2, 0.75), width=0.05
+        ),
         Case("skewed, fill, then stroke", ctm=SKEW, mode=2, width=4.0),
     ]
     # The text matrix and horizontal scaling shape the glyphs, not the pen.
@@ -256,6 +264,22 @@ def check(case: Case) -> int:
     return len(wrong)
 
 
+def check_zero_width() -> int:
+    """Text stroked at a line width of 0 paints the pixels it does at a tiny width: both are
+    floored at one device pixel. Returns the pages that differ."""
+    failures = 0
+    for name, ctm in (
+        ("upright", IDENTITY),
+        ("stretched and rotated", stretched_rotation(20.0, 1.4, 0.7)),
+    ):
+        zero, _ = render(Case(name, width=0.0, ctm=ctm).pdf())
+        tiny, _ = render(Case(name, width=1e-4, ctm=ctm).pdf())
+        if not numpy.array_equal(zero, tiny):
+            failures += 1
+            print(f"  {name}: text stroked at width 0 and width 0.0001 differs")
+    return failures
+
+
 def main() -> int:
     selected = cases()
     failed_pages = failures = 0
@@ -266,7 +290,9 @@ def main() -> int:
             failed_pages += 1
             print(f"{case.name}: {failed} of {SIZE * SIZE} pixels differ")
     print(f"{len(selected)} stroked text pages: {failures} failures on {failed_pages} pages")
-    return 1 if failures else 0
+    zero_failures = check_zero_width()
+    print(f"width 0 against a tiny width: {zero_failures} failures")
+    return 1 if failures or zero_failures else 0
 
 
 if __name__ == "__main__":
