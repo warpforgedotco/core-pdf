@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
 from functools import partial
@@ -479,47 +481,349 @@ MARKDOWN_MARKUP = InlineMarkup(False, ("~~", "~~"), ("**", "**"), ("*", "*"))
 HTML_MARKUP = InlineMarkup(True, ("<del>", "</del>"), ("<strong>", "</strong>"), ("<em>", "</em>"))
 
 
-def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
-    rendered: list[str] = []
-    for span in line.styled_spans():
+# A layer of inline markup: its kind, and for an abbreviation its expansion and the span it
+# marks, which keeps two abbreviations apart: layout gives each one span, its runs joined.
+type InlineLayer = tuple[str, str, int]
+# Outermost first, where layers opening together run on equally far.
+LAYER_KINDS = ("abbr", "italic", "bold", "strikeout", "underline", "mark", "sup", "sub")
+EMPHASIS_KINDS = frozenset(("italic", "bold", "strikeout"))
+INLINE_TAGS = {
+    "underline": ("<u>", "</u>"),
+    "mark": ("<mark>", "</mark>"),
+    "sup": ("<sup>", "</sup>"),
+    "sub": ("<sub>", "</sub>"),
+}
+# CommonMark's whitespace (2.1): Unicode Zs, tab, line feed, form feed and carriage return.
+COMMONMARK_SPACES = "\t\n\f\r \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000"
+COMMONMARK_SPACES_RE = re.compile(f"[{COMMONMARK_SPACES}]+")
+INLINE_UNITS_RE = re.compile(f"[{COMMONMARK_SPACES}]+|[^{COMMONMARK_SPACES}]+")
+# Text CommonMark would read as markup: escaped with a backslash in Markdown. An & only
+# where it would start an entity or character reference.
+MARKDOWN_SYNTAX_RE = re.compile(
+    r"[\\*_~`<\[\]]|&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]{0,31};)"
+)
+# What starts a heading, block quote, list item, thematic break or setext underline at the
+# start of a line; an ordered list marker is escaped at its . or ).
+MARKDOWN_LINE_START = frozenset("#>+=-")
+ORDERED_MARKER_RE = re.compile(r"^([0-9]{1,9})([.)])(?=[ \t]|$)")
+# A heading's closing sequence: a run of # its text ends with, after a space or alone.
+HEADING_CLOSING_RE = re.compile(r"(^|[ \t])(#+)$")
+# The CommonMark list markers a list line's own marker is written as: a numbered marker
+# stays, a bullet glyph becomes -, and a letter (or a longer number) stays text after -.
+NUMBERED_MARKER_RE = re.compile(r"[0-9]{1,9}[.)]")
+BULLET_MARKERS = frozenset("-*•▪◦")
+# An inline token: ("text", text, unit index) or ("open" or "close", layer, instance).
+type InlineToken = tuple[str, InlineLayer | str, int]
+
+
+def is_space(text: str) -> bool:
+    return COMMONMARK_SPACES_RE.fullmatch(text) is not None
+
+
+def span_layers(span: TextSpan, index: int) -> tuple[InlineLayer, ...]:
+    """The markup a span is wrapped in, in LAYER_KINDS order."""
+    flags = (
+        span.expansion is not None,
+        span.italic,
+        span.bold,
+        span.strikeout,
+        span.underline,
+        span.mark,
+        span.superscript,
+        span.subscript and not span.superscript,
+    )
+    return tuple(
+        (kind, span.expansion or "", index) if kind == "abbr" else (kind, "", -1)
+        for kind, flag in zip(LAYER_KINDS, flags, strict=True)
+        if flag
+    )
+
+
+def layer_markers(layer: InlineLayer, markup: InlineMarkup) -> tuple[str, str]:
+    kind = layer[0]
+    if kind == "abbr":
+        # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one.
+        return f'<abbr title="{escape(layer[1], quote=True)}">', "</abbr>"
+    if kind in EMPHASIS_KINDS:
+        markers: tuple[str, str] = getattr(markup, kind)
+        return markers
+    return INLINE_TAGS[kind]
+
+
+def styled_units(
+    line: TextLine, markup: InlineMarkup, start: int
+) -> list[tuple[str, tuple[InlineLayer, ...]]]:
+    """The line's words and runs of whitespace, each with the layers it sits in.
+
+    Whitespace inside a span keeps the span's layers, and so does a span of spaces only,
+    a fill-in blank say. Whitespace at a span's end keeps only the layers the unit beyond
+    it shares, so markup that ends there closes before it and markup that starts there
+    opens after it, while markup running on across it holds it.
+    """
+    pieces: list[tuple[str, tuple[InlineLayer, ...]]] = []
+    for index, span in enumerate(line.styled_spans()):
         text = span.text
         if start:
             text = text[start:]
             start = max(0, start - len(span.text))
             if not text:
                 continue
-        text = escape(text) if markup.escape_text else text
-        # Spaces at either end stay outside the markers: Markdown emphasis does not open
-        # before or close after whitespace. A span of spaces only, a fill-in blank say, keeps
-        # them inside its tags, and gets no Markdown emphasis, which cannot hold only spaces.
-        body = text.strip()
-        leading = trailing = ""
-        if body:
-            start_at = text.index(body)
-            leading, trailing = text[:start_at], text[start_at + len(body) :]
-            text = body
-        emphasis = bool(body) or markup.escape_text
-        if span.superscript:
-            text = f"<sup>{text}</sup>"
-        elif span.subscript:
-            text = f"<sub>{text}</sub>"
-        if span.mark:
-            text = f"<mark>{text}</mark>"
-        if span.underline:
-            text = f"<u>{text}</u>"
-        if span.strikeout and emphasis:
-            text = f"{markup.strikeout[0]}{text}{markup.strikeout[1]}"
-        if span.bold and emphasis:
-            text = f"{markup.bold[0]}{text}{markup.bold[1]}"
-        if span.italic and emphasis:
-            text = f"{markup.italic[0]}{text}{markup.italic[1]}"
-        if span.expansion is not None:
-            # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
-            # space joining it to the text before stays outside it and its styles.
-            title = escape(span.expansion, quote=True)
-            text = f'<abbr title="{title}">{text}</abbr>'
-        rendered.append(f"{leading}{text}{trailing}")
-    return "".join(rendered)
+        pieces.append((escape(text) if markup.escape_text else text, span_layers(span, index)))
+    units: list[tuple[str, tuple[InlineLayer, ...]]] = []
+    edges: list[int] = []  # -1 a span's leading whitespace, 1 its trailing, 0 neither
+    for text, layers in pieces:
+        parts = INLINE_UNITS_RE.findall(text)
+        blank = len(parts) == 1 and is_space(parts[0])
+        for position, part in enumerate(parts):
+            units.append((part, layers))
+            edge = 0
+            if is_space(part) and not blank:
+                edge = -1 if position == 0 else 1 if position == len(parts) - 1 else 0
+            edges.append(edge)
+    return [
+        (
+            text,
+            tuple(
+                layer
+                for layer in layers
+                if edge == 0 or 0 <= index + edge < len(units) and layer in units[index + edge][1]
+            ),
+        )
+        for index, ((text, layers), edge) in enumerate(zip(units, edges, strict=True))
+    ]
+
+
+def inline_tokens(
+    units: list[tuple[str, tuple[InlineLayer, ...]]], markup: InlineMarkup
+) -> list[InlineToken]:
+    """Open and close each layer around the units it holds, keeping it open across them.
+
+    Layers opening together nest by how far they run on, the longest outermost. In
+    Markdown, whitespace opens no emphasis, which cannot start or end with whitespace, and
+    whitespace before emphasis closes moves after its marker.
+    """
+    markdown = not markup.escape_text
+    tokens: list[InlineToken] = []
+    stack: list[tuple[InlineLayer, int]] = []
+    instances = 0
+
+    def reach(layer: InlineLayer, index: int) -> int:
+        count = 0
+        for _, later in units[index + 1 :]:
+            if layer not in later:
+                break
+            count += 1
+        return count
+
+    def close_to(keep: int) -> None:
+        for layer, instance in reversed(stack[keep:]):
+            moved: list[InlineToken] = []
+            if markdown and layer[0] in EMPHASIS_KINDS:
+                while tokens and isinstance(tokens[-1][1], str) and is_space(tokens[-1][1]):
+                    moved.append(tokens.pop())
+            tokens.append(("close", layer, instance))
+            tokens.extend(reversed(moved))
+        del stack[keep:]
+
+    for index, (text, layers) in enumerate(units):
+        keep = 0
+        while keep < len(stack) and stack[keep][0] in layers:
+            keep += 1
+        kept = [layer for layer, _ in stack[:keep]]
+        if markdown and is_space(text):
+            layers = tuple(
+                layer for layer in layers if layer[0] not in EMPHASIS_KINDS or layer in kept
+            )
+        close_to(keep)
+        opening = sorted(
+            (layer for layer in layers if layer not in kept),
+            key=lambda layer: reach(layer, index),
+            reverse=True,
+        )
+        for layer in opening:
+            tokens.append(("open", layer, instances))
+            stack.append((layer, instances))
+            instances += 1
+        tokens.append(("text", text, index))
+    close_to(0)
+    return tokens
+
+
+def flanking(before: str, after: str) -> tuple[bool, bool]:
+    """Whether a delimiter run between these characters is left- and right-flanking
+    (CommonMark 6.2); an empty string is the line's edge."""
+
+    def space(character: str) -> bool:
+        return not character or is_space(character)
+
+    def punctuation(character: str) -> bool:
+        return bool(character) and unicodedata.category(character)[0] in "PS"
+
+    left = not space(after) and (not punctuation(after) or space(before) or punctuation(before))
+    right = not space(before) and (not punctuation(before) or space(after) or punctuation(after))
+    return left, right
+
+
+def escape_markdown(text: str, *, line_start: bool) -> str:
+    text = MARKDOWN_SYNTAX_RE.sub(lambda match: f"\\{match.group()}", text)
+    if not line_start:
+        return text
+    if text[:1] in MARKDOWN_LINE_START:
+        return f"\\{text}"
+    return ORDERED_MARKER_RE.sub(r"\1\\\2", text, count=1)
+
+
+def escaped_tokens(tokens: list[InlineToken]) -> list[InlineToken]:
+    """The tokens with their text escaped for Markdown, text between two markers joined,
+    and the line's text escaped as a line start unless markup comes first.
+
+    Spaces and tabs at the line's ends go: a paragraph line loses them anyway, and kept
+    they would open an indented code block (four columns at the start) or a hard line
+    break (two spaces at the end).
+    """
+    joined: list[InlineToken] = []
+    for token in tokens:
+        if joined and isinstance(token[1], str) and isinstance(joined[-1][1], str):
+            joined[-1] = (joined[-1][0], joined[-1][1] + token[1], joined[-1][2])
+        else:
+            joined.append(token)
+    if joined and isinstance(joined[0][1], str):
+        joined[0] = (joined[0][0], joined[0][1].lstrip(" \t"), joined[0][2])
+    if joined and isinstance(joined[-1][1], str):
+        joined[-1] = (joined[-1][0], joined[-1][1].rstrip(" \t"), joined[-1][2])
+    return [
+        (kind, escape_markdown(value, line_start=index == 0), unit)
+        if isinstance(value, str)
+        else (kind, value, unit)
+        for index, (kind, value, unit) in enumerate(joined)
+        if value != ""
+    ]
+
+
+def render_tokens(tokens: list[InlineToken], markup: InlineMarkup, tagged: set[int]) -> list[str]:
+    rendered: list[str] = []
+    for kind, value, instance in tokens:
+        if isinstance(value, str):
+            rendered.append(value)
+            continue
+        markers = layer_markers(value, HTML_MARKUP if instance in tagged else markup)
+        rendered.append(markers[0] if kind == "open" else markers[1])
+    return rendered
+
+
+def is_delimiter(token: InlineToken, tagged: set[int]) -> bool:
+    """Whether the token is a Markdown emphasis marker, not written as an HTML tag."""
+    value = token[1]
+    return not isinstance(value, str) and value[0] in EMPHASIS_KINDS and token[2] not in tagged
+
+
+class DelimiterRun:
+    """A run of one Markdown emphasis character, as CommonMark matches it."""
+
+    __slots__ = ("can_close", "can_open", "character", "end", "left", "length", "start")
+
+    def __init__(
+        self, character: str, start: int, end: int, length: int, flanks: tuple[bool, bool]
+    ):
+        self.character = character
+        self.start, self.end = start, end  # its first token and the token after it
+        self.length = length
+        self.left = length  # characters not yet matched
+        self.can_open, self.can_close = flanks
+
+
+def misread_at(tokens: list[InlineToken], markup: InlineMarkup, tagged: set[int]) -> int | None:
+    """The first token CommonMark would read with other emphasis than its own, if any.
+
+    This follows CommonMark's delimiter runs and their matching (6.2 and appendix A, its
+    rule of 3 included, strikethrough pairing as markdown-it's), and compares the emphasis
+    each word ends up in with the emphasis written around it; a delimiter left unmatched
+    reads as text.
+    """
+    rendered = render_tokens(tokens, markup, tagged)
+    runs: list[DelimiterRun] = []
+    index = 0
+    while index < len(tokens):
+        if not is_delimiter(tokens[index], tagged):
+            index += 1
+            continue
+        character = rendered[index][0]
+        end = index + 1
+        while (
+            end < len(tokens)
+            and is_delimiter(tokens[end], tagged)
+            and rendered[end][0] == character
+        ):
+            end += 1
+        # Neither words nor markers are empty.
+        before = rendered[index - 1][-1] if index else ""
+        after = rendered[end][0] if end < len(rendered) else ""
+        length = sum(len(rendered[at]) for at in range(index, end))
+        runs.append(DelimiterRun(character, index, end, length, flanking(before, after)))
+        index = end
+    pairs: list[tuple[int, int, str]] = []
+    for closer_index, closer in enumerate(runs):
+        while closer.can_close and closer.left:
+            for opener_index in range(closer_index - 1, -1, -1):
+                opener = runs[opener_index]
+                if opener.character != closer.character or not opener.can_open or not opener.left:
+                    continue
+                if (
+                    closer.character == "*"
+                    and (opener.can_close or closer.can_open)
+                    and (opener.length + closer.length) % 3 == 0
+                    and (opener.length % 3 or closer.length % 3)
+                ):
+                    continue
+                break
+            else:
+                break
+            if closer.character == "~":
+                count, kind = 2, "strikeout"
+            else:
+                count = 2 if opener.left >= 2 and closer.left >= 2 else 1
+                kind = "bold" if count == 2 else "italic"
+            opener.left -= count
+            closer.left -= count
+            pairs.append((opener.end, closer.start, kind))
+            # Delimiters between the two read as text.
+            for between in runs[opener_index + 1 : closer_index]:
+                if between.character == closer.character:
+                    between.can_open = between.can_close = False
+    if unmatched := [run.start for run in runs if run.left]:
+        return unmatched[0]
+    written: Counter[str] = Counter()
+    for at, token in enumerate(tokens):
+        side, value, _ = token
+        if isinstance(value, str):
+            if is_space(value):
+                continue
+            read = {style for first, end, style in pairs if first <= at < end}
+            if read != {style for style, count in written.items() if count}:
+                return at
+        elif is_delimiter(token, tagged):
+            written[value[0]] += 1 if side == "open" else -1
+    return None
+
+
+def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
+    # A line keeps a span per text run, and runs split at every font or glyph-run change,
+    # so neighbours often share markup: a layer stays open across the spans that share it,
+    # so `UN` in two bold runs is `**UN**`, not `**U****N**`.
+    tokens = inline_tokens(styled_units(line, markup, start), markup)
+    tagged: set[int] = set()
+    if not markup.escape_text:
+        tokens = escaped_tokens(tokens)
+        # Emphasis CommonMark would misread is written as HTML, which Markdown reads as
+        # inline HTML: the one whose marker is nearest the first word misread, till none is.
+        while (at := misread_at(tokens, markup, tagged)) is not None:
+            nearest = min(
+                (abs(position - at), position)
+                for position, token in enumerate(tokens)
+                if is_delimiter(token, tagged)
+            )[1]
+            tagged.add(tokens[nearest][2])
+    return "".join(render_tokens(tokens, markup, tagged))
 
 
 def markdown_line(line: TextLine, *, start: int = 0) -> str:
@@ -567,10 +871,32 @@ class MarkdownFormatter:
         return f"> [Figure: {figure.kind}]"
 
     def format_page(self, page: Page) -> str:
-        return "\n\n".join(format_elements(self, page))
+        # Neighbouring lists alternate their markers, - and *, . and ): a blank line alone
+        # would join them into one loose list.
+        rendered: list[str] = []
+        alternate = False
+        for index, element in enumerate(page.elements):
+            if isinstance(element, Block) and element.kind is BlockKind.LIST:
+                previous = page.elements[index - 1] if index else None
+                follows_list = isinstance(previous, Block) and previous.kind is BlockKind.LIST
+                alternate = follows_list and not alternate
+                rendered.append(block_to_markdown(element, alternate=alternate))
+            else:
+                rendered.append(
+                    map_page_element(
+                        element,
+                        block=self.format_block,
+                        table=self.format_table,
+                        figure=self.format_figure,
+                    )
+                )
+        return "\n\n".join(rendered)
 
     def format_document(self, document: Document) -> str:
-        return "\f".join(self.format_page(page) for page in document.pages) + "\f"
+        # A form feed on a line of its own between blank lines: CommonMark reads it as a
+        # paragraph of whitespace, so a page's first block starts a line and a list
+        # ending the page before ends there.
+        return "".join(f"{self.format_page(page)}\n\n\f\n\n" for page in document.pages)
 
 
 class HtmlFormatter:
@@ -606,17 +932,44 @@ def page_to_markdown(page: Page) -> str:
     return MARKDOWN_FORMATTER.format_page(page)
 
 
-def block_to_markdown(block: Block) -> str:
+def markdown_list_item(line: TextLine, *, alternate: bool = False) -> tuple[str, int]:
+    """The CommonMark list marker a list line is written with, and where its text starts.
+
+    A numbered marker keeps its number, with . (or ) when alternate); a bullet glyph is -
+    (or *). A marker counts only before whitespace or the line's end, so `1.5 million` and
+    `-5 degrees` are text; a letter marker, or none, stays text after a bullet.
+    """
+    prefix = list_prefix(line.text)
+    marker = prefix.strip()
+    # The prefix takes the spaces after its marker: none there, the line must end.
+    ends = prefix.endswith((" ", "\t")) or len(prefix) == len(line.text)
+    if ends and NUMBERED_MARKER_RE.fullmatch(marker):
+        return f"{marker[:-1]}{')' if alternate else '.'} ", len(prefix)
+    bullet = "* " if alternate else "- "
+    if ends and marker in BULLET_MARKERS:
+        return bullet, len(prefix)
+    return bullet, 0
+
+
+def markdown_heading_level(block: Block) -> int:
+    """The ATX heading level: 2 when the block has none, else its level within 1 to 6."""
+    return 2 if block.level is None else min(max(block.level, 1), 6)
+
+
+def block_to_markdown(block: Block, *, alternate: bool = False) -> str:
     if block.kind is BlockKind.LIST:
         return "\n".join(
-            f"{prefix or '- '}{markdown_line(line, start=len(prefix))}"
+            f"{marker}{markdown_line(line, start=start)}"
             for line in block.lines
-            for prefix in (list_prefix(line.text),)
+            for marker, start in (markdown_list_item(line, alternate=alternate),)
         )
-    text = "\n".join(markdown_line(line) for line in block.lines)
+    # A line of spaces only would end the paragraph.
+    lines = [text for line in block.lines if (text := markdown_line(line))]
     if block.kind is BlockKind.HEADING:
-        return f"{'#' * (block.level or 2)} {text}"
-    return text
+        # An ATX heading is one line, and a run of # ending it would close it.
+        text = HEADING_CLOSING_RE.sub(r"\1\\\2", " ".join(lines))
+        return f"{'#' * markdown_heading_level(block)} {text}"
+    return "\n".join(lines)
 
 
 def document_to_html(document: Document) -> str:
