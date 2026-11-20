@@ -321,6 +321,32 @@ def fill_circle(
                 blend_px(row + px * 4, rgba, blend_resolved_mode)
 
 
+def rect_paints_whole(
+    self: RasterTarget,
+    rect: tuple[float, float, float, float],
+    rgba: tuple[int, int, int, int],
+    blend_mode: str | None,
+) -> bool:
+    """Whether fill_rect paints rect as fill_path would: with partial coverage at its edges,
+    which it gives in the Normal mode under a rectangular clip, or where its device edges
+    fall on pixel edges, so no pixel is partly covered."""
+    if self.clip.clip_paths_are_axis_aligned_rects() and (
+        blend_mode is None or (rgba[3] == 255 and declared_blend(blend_mode) is None)
+    ):
+        return True
+    x0, y0, x1, y1 = rect
+    scale = self.scale
+    for value in (
+        (x0 - self.crop_x0) * scale,
+        (x1 - self.crop_x0) * scale,
+        (self.crop_y1 - y1) * scale,
+        (self.crop_y1 - y0) * scale,
+    ):
+        if abs(value - round(value)) > 1e-9:
+            return False
+    return True
+
+
 def fill_path(
     self: RasterTarget,
     path: CapturedPath,
@@ -342,7 +368,7 @@ def fill_path(
     work follow the edges and the painted runs, not the pixel box."""
     clip = self.clip
     rect = path.axis_aligned_rect()
-    if rect is not None:
+    if rect is not None and rect_paints_whole(self, rect, rgba, blend_mode):
         self.fill_rect(rect, rgba, blend_mode)
         return
     if edge_array is None:

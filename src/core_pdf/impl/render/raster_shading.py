@@ -66,6 +66,10 @@ if TYPE_CHECKING:
 MAX_TILING_CELLS = 10000
 # An axial or radial shading is worked out a band of at most this many pixels at a time.
 SHADING_BAND_CELLS = 1 << 20
+# The colours the bands of one shading share stop growing at this many inputs (24 bytes each,
+# 24 MiB): a shading of a distinct input per pixel would otherwise keep them all, with no
+# hits; the inputs past it are evaluated in their band, as each band found them before.
+SHADING_KNOWN_LIMIT = 1 << 20
 # Cells from which a pattern paints one cell and copies its pixels to the rest.
 MIN_STAMPED_CELLS = 16
 
@@ -222,7 +226,7 @@ def blend_shading_colors(
     appear; when one fails, the pixels before it are painted and its error raised. With
     many_colors, the colours of a device colour model are converted in one pass. known holds
     the inputs (sorted) and colours earlier bands of the same shading found, as two arrays,
-    and gains this band's."""
+    and gains this band's, up to SHADING_KNOWN_LIMIT inputs."""
     ix0, iy0 = origin
     soft_mask_alpha = item.soft_mask_alpha
     fill_opacity = item.fill_opacity
@@ -294,8 +298,9 @@ def blend_shading_colors(
             color_error = error
             reached = position
             break
-    if known is not None and evaluated:
-        found = todo[:evaluated]
+    room = SHADING_KNOWN_LIMIT - len(known[0]) if known is not None else 0
+    if known is not None and evaluated and room > 0:
+        found = todo[: min(evaluated, room)]
         merged_keys = numpy.concatenate((known[0], values[found]))
         merged_colors = numpy.concatenate((known[1], colors[by_first[found]]))
         by_key = numpy.argsort(merged_keys, kind="stable")
@@ -892,7 +897,26 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
     # coverage's alpha and the pattern's group are kept zero between pattern fills at this
     # depth, so a fill costs its pixel box, not the page.
     scratch = self.pattern_scratch_for()
-    ix0, iy0, ix1, iy1 = clipped[1]
+    try:
+        paint_pattern_fill(self, pattern, data, path, box, clipped[1], blend_mode, scratch)
+    finally:
+        self.pattern_scratch_done(scratch)
+    return True
+
+
+def paint_pattern_fill(
+    self: RasterTarget,
+    pattern: ShadingPattern | TilingPattern,
+    data: PathPaintItem,
+    path: CapturedPath,
+    box: tuple[float, float, float, float],
+    pixel_box: tuple[int, int, int, int],
+    blend_mode: str | None,
+    scratch: PatternScratch,
+) -> None:
+    """paint_fill_pattern's work on scratch, the zeroed planes of its depth."""
+    clip_state = self.clip
+    ix0, iy0, ix1, iy1 = pixel_box
     rows, columns = slice(iy0, iy1), slice(ix0, ix1)
     coverage, view = self.blank_sibling(clip_state, scratch.page)
     try:
@@ -923,7 +947,6 @@ def paint_fill_pattern(self: RasterTarget, data: PathPaintItem, blend_mode: str 
         )
     finally:
         scratch.alpha[rows, columns] = 0
-    return True
 
 
 def paint_pattern_through(
@@ -1054,19 +1077,33 @@ class PatternScratch:
     page, the blank page its coverage is drawn on and then the pattern's group, which never
     live at once, and alpha, the coverage's alpha."""
 
-    __slots__ = ("alpha", "page")
+    __slots__ = ("alpha", "busy", "page")
 
     def __init__(self, width: int, height: int) -> None:
         self.page = bytearray(width * height * 4)
         self.alpha = numpy.zeros((height, width), dtype=numpy.uint8)
+        # Whether a pattern fill at its depth is drawing on it now.
+        self.busy = False
 
 
 def pattern_scratch_for(self: RasterTarget) -> PatternScratch:
+    """The scratch planes of the current depth of the group stack, marked busy until
+    pattern_scratch_done."""
     depth = len(self.buffer_stack)
     scratch = self.pattern_scratch.get(depth)
     if scratch is None:
         scratch = self.pattern_scratch[depth] = PatternScratch(self.width, self.height)
+    scratch.busy = True
     return scratch
+
+
+def pattern_scratch_done(self: RasterTarget, scratch: PatternScratch) -> None:
+    """Mark scratch idle and keep it, freeing every other idle depth's planes: the fills
+    still drawing keep theirs, and at most one page waits idle for the next fill."""
+    scratch.busy = False
+    for depth, other in list(self.pattern_scratch.items()):
+        if other is not scratch and not other.busy:
+            del self.pattern_scratch[depth]
 
 
 def blank_sibling(

@@ -291,8 +291,10 @@ Rows = cython.struct(
     heap_cells=cython.Py_ssize_t,
 )
 
-# Blocks a fill borrows and gives back, kept between fills so a glyph allocates nothing: the
-# kernels hold the GIL and never nest.
+# Blocks a fill borrows and gives back, kept between fills so a glyph allocates nothing. A
+# fill takes and returns them with the GIL held, each pointer with its capacity, so a fill
+# that runs while another has released the GIL (to add its right weights) finds either a
+# whole spare or none, at capacity 0; the kernels never nest.
 SPARE_BLOCK = cython.declare(cython.p_char, cython.NULL)
 SPARE_BLOCK_BYTES = cython.declare(cython.Py_ssize_t, 0)
 SPARE_YS = cython.declare(cython.p_double, cython.NULL)
@@ -334,6 +336,8 @@ SWEEP_WORK_PER_ROW = cython.declare(cython.Py_ssize_t, 16)
 SAMPLED_ROW = cython.declare(cython.uchar, 2)
 # A row to measure exactly with more active edges than this is supersampled instead.
 EXACT_EDGES = cython.declare(cython.Py_ssize_t, 256)
+# A supersampled line reorders its crossings by insertion up to this many moves each.
+INSERTION_MOVES = cython.declare(cython.Py_ssize_t, 8)
 # Each side of a supersampled row's grid of samples per pixel.
 ROW_SAMPLES = cython.declare(cython.Py_ssize_t, 4)
 OUTLINE_ROWS = cython.declare(cython.Py_ssize_t, 1)
@@ -752,21 +756,27 @@ def _rows_begin(
         block = SPARE_BLOCK
         rows.block_bytes = SPARE_BLOCK_BYTES
         SPARE_BLOCK = cython.NULL
+        SPARE_BLOCK_BYTES = 0
     else:
         block = cython.cast(cython.p_char, PyMem_Malloc(needed))
         if block == cython.NULL:
             raise MemoryError
         rows.block_bytes = needed
     rows.block = block
+    # Each spare goes with its capacity, and leaves none behind: a borrower that finds no
+    # spare starts at capacity 0, whatever another fill, its GIL released, holds.
     rows.ys = SPARE_YS
-    rows.ys_capacity = SPARE_YS_CAPACITY
+    rows.ys_capacity = SPARE_YS_CAPACITY if SPARE_YS != cython.NULL else 0
     SPARE_YS = cython.NULL
+    SPARE_YS_CAPACITY = 0
     rows.entries = SPARE_ENTRIES
-    rows.entry_capacity = SPARE_ENTRY_CAPACITY
+    rows.entry_capacity = SPARE_ENTRY_CAPACITY if SPARE_ENTRIES != cython.NULL else 0
     SPARE_ENTRIES = cython.NULL
+    SPARE_ENTRY_CAPACITY = 0
     rows.runs = SPARE_RUNS
-    rows.run_capacity = SPARE_RUN_CAPACITY
+    rows.run_capacity = SPARE_RUN_CAPACITY if SPARE_RUNS != cython.NULL else 0
     SPARE_RUNS = cython.NULL
+    SPARE_RUN_CAPACITY = 0
     rows.edges = cython.cast(cython.pointer[RowEdge], block)
     block += cells * cython.sizeof(RowEdge)
     rows.order = cython.cast(cython.p_Py_ssize_t, block)
@@ -857,6 +867,7 @@ def _rows_begin(
                 rows.cells = SPARE_CELLS
                 rows.heap_cells = SPARE_CELLS_COUNT
                 SPARE_CELLS = cython.NULL
+                SPARE_CELLS_COUNT = 0
                 memset(rows.cells, 0, (width + 2) * height * cython.sizeof(cython.double))
             else:
                 rows.cells = _zeroed_cells((width + 2) * height)
@@ -877,6 +888,7 @@ def _row_buffers(rows: cython.pointer[Rows]) -> cython.int:
         rows.acc = SPARE_ACC
         rows.acc_cells = SPARE_ACC_CELLS
         SPARE_ACC = cython.NULL
+        SPARE_ACC_CELLS = 0
         memset(rows.acc, 0, (rows.width + 2) * cython.sizeof(cython.double))
     else:
         rows.acc = _zeroed_cells(rows.width + 2)
@@ -1739,6 +1751,7 @@ def _sampled_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int
     y: cython.double
     previous: cython.double
     span: Span
+    moves: cython.Py_ssize_t
     _row_buffers(rows)
     acc = rows.acc
     for line in range(ROW_SAMPLES):
@@ -1770,6 +1783,9 @@ def _sampled_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int
         if added > SORT_SMALL:
             _sort_spans(spans, count)
         else:
+            # Insertion, while the crossings keep nearly the last line's order; past a few
+            # moves per crossing, many have swapped places, and qsort takes the rest.
+            moves = 0
             for a in range(1, count):
                 span = spans[a]
                 k = a
@@ -1779,7 +1795,11 @@ def _sampled_row(rows: cython.pointer[Rows], r: cython.Py_ssize_t) -> cython.int
                 ):
                     spans[k] = spans[k - 1]
                     k -= 1
+                    moves += 1
                 spans[k] = span
+                if moves > INSERTION_MOVES * count + 64:
+                    _sort_spans(spans, count)
+                    break
         rows.sampled_count = count
         rows.sampled_y = y
         winding = 0
@@ -1851,15 +1871,22 @@ def windings_mix(edges) -> bool:
     i: cython.Py_ssize_t
     low: cython.double = view[1]
     high: cython.double = view[1]
+    left: cython.double = view[0]
     for i in range(edge_count(array)):
         low = py_min(low, py_min(view[i * stride + 1], view[i * stride + 3]))
         high = py_max(high, py_max(view[i * stride + 1], view[i * stride + 3]))
+        left = py_min(left, py_min(view[i * stride], view[i * stride + 2]))
     if not (high > low) or high - low - (high - low) != 0.0:
         return True
     scale: cython.double = OUTLINE_ROWS / (high - low)
+    if left - left != 0.0:
+        left = 0.0
+    # x from the outline's left, so CROSS_SLACK, relative to x, is relative to the outline's
+    # size, not to how far from the origin it lies: a reversal it lets pass is a billionth
+    # of the outline's height.
     device_stack = cython.declare(cython.double[STACK_EDGE_VALUES])
     device: cython.p_double = _device_edges(
-        array, kept, 0.0, high, scale, 0.0, 0.0, device_stack, STACK_EDGES
+        array, kept, left, high, scale, 0.0, 0.0, device_stack, STACK_EDGES
     )
     rows = cython.declare(Rows)
     r: cython.Py_ssize_t

@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.fonts.glyph_geometry import outline_arrays  # noqa: E402
 from core_pdf_cythonized import (  # noqa: E402
+    SimpleEdges,
     area_coverage_plane,
     fill_glyph_coverage_at,
     glyph_outline_edges,
@@ -362,20 +363,23 @@ def render(pdf: bytes) -> numpy.ndarray:
     return pixels[..., :3].astype(numpy.float64) * alpha + 255 * (1 - alpha)
 
 
-def device_edges(polygons: list[Contour]) -> numpy.ndarray:
+def device_edges(polygons: list[Contour], *, horizontal: bool = False) -> numpy.ndarray:
+    """The polygons' edges in device space; horizontal ones only when asked, as they cross
+    no row."""
     rows = []
     for polygon in polygons:
         for index, (x0, y0) in enumerate(polygon):
             x1, y1 = polygon[(index + 1) % len(polygon)]
-            if y0 != y1:
+            if y0 != y1 or horizontal:
                 rows.append((x0, SIZE - y0, x1, SIZE - y1))
-    return numpy.array(rows, dtype=numpy.float64)
+    return numpy.array(rows, dtype=numpy.float64).reshape(-1, 4)
 
 
 def clipped_edges(polygons: list[Contour]) -> numpy.ndarray:
-    """The polygons' edges in device space, cut to the page (with a pixel's margin)."""
+    """The polygons' edges in device space, horizontal ones included, as the 4x4 grid can
+    miss part of a pixel along them too, cut to the page (with a pixel's margin)."""
     clipped = []
-    for x0, y0, x1, y1 in device_edges(polygons).tolist():
+    for x0, y0, x1, y1 in device_edges(polygons, horizontal=True).tolist():
         # Liang-Barsky against the page square.
         t0, t1 = 0.0, 1.0
         dx, dy = x1 - x0, y1 - y0
@@ -1228,6 +1232,15 @@ MIXED_GLYPHS.append(
         ),
     )
 )
+MIXED_GLYPHS.append(
+    (
+        "two contours far from the origin whose sides cross by 0.15",
+        (
+            ((1e9, 0.0), (1e9 + 0.25, 5.0), (1e9, 10.0), (1e9 - 5.0, 10.0), (1e9 - 5.0, 0.0)),
+            ((1e9 + 0.1, 0.0), (1e9 + 5.0, 0.0), (1e9 + 5.0, 10.0), (1e9 + 0.1, 10.0)),
+        ),
+    )
+)
 # A plain glyph, an O: an outer contour and a reversed hole, which is simple.
 SIMPLE_GLYPH: tuple[tuple[Point, ...], ...] = (
     ((0.0, 0.0), (20.0, 0.0), (20.0, 40.0), (0.0, 40.0)),
@@ -1396,6 +1409,9 @@ def check_engine_edges() -> int:
             arrays.xs, arrays.ys, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, arrays.spans, simple
         )[2]
         assert found_edges is not None
+        if (type(found_edges) is SimpleEdges) != simple:
+            print(f"  an edge with an infinite slope: {simple=} gave {type(found_edges).__name__}")
+            failed += 1
         target = numpy.full((70, 70, 4), 200, numpy.uint8)
         fill_glyph_coverage_at(
             found_edges, 0.0, 70.0, 1.0, 0, 0, 70, 70, (20, 40, 60, 200), target, None, None, 1.0
@@ -1423,6 +1439,9 @@ def check_engine_edges() -> int:
                 arrays.xs, arrays.ys, 1.0, 0.0, 0.0, 1.0, *shift, arrays.spans, simple
             )[2]
             assert edges is not None
+            if (type(edges) is SimpleEdges) != simple:
+                print(f"  simple outline {case}: {simple=} gave {type(edges).__name__}")
+                failed += 1
             target = numpy.full((70, 70, 4), 200, numpy.uint8)
             fill_glyph_coverage_at(
                 edges, 0.0, 70.0, 1.0, 0, 0, 70, 70, (20, 40, 60, 200), target, None, None, 1.0

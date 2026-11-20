@@ -206,6 +206,7 @@ class RasterTarget:
     paint_pattern_through = shading.paint_pattern_through
     blank_sibling = shading.blank_sibling
     pattern_scratch_for = shading.pattern_scratch_for
+    pattern_scratch_done = shading.pattern_scratch_done
 
     # Painting a display list: each item goes to the handler for its type.
     paint_items = dispatch.paint_items
