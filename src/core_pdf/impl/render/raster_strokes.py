@@ -24,6 +24,7 @@ from core_pdf.impl.render.paths import (
     stroke_half_width,
     stroke_reach,
 )
+from core_pdf.impl.render.raster_fills import paint_as_one
 from core_pdf.impl.render.raster_support import subpath_columns
 from core_pdf.impl.spec.citations import cites
 lazy from core_pdf_cythonized import (
@@ -298,37 +299,45 @@ def stroke_path(
         radius = stroke_half_width(scale, float(line_width))
         self.fill_path(circle_path(x, y, radius), rgba, blend_mode)
 
-    stroke_polylines(
-        self.pixel_array,
-        xs,
-        ys,
-        spans,
-        outline,
-        self.crop_x0,
-        self.crop_y1,
-        scale,
-        clip_mode,
-        None if region is None else region.box,
-        region is not None and region.empty,
-        0 if region is None else region.rows_origin,
-        row_offsets,
-        row_spans,
-        float(line_width),
-        *(rgba if native else (0, 0, 0, 0)),
-        native,
-        int(line_cap),
-        int(line_join),
-        max(1.0, float(miter_limit)),
-        0.5,
-        once,
-        path.part_ends() if once else None,
-        line,
-        polygon,
-        square,
-        circle,
-        dot,
-        self.extend_paint_box,
-    )
+    def walk() -> None:
+        stroke_polylines(
+            self.pixel_array,
+            xs,
+            ys,
+            spans,
+            outline,
+            self.crop_x0,
+            self.crop_y1,
+            scale,
+            clip_mode,
+            None if region is None else region.box,
+            region is not None and region.empty,
+            0 if region is None else region.rows_origin,
+            row_offsets,
+            row_spans,
+            float(line_width),
+            *(rgba if native else (0, 0, 0, 0)),
+            native,
+            int(line_cap),
+            int(line_join),
+            max(1.0, float(miter_limit)),
+            0.5,
+            once,
+            path.part_ends() if once else None,
+            line,
+            polygon,
+            square,
+            circle,
+            dot,
+            self.extend_paint_box,
+        )
+
+    if native:
+        walk()
+    else:
+        # Painted piece by piece through the callbacks: the pieces fill_rect, fill_path
+        # and fill_circle cannot paint whole are filled together, as one shape.
+        paint_as_one(self, walk, rgba, blend_mode)
 
 
 def single_segment(

@@ -1,24 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-"""Check that a rectangle renders the same whichever route paints it.
+"""Check that a rectangle or a disc renders the same whichever route paints it.
 
-A filled path is antialiased: a pixel's alpha is the share of it the path covers (core's
-fill_path). Core also paints rectangles on their own, for the stroke of an axis-aligned
-segment, a square dot and a cell of a glyph bitmap; each such rectangle must be the
-rectangle filled as a path, whatever its blend mode and clip, even where fill_rect cannot
-give its partly covered pixels their coverage (a blend mode other than Normal, or a clip
-other than rectangles) and its device edges fall inside pixels.
+A filled path is antialiased: a pixel's alpha is the share of it the path covers, and under
+a blend mode or a clip path that share is counted on a 4 x 4 grid of samples, a sample on
+an edge inside on the left and bottom (core's fill_path). Core also paints rectangles and
+discs on their own, for the stroke of an axis-aligned segment, a square or round dot or
+cap, and the cells of a glyph bitmap; each must cover what the same shape filled as one
+path covers, whatever its blend mode and clip, so that pieces meeting inside a pixel cover
+it once and leave no seam.
 
 This renders, at scales 1 and 2.0833, pages that stroke horizontal and vertical segments
 with butt caps at fractional coordinates, in Multiply over a backdrop, at a constant alpha
 of 0.5 under a triangular clip, and opaque under it, and the same rectangles filled as
 paths: each pair must be byte-identical. It strokes segments with projecting square caps,
 opaque inside a transparency group under a triangular clip, which core paints piece by
-piece, against the same rectangles and end squares filled one by one. Then it paints, on a
-raster target directly, square dots (fill_terminal) and glyph bitmaps (draw_glyph_bitmap)
-whose cells have fractional device edges, in Multiply, in Multiply at alpha 0.5, and at
-alpha 0.5, opaque and in Screen under a triangular clip, against the same squares and cells
-filled as paths one by one.
+piece, against the union of the pieces filled as one path; and, under the clip, strokes
+whose edges fall on the samples at scale 1: segments 1.25 wide, dashes at alpha 0.5 and a
+segment with square caps at alpha 0.5, each against its shape filled as one path. Then it
+paints, on a raster target directly, square and round dots (fill_terminal), glyph bitmaps
+(draw_glyph_bitmap) whose cells have fractional device edges, each glyph against its cells
+filled as one path, and rectangles in a blend mode named Normal, against a rectangle
+filled in none: in Multiply, in Multiply at alpha 0.5, at alpha 0.5, and at alpha 0.5,
+opaque and in Screen under a triangular clip. The stroke kernel's round caps under the
+clip, sampled discs, must be within three samples of the discs filled as polygons.
 
 Rectangles fill_rect already painted as fill_path does, opaque in the Normal mode under no
 clip or a rectangular one, and in any mode with every device edge on a pixel edge, must
@@ -40,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.capture.records import CapturedPath, CapturedSubpath  # noqa: E402
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid  # noqa: E402
+from core_pdf.impl.render.paths import circle_path, stroke_half_width  # noqa: E402
 from core_pdf.impl.render.target import RasterTarget  # noqa: E402
 from scripts.check_patterns import document, stream  # noqa: E402
 
@@ -56,15 +62,42 @@ SEGMENTS = (
 )
 # Segments stroked with projecting caps 3.1 wide, opaque inside a transparency group, which
 # core paints piece by piece: the rectangle around each segment, then the square around
-# each end; and the same rectangles and squares.
+# each end; and the union of those, one path.
 CAPPED = (
     (
         b"50.3 60.6 m 90.7 60.6 l",
-        b"50.3 59.05 40.4 3.1 re f 48.75 59.05 3.1 3.1 re f 89.15 59.05 3.1 3.1 re",
+        b"50.3 59.05 40.4 3.1 re 48.75 59.05 3.1 3.1 re 89.15 59.05 3.1 3.1 re",
     ),
     (
         b"120.41 50.3 m 120.41 100.7 l",
-        b"118.86 50.3 3.1 50.4 re f 118.86 48.75 3.1 3.1 re f 118.86 99.15 3.1 3.1 re",
+        b"118.86 50.3 3.1 50.4 re 118.86 48.75 3.1 3.1 re 118.86 99.15 3.1 3.1 re",
+    ),
+)
+# Strokes whose edges fall on the 4 x 4 samples at scale 1, each against its shape filled
+# as one path: a sample on an edge is inside on the left and bottom, as a filled path's is.
+DASHES = (
+    b" ".join(b"%.6g 79.65 3 1.3 re" % (20.125 + 5 * index) for index in range(26))
+    + b" "
+    + b" ".join(b"59.65 %.6g 1.3 3 re" % (40.125 + 5 * index) for index in range(20))
+)
+ON_SAMPLES = (
+    (
+        "width 1.25",
+        b"q " + TRIANGLE_CLIP,
+        b"1.25 w 30 50 m 170 50 l S 100 40 m 100 150 l S",
+        b"30 49.375 140 1.25 re f 99.375 40 1.25 110 re f",
+    ),
+    (
+        "dashes at alpha 0.5",
+        b"q " + TRIANGLE_CLIP + b"/A gs ",
+        b"1.3 w [3 2] 0 d 20.125 80.3 m 150.125 80.3 l 60.3 40.125 m 60.3 140.125 l S",
+        DASHES + b" f",
+    ),
+    (
+        "square caps at alpha 0.5",
+        b"q " + TRIANGLE_CLIP + b"/A gs ",
+        b"2 J 1.25 w 40.5 140.25 m 100.25 140.25 l S",
+        b"40.5 139.625 59.75 1.25 re 39.875 139.625 1.25 1.25 re 99.625 139.625 1.25 1.25 re f",
     ),
 )
 
@@ -129,6 +162,7 @@ def strokes(before: bytes, width: bytes, cap: int, pairs: tuple[tuple[bytes, byt
 
 
 def fills(before: bytes, pairs: tuple[tuple[bytes, bytes], ...]) -> bytes:
+    """Each pair's shape filled, one path each."""
     return before + b"0.1 0.3 0.8 rg " + b" f ".join(fill for _, fill in pairs) + b" f"
 
 
@@ -164,6 +198,10 @@ def pdf_pairs() -> int:
         stroked = render(group_page(strokes(clip, b"3.1", 2, CAPPED)), scale)
         filled = render(group_page(fills(clip, CAPPED)), scale)
         failed += compare(f"grouped triangle square caps @{scale}", stroked, filled)
+        for name, before, stroke, fill in ON_SAMPLES:
+            stroked = render(page(before + b"0.1 0.3 0.8 RG " + stroke), scale)
+            filled = render(page(before + b"0.1 0.3 0.8 rg " + fill), scale)
+            failed += compare(f"triangle {name} @{scale}", stroked, filled)
     return failed
 
 
@@ -191,11 +229,18 @@ BITMAP_SIZE = 7
 GLYPH_BOXES = ((40.3, 50.45, 61.27, 73.9), (100.13, 90.71, 131.9, 112.36))
 
 
-def glyph_cells(
-    box: tuple[float, float, float, float], runs: bool
-) -> list[tuple[float, float, float, float]]:
-    """The rectangles draw_glyph_bitmap paints for BITMAP in box: each set cell, or each run
-    of set cells in a row when runs."""
+def glyph_path(box: tuple[float, float, float, float]) -> CapturedPath:
+    """BITMAP in box as one path: a subpath for each set cell."""
+    return CapturedPath(
+        [
+            CapturedSubpath([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], closed=True)
+            for x0, y0, x1, y1 in glyph_cells(box)
+        ]
+    )
+
+
+def glyph_cells(box: tuple[float, float, float, float]) -> list[tuple[float, float, float, float]]:
+    """The set cells of BITMAP in box, as draw_glyph_bitmap places them."""
     x0, y0, x1, y1 = box
     cell_w = (x1 - x0) / BITMAP_SIZE
     cell_h = (y1 - y0) / BITMAP_SIZE
@@ -209,9 +254,6 @@ def glyph_cells(
                 column += 1
                 continue
             end = column + 1
-            if runs:
-                while end < BITMAP_SIZE and row & (1 << end):
-                    end += 1
             cells.append((x0 + column * cell_w, bottom, x0 + end * cell_w, top))
             column = end
     return cells
@@ -240,14 +282,35 @@ def direct_pairs() -> int:
             paint.draw_glyph_bitmap(box, list(BITMAP), rgba, mode, BITMAP_SIZE, BITMAP_SIZE)
 
     def glyph_fills(paint: RasterTarget, rgba: tuple[int, int, int, int], mode: str | None) -> None:
-        runs = rgba[3] == 255 and mode is None
         for box in GLYPH_BOXES:
-            for cell in glyph_cells(box, runs):
-                paint.fill_path(rectangle(*cell), rgba, mode)
+            paint.fill_path(glyph_path(box), rgba, mode)
+
+    def round_dots(paint: RasterTarget, rgba: tuple[int, int, int, int], mode: str | None) -> None:
+        for x, y in centres:
+            paint.fill_terminal(x, y, width, rgba, True, mode)
+
+    def round_fills(paint: RasterTarget, rgba: tuple[int, int, int, int], mode: str | None) -> None:
+        for x, y in centres:
+            paint.fill_path(circle_path(x, y, stroke_half_width(paint.scale, width)), rgba, mode)
+
+    def named_normal(
+        paint: RasterTarget, rgba: tuple[int, int, int, int], mode: str | None
+    ) -> None:
+        # A blend mode named Normal is no blend mode.
+        for x, y in centres:
+            paint.fill_rect((x - 2.3, y - 1.7, x + 2.3, y + 1.7), rgba, mode or "Normal")
+
+    def normal_fills(
+        paint: RasterTarget, rgba: tuple[int, int, int, int], mode: str | None
+    ) -> None:
+        for x, y in centres:
+            paint.fill_path(rectangle(x - 2.3, y - 1.7, x + 2.3, y + 1.7), rgba, mode)
 
     pairs: list[tuple[str, Paint, Paint]] = [
         ("square dots", dots, dot_fills),
         ("glyph bitmaps", glyphs, glyph_fills),
+        ("round dots", round_dots, round_fills),
+        ("rectangles named Normal", named_normal, normal_fills),
     ]
     states: list[tuple[str, tuple[int, int, int, int], str | None, bool]] = [
         ("multiply", (26, 77, 204, 255), "Multiply", False),
@@ -255,6 +318,7 @@ def direct_pairs() -> int:
         ("triangle alpha", (26, 77, 204, 128), None, True),
         ("triangle opaque", (26, 77, 204, 255), None, True),
         ("triangle screen", (26, 77, 204, 255), "Screen", True),
+        ("alpha", (26, 77, 204, 128), None, False),
     ]
     failed = 0
     for scale in SCALES:
@@ -268,6 +332,45 @@ def direct_pairs() -> int:
                     draw(raster, rgba, mode)
                     images.append(raster.pixel_array.copy())
                 failed += compare(f"{state} {shape} @{scale}", images[0], images[1])
+    return failed + kernel_round_caps()
+
+
+def kernel_round_caps() -> int:
+    """Opaque round-capped segments under a triangular clip, which the stroke kernel paints
+    piece by piece, a disc for each cap, against the rectangles and discs filled as one
+    path: the kernel samples a disc itself rather than the polygon fill_path fills, so a
+    pixel may differ by up to three samples along the arc, and never by more."""
+    width = 3.1
+    segments = (((50.3, 100.6), (90.7, 100.6)), ((140.41, 60.3), (140.41, 100.7)))
+    failed = 0
+    for scale in SCALES:
+        half = stroke_half_width(scale, width)
+        images = []
+        for stroked in (True, False):
+            raster = target(scale)
+            raster.clip.push(triangle(), "nonzero")
+            rgba = (26, 77, 204, 255)
+            if stroked:
+                for start, end in segments:
+                    path = CapturedPath([CapturedSubpath([start, end])])
+                    raster.stroke_path(path, width, rgba, None, None, 1, 0, 10.0)
+            else:
+                for (x0, y0), (x1, y1) in segments:
+                    # The segments run along the axes, from low to high.
+                    across = half if x0 == x1 else 0.0
+                    along = half if y0 == y1 else 0.0
+                    subpaths = rectangle(x0 - across, y0 - along, x1 + across, y1 + along).subpaths
+                    subpaths += circle_path(x0, y0, half).subpaths
+                    subpaths += circle_path(x1, y1, half).subpaths
+                    raster.fill_path(CapturedPath(subpaths), rgba, None)
+            images.append(raster.pixel_array.astype(numpy.int32))
+        difference = numpy.abs(images[0] - images[1]).max(axis=2)
+        # Three samples of sixteen, rounded.
+        worst = int(difference.max())
+        if worst > 3 * 255 // 16 + 1:
+            y, x = numpy.unravel_index(int(difference.argmax()), difference.shape)
+            print(f"triangle round caps @{scale}: ({x}, {y}) differs by {worst}")
+            failed += 1
     return failed
 
 

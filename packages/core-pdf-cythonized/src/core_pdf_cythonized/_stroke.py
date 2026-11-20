@@ -322,6 +322,118 @@ def on_pixel_edge(value: cython.double) -> cython.bint:
 
 
 @cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def column_samples(start: cython.double, end: cython.double, px: cython.Py_ssize_t) -> cython.uint:
+    """The sample columns of pixel column px inside the device x span [start, end), as bits
+    0 to 3: supersampled_coverage_plane's rule, so that a rectangle sampled here covers
+    the samples a path filled there covers, and pieces that meet share none."""
+    bits: cython.uint = 0
+    sx: cython.int
+    offset: cython.double
+    for sx in range(4):
+        offset = (sx + 0.5) / 4
+        if ceil(start - offset) <= px and px < ceil(end - offset):
+            bits |= cython.cast(cython.uint, 1) << sx
+    return bits
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def row_samples(
+    crop_y1: cython.double,
+    scale: cython.double,
+    low: cython.double,
+    high: cython.double,
+    py: cython.Py_ssize_t,
+) -> cython.uint:
+    """The sample rows of pixel row py whose page y is in [low, high), as bits 0 to 3:
+    supersampled_coverage_plane's rule."""
+    bits: cython.uint = 0
+    sy: cython.int
+    page_y: cython.double
+    for sy in range(4):
+        page_y = crop_y1 - (cython.cast(cython.double, py) + (sy + 0.5) / 4) / scale
+        if low <= page_y and page_y < high:
+            bits |= cython.cast(cython.uint, 1) << sy
+    return bits
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def rect_samples(columns: cython.uint, rows: cython.uint) -> cython.uint:
+    """The 4 x 4 sample bits, row sy's at 4 sy, of the samples in both columns and rows."""
+    bits: cython.uint = 0
+    sy: cython.int
+    for sy in range(4):
+        if rows & (cython.cast(cython.uint, 1) << sy):
+            bits |= columns << (4 * sy)
+    return bits
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def fill_rect_samples(
+    p: cython.pointer[Paint],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+    ix0: cython.Py_ssize_t,
+    iy0: cython.Py_ssize_t,
+    ix1: cython.Py_ssize_t,
+    iy1: cython.Py_ssize_t,
+) -> cython.int:
+    """Paint the rectangle in the pixel box by its 4 x 4 samples under the clip path's
+    rows, as fill_path paints the same rectangle there."""
+    start: cython.double = (x0 - p.crop_x0) * p.scale
+    end: cython.double = (x1 - p.crop_x0) * p.scale
+    py: cython.Py_ssize_t
+    px: cython.Py_ssize_t
+    rows: cython.int
+    count: cython.int
+    alpha: cython.int
+    span_count: cython.Py_ssize_t
+    spans: cython.p_const_longlong = cython.NULL
+    painted: cython.bint = False
+    window = cython.declare(cython.Py_ssize_t[4])
+    for py in range(iy0, iy1):
+        rows = sample_count(row_samples(p.crop_y1, p.scale, y0, y1, py))
+        if not rows:
+            continue
+        span_count = row_spans(p, py, cython.address(spans))
+        for px in range(ix0, ix1):
+            if not pixel_in_row(spans, span_count, px):
+                continue
+            count = rows * sample_count(column_samples(start, end, px))
+            if not count:
+                continue
+            alpha = coverage_alpha(p.alpha, count)
+            if alpha <= 0:
+                continue
+            blend_normal_pixel(p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, alpha)
+            if not painted:
+                painted = True
+                window[0] = px
+                window[1] = py
+                window[2] = px + 1
+                window[3] = py + 1
+            else:
+                window[0] = px if px < window[0] else window[0]
+                window[2] = px + 1 if px + 1 > window[2] else window[2]
+                window[3] = py + 1
+    if painted:
+        extend(p, window[1], window[3], window[0], window[2])
+    return 0
+
+
+@cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def fill_rect(
@@ -351,8 +463,6 @@ def fill_rect(
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
     spans: cython.p_const_longlong = cython.NULL
-    corner_x = cython.declare(cython.double[4])
-    corner_y = cython.declare(cython.double[4])
     if p.clip_mode == CLIP_ROWS:
         if not (
             on_pixel_edge((x0 - p.crop_x0) * p.scale)
@@ -362,15 +472,7 @@ def fill_rect(
         ):
             # An edge inside pixels: the 4 x 4 samples cover them, as they cover a filled
             # path's under a clip path.
-            corner_x[0] = x0
-            corner_y[0] = y0
-            corner_x[1] = x1
-            corner_y[1] = y0
-            corner_x[2] = x1
-            corner_y[2] = y1
-            corner_x[3] = x0
-            corner_y[3] = y1
-            return fill_convex(p, corner_x, corner_y, 4)
+            return fill_rect_samples(p, x0, y0, x1, y1, ix0, iy0, ix1, iy1)
         for y in range(iy0, iy1):
             count = row_spans(p, y, cython.address(spans))
             for k in range(count):
@@ -461,9 +563,15 @@ def fill_circle(
     opaque[1] = cython.cast(cython.uchar, p.green)
     opaque[2] = cython.cast(cython.uchar, p.blue)
     opaque[3] = 255
+    sx: cython.int
+    sy: cython.int
+    samples: cython.int
+    alpha: cython.int
+    painted: cython.bint = False
+    window = cython.declare(cython.Py_ssize_t[4])
     if p.clip_mode == CLIP_ROWS:
+        # Antialiased by the 4 x 4 samples, as a filled path is under a clip path.
         for py in range(iy0, iy1):
-            page_y = p.crop_y1 - (cython.cast(cython.double, py) + 0.5) / p.scale
             count = row_spans(p, py, cython.address(spans))
             for k in range(count):
                 start = cython.cast(cython.Py_ssize_t, spans[2 * k])
@@ -473,12 +581,40 @@ def fill_circle(
                 if end > ix1:
                     end = ix1
                 for px in range(start, end):
-                    page_x = p.crop_x0 + (cython.cast(cython.double, px) + 0.5) / p.scale
-                    dx = page_x - cx
-                    dy = page_y - cy
-                    if dx * dx + dy * dy > radius2:
+                    samples = 0
+                    for sy in range(4):
+                        page_y = (
+                            p.crop_y1 - (cython.cast(cython.double, py) + (sy + 0.5) / 4) / p.scale
+                        )
+                        dy = page_y - cy
+                        for sx in range(4):
+                            page_x = (
+                                p.crop_x0
+                                + (cython.cast(cython.double, px) + (sx + 0.5) / 4) / p.scale
+                            )
+                            dx = page_x - cx
+                            if dx * dx + dy * dy < radius2:
+                                samples += 1
+                    if not samples:
                         continue
-                    blend_pixel(p, py, px)
+                    alpha = coverage_alpha(p.alpha, samples)
+                    if alpha <= 0:
+                        continue
+                    blend_normal_pixel(
+                        p.pixels + py * p.row_stride + px * 4, p.red, p.green, p.blue, alpha
+                    )
+                    if not painted:
+                        painted = True
+                        window[0] = px
+                        window[1] = py
+                        window[2] = px + 1
+                        window[3] = py + 1
+                    else:
+                        window[0] = px if px < window[0] else window[0]
+                        window[2] = px + 1 if px + 1 > window[2] else window[2]
+                        window[3] = py + 1
+        if painted:
+            extend(p, window[1], window[3], window[0], window[2])
         return 0
     if p.alpha >= 255 and (ix1 - ix0) * (iy1 - iy0) > 16:
         for py in range(iy0, iy1):
@@ -1064,6 +1200,43 @@ def cover_samples(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
+def cover_rect(
+    p: cython.pointer[Paint],
+    c: cython.pointer[Cover],
+    x0: cython.double,
+    y0: cython.double,
+    x1: cython.double,
+    y1: cython.double,
+) -> cython.int:
+    """Cover the page-space rectangle (x0, y0, x1, y1) by the half-open rule a filled path
+    has (column_samples, row_samples), so that the stroke covers the samples the same
+    shape filled as a path covers, and pieces that meet on a sample count it once."""
+    if x1 <= x0 or y1 <= y0:
+        return 0
+    window = cython.declare(cython.Py_ssize_t[4])
+    found: cython.int = cover_window(p, c, x0, y0, x1, y1, window)
+    if found <= 0:
+        return found
+    start: cython.double = (x0 - c.crop_x0) * c.scale
+    end: cython.double = (x1 - c.crop_x0) * c.scale
+    i: cython.Py_ssize_t
+    j: cython.Py_ssize_t
+    rows: cython.uint
+    bits: cython.uint
+    for i in range(window[1], window[3]):
+        rows = row_samples(c.crop_y1, c.scale, y0, y1, c.top + i)
+        if not rows:
+            continue
+        for j in range(window[0], window[2]):
+            bits = rect_samples(column_samples(start, end, c.left + j), rows)
+            if bits:
+                c.masks[i * c.width + j] |= cython.cast(cython.ushort, bits)
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
 def cover_convex(
     p: cython.pointer[Paint],
     c: cython.pointer[Cover],
@@ -1071,7 +1244,24 @@ def cover_convex(
     ys: cython.p_double,
     n: cython.int,
 ) -> cython.int:
-    """Cover a convex polygon of n <= 4 stroke-space vertices, in either order."""
+    """Cover a convex polygon of n <= 4 stroke-space vertices, in either order: one along
+    the axes of the page by cover_rect."""
+    if (
+        not c.transformed
+        and n == 4
+        and (
+            (xs[0] == xs[1] and ys[1] == ys[2] and xs[2] == xs[3] and ys[3] == ys[0])
+            or (ys[0] == ys[1] and xs[1] == xs[2] and ys[2] == ys[3] and xs[3] == xs[0])
+        )
+    ):
+        return cover_rect(
+            p,
+            c,
+            py_min(xs[0], xs[2]),
+            py_min(ys[0], ys[2]),
+            py_max(xs[0], xs[2]),
+            py_max(ys[0], ys[2]),
+        )
     box = cython.declare(cython.double[4])
     box[0] = xs[0]
     box[1] = ys[0]
