@@ -670,9 +670,12 @@ def decode_process_samples(source: ImageSource) -> numpy.ndarray[Any, Any] | Non
     if space.kind == "Indexed":
         lookup = space.lookup
         components = len(base.component_ranges)
-        if lookup is None or components == 0:
+        # The lenient parser (graphics.color_spec) keeps a lookup of any length: one too short
+        # for hival + 1 entries is left to the ordinary path, and one too long is cut there.
+        entries_size = (space.hival + 1) * components
+        if lookup is None or components == 0 or len(lookup) < entries_size:
             return None
-        table = numpy.frombuffer(lookup, dtype=numpy.uint8).reshape(-1, components)
+        table = numpy.frombuffer(lookup[:entries_size], dtype=numpy.uint8).reshape(-1, components)
         # An index is rounded and clamped to 0 to hival (8.6.6.3).
         entries = numpy.clip(numpy.rint(values[:, 0]), 0, space.hival).astype(numpy.intp)
         lows = numpy.array([low for low, _ in base.component_ranges])

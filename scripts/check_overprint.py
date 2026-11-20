@@ -423,6 +423,22 @@ def icc_group_sames() -> list[Same]:
     data = document(
         b"", b"0 0 0 0.5 k 0 0 200 200 re f /On1 gs 0 0 0 0 k 0 0 1 1 re f /On0 gs " + PLACE, matted
     )
+    # An Indexed image over Separation Magenta whose lookup is one entry short of hival + 1,
+    # at the missing index: likewise.
+    short = stream(
+        b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+        b"/ColorSpace [/Indexed [/Separation /Magenta /DeviceCMYK "
+        b"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>] 1 <80>]",
+        bytes([1]),
+    )
+    short_page = document(CMYK_GROUP, b"1 0 0 0 k 0 0 200 200 re f /On0 gs " + PLACE, [short])
+    sames.append(
+        Same(
+            "an Indexed image whose lookup is short does not overprint",
+            short_page,
+            turned_off(short_page),
+        )
+    )
     sames.append(
         Same(
             "an image whose tints cannot be painted directly does not overprint",
