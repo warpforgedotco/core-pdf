@@ -52,6 +52,8 @@ class GlyphStyleLowering:
         "fields",
         "miter_limit",
         "stroke_matrix",
+        "fill_overprint",
+        "stroke_overprint",
     )
 
     def __init__(self, style: GlyphStyle, display_list: DisplayList, include_text: bool) -> None:
@@ -74,6 +76,12 @@ class GlyphStyleLowering:
             and declared_blend(style.blend_mode) is None
         )
         self.fields = display_list.glyph_paint_fields_of(style)
+        self.fill_overprint = (
+            style.fill_overprint if paint_kind is not PathPaintKind.STROKE else None
+        )
+        self.stroke_overprint = (
+            style.stroke_overprint if paint_kind is not PathPaintKind.FILL else None
+        )
         # A stroked glyph is stroked as a path is, with the miter limit and the stroke
         # matrix of its graphics state (ISO 32000-2 9.3.6); a filled one keeps the defaults.
         self.miter_limit = DEFAULT_MITER_LIMIT
@@ -312,6 +320,8 @@ class ProgramLowering:
                                     edge_array,
                                     lowering.miter_limit,
                                     lowering.stroke_matrix,
+                                    lowering.fill_overprint,
+                                    lowering.stroke_overprint,
                                 )
                             )
                             if lowering.plain_fill and not dropped and bounds is not None:
@@ -361,6 +371,7 @@ class ProgramLowering:
             soft_mask_alpha=glyph.soft_mask_alpha,
             graphics_soft_mask=glyph.graphics_soft_mask,
             alpha_is_shape=glyph.alpha_is_shape,
+            fill_overprint=glyph.fill_overprint,
             visible=glyph.visible,
             bitmap=bitmap,
             bitmap_width=glyph.bitmap_width,
@@ -399,6 +410,7 @@ class ProgramLowering:
             alpha_is_shape=inline_image.alpha_is_shape,
             fill=inline_image.fill,
             fill_opacity=inline_image.fill_opacity,
+            fill_overprint=inline_image.fill_overprint,
             bbox=bbox,
             quad=quad,
             raw_data=inline_image.data,

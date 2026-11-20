@@ -1529,8 +1529,9 @@ class ContentInterpreter:
     def apply_extgstate_overprint(self, extgstate: dict[str, Any]) -> None:
         """A parameter dictionary's overprint entries (Table 57): OP, whether stroking
         overprints, and op, whether other painting does, which OP also sets when op is
-        absent; OPM, the overprint mode, 0 or 1 (8.6.7). The state carries them; core paints
-        no separations, so they do not change what is painted."""
+        absent; OPM, the overprint mode, 0 or 1 (8.6.7). The state carries them to capture,
+        which records the colorants each overprinting paint marks; the renderer overprints
+        them where paint composites in a DeviceCMYK blending space (ISO 32000-2 11.7.4)."""
         resolve = self.resolver.resolve
         graphics = self.graphics
         flags: dict[str, bool] = {}

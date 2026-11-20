@@ -95,10 +95,13 @@ def paint_image(self: TextState, state: object, xobj: PdfStream) -> None:
             if image_is_stencil
             else raw_color_space_paints(source.dictionary.get("ColorSpace"))
         )
+        overprint = self.image_overprint(image_is_stencil, source)
         self.drawings.append(
             CapturedDrawing(
                 seqno=self.sequence,
-                fill=self.capture_color(stroke=False) if image_is_stencil else None,
+                fill=self.overprint_color(self.capture_color(stroke=False), overprint, stroke=False)
+                if image_is_stencil
+                else None,
                 fill_opacity=self.graphics.fill_opacity,
                 blend_mode=self.graphics.blend_mode,
                 dash_pattern=self.transformed_dash_pattern(),
@@ -117,9 +120,22 @@ def paint_image(self: TextState, state: object, xobj: PdfStream) -> None:
                 bbox=bbox,
                 stream_order=self.stream_order,
                 xobject_depth=self.xobject_depth,
+                fill_overprint=overprint,
             )
         )
         self.sequence += 1
+
+
+def image_overprint(self: TextState, stencil: bool, source: ImageSource) -> int | None:
+    """The process components an image marks while overprinting: an image mask, those of
+    the current colour; any other image, those of its colour space."""
+    if not self.graphics.fill_overprint:
+        return None
+    if stencil:
+        return self.capture_overprint(stroke=False)
+    return self.capture_space_overprint(
+        self.resolver.deep_resolve(source.dictionary.get("ColorSpace"))
+    )
 
 
 def paint_inline_image(self: TextState, state: object, image: InlineImage) -> None:
@@ -143,11 +159,13 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
             self.resolver,
             color_rendering=self.graphics.color_rendering,
         )
+        stencil = dictionary.get("ImageMask") is True
         paints = (
             color_space_paints(self.graphics.fill_space)
-            if dictionary.get("ImageMask") is True
+            if stencil
             else raw_color_space_paints(source.dictionary.get("ColorSpace"))
         )
+        overprint = self.image_overprint(stencil, source)
         self.inline_images.append(
             CapturedInlineImage(
                 seqno=self.sequence,
@@ -164,11 +182,12 @@ def paint_inline_image(self: TextState, state: object, image: InlineImage) -> No
                 soft_mask_alpha=self.group_alpha,
                 alpha_is_shape=self.graphics.alpha_is_shape,
                 stream_order=self.stream_order,
-                fill=self.capture_color(stroke=False)
-                if dictionary.get("ImageMask") is True
+                fill=self.overprint_color(self.capture_color(stroke=False), overprint, stroke=False)
+                if stencil
                 else None,
                 fill_opacity=self.graphics.fill_opacity,
                 paints=paints,
+                fill_overprint=overprint,
             )
         )
         self.sequence += 1
@@ -204,6 +223,7 @@ def paint_shading(self: TextState, state: object, shading: PdfDict) -> None:
             stream_order=self.stream_order,
             xobject_depth=self.xobject_depth,
             shading_matrix=None if ctm == IDENTITY_MATRIX else ctm,
+            fill_overprint=self.capture_space_overprint(dictionary.get("ColorSpace")),
         )
     )
     self.sequence += 1

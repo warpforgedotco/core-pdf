@@ -187,7 +187,10 @@ def capture_page_program(
     fields: Iterable[RawFormField] | None = None,
     annotations: Iterable[RawAnnotation] | None = None,
     options: CaptureOptions = DEFAULT_CAPTURE,
+    cmyk_page: bool = False,
 ) -> PageProgram:
+    """The page's program. cmyk_page: capture its paint for a DeviceCMYK page group, as
+    overprint simulation composites the page in, whatever group the page has."""
     state = TextState(
         page.document,
         hidden_layers=(
@@ -198,17 +201,14 @@ def capture_page_program(
     )
     try:
         page_space = page.resolve_transparency_group_space()
-        state.set_capture_cmyk(
-            blending_space_of(page_space) == "DeviceCMYK", blending_profile(page_space)
-        )
+        cmyk = blending_space_of(page_space) == "DeviceCMYK"
+        state.set_capture_cmyk(cmyk or cmyk_page, blending_profile(page_space) if cmyk else None)
         page.consume_contents(state)
         state.run_accumulator.flush()
         body = state.captured_program()
-        return PageProgram(
-            body=body,
-            appearances=capture_annotation_appearances(
-                page, state, fields=fields, annotations=annotations
-            ),
+        appearances = capture_annotation_appearances(
+            page, state, fields=fields, annotations=annotations
         )
+        return PageProgram(body=body, appearances=appearances, overprints=state.uses_overprint)
     finally:
         state.release()

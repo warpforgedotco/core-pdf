@@ -58,6 +58,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.2 | S with a pattern as its colour paints the pattern through the stroke's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_stroke_pattern` |
 | PDF 1.2 | a pattern's space: its Matrix on the parent content stream's default space | ISO 32000-2 8.7.2 (General properties of patterns) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color` |
 | PDF 1.2 | a tiling's cells may be spaced by whole device pixels, as TilingType 1 to 3 allow | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.stamp_tiling_cells` |
+| PDF 1.2 | an overprinting paint leaves the colorants its colour space does not name | ISO 32000-2 8.6.7 (Overprint control) | `core_pdf.impl.graphics.overprint.overprint_marks` |
 | PDF 1.2 | an uncoloured cell is painted in the scn colour, its colour operators ignored | ISO 32000-2 8.7.3.3 (Uncoloured tiling patterns) | `core_pdf.impl.capture.recording.uncolored_cell_state` |
 | PDF 1.2 | f with a pattern as its colour paints the pattern through the path's outline | ISO 32000-2 8.7.3.1 (General) | `core_pdf.impl.render.raster_shading.paint_fill_pattern` |
 | PDF 1.2 | text painted with a pattern colour shows the pattern through the glyphs | ISO 32000-2 9.3.6 (Text rendering mode) | `core_pdf.impl.capture.text_painting.glyph_paint` |
@@ -82,6 +83,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.3 | sh paints in the current user space | ISO 32000-2 8.7.4.2 (Shading operator) | `core_pdf.impl.capture.image_painting.paint_shading` |
 | PDF 1.3 | shadings of types 4 to 7 are streams, whose data holds their geometry | ISO 32000-2 8.7.4.3 (Shading dictionaries) | `core_pdf.impl.spec.s_07_content.interpreter.resolve_shading` |
 | PDF 1.3 | the embedded file streams of EF | ISO 32000-2 7.11.4 (Embedded file streams) | `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream` |
+| PDF 1.3 | under overprint mode 1 a zero DeviceCMYK component of the current colour keeps the backdrop's | ISO 32000-2 11.7.4.5 (Summary of overprinting behavior) | `core_pdf.impl.graphics.overprint.overprint_marks` |
 | PDF 1.4 | BC defaults to the space's black | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.default_backdrop_color` |
 | PDF 1.4 | a CIE-based group's luminosity is the CIE 1931 Y of its colour | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.render.raster_spaces.colorimetric_luminosity_channel` |
 | PDF 1.4 | a CIE-based space's luminosity is Y | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.spec.s_11_transparency.soft_masks.colorimetric_luminosity` |
@@ -91,6 +93,7 @@ Features a version introduced, which core reads whatever version a document decl
 | PDF 1.4 | a luminosity mask outside its group | ISO 32000-2 11.6.5.1 (Soft-mask dictionaries) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_value` |
 | PDF 1.4 | a soft-mask image's own Interpolate smooths the mask, not the base image's | ISO 32000-2 11.6.5.2 (Soft-mask images) | `core_pdf.impl.render.raster_images.soft_mask_interpolates` |
 | PDF 1.4 | a transparency group's colour space | ISO 32000-2 11.6.6 (Transparency group XObjects) | `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space` |
+| PDF 1.4 | an overprinting paint blends by a mode taking the source for the components it marks and the backdrop for the rest, then by the current blend mode | ISO 32000-2 11.7.4.3 (Compatibility with opaque overprinting) | `core_pdf.impl.render.raster_overprint.composite_overprint_layer` |
 | PDF 1.4 | blend a subtractive space's complements | ISO 32000-2 11.3.4 (Blending colour space) | `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space` |
 | PDF 1.4 | non-separable blending in gray and CMYK | ISO 32000-2 11.3.5.3 (Non-separable blend modes) | `core_pdf.impl.spec.s_11_transparency.blending_space.additive_blend` |
 | PDF 1.4 | the colour a luminosity mask is taken from | ISO 32000-2 11.5.3 (Deriving a soft mask from group luminosity) | `core_pdf.impl.spec.s_11_transparency.soft_masks.luminosity_mask_color` |
@@ -236,6 +239,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.3.5 (Blend mode) `core_pdf.impl.spec.s_11_transparency.blend`: blend modes
 - 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.images`: undoing the Matte preblending of a soft-mask image
 - 11.6.5 (Specifying soft masks) `core_pdf.impl.spec.s_11_transparency.soft_masks`: soft-mask dictionaries: their group, backdrop and transfer function
+- 11.7.4.3 (Compatibility with opaque overprinting) `core_pdf.impl.graphics.overprint`: which process colorants an overprinting paint marks
 - 12.4.2 (Page labels) `core_pdf.impl.spec.s_07_document.document_labels`: page labels and their numbering styles
 - 12.5.5 (Appearance streams) `core_pdf.impl.spec.s_07_document.annotation_appearance`: an annotation's normal appearance and the matrix fitting it to Rect
 - 12.5.6.2 (Markup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations`: markup annotations' replies and pop-up windows
@@ -285,6 +289,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 8.6.5.6 (Default colour spaces) `core_pdf.impl.spec.s_08_graphics.default_spaces.valid_default_space`: a default colour space is not Lab, Indexed or Pattern, with the device's components
 - 8.6.5.9 (Use of black point compensation) `core_pdf.impl.spec.s_08_graphics.color_rendering.parse_black_point_compensation`: black point compensation (UseBlackPtComp)
 - 8.6.6.3 (Indexed colour spaces) `core_pdf.impl.spec.s_08_graphics.color_spec.parse_color_space_versioned`: an Indexed colour space may have a Separation or DeviceN base
+- 8.6.7 (Overprint control) `core_pdf.impl.graphics.overprint.overprint_marks`: an overprinting paint leaves the colorants its colour space does not name
 - 8.6.7 (Overprint control) `core_pdf.impl.spec.s_07_content.interpreter.apply_extgstate_overprint`: OP and op set overprint for stroking and other painting, OPM the overprint mode
 - 8.6.8 (Colour operators) `core_pdf.impl.spec.s_07_content.interpreter.paints_image_mask`: where colour is set elsewhere, only image masks of the images are painted
 - 8.7.2 (General properties of patterns) `core_pdf.impl.spec.s_07_content.interpreter.resolve_pattern_color`: a pattern's space: its Matrix on the parent content stream's default space
@@ -341,6 +346,8 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_07_content.interpreter.group_color_space`: a group's CS naming a device space is remapped through the default spaces
 - 11.6.6 (Transparency group XObjects) `core_pdf.impl.spec.s_11_transparency.blending_space.group_blending_space`: a transparency group's colour space
 - 11.7.2 (Colour spaces for transparency groups) `core_pdf.impl.graphics.device_profiles.convert_cmyk_words`: a colour not in its group's colour space converts to it
+- 11.7.4.3 (Compatibility with opaque overprinting) `core_pdf.impl.render.raster_overprint.composite_overprint_layer`: an overprinting paint blends by a mode taking the source for the components it marks and the backdrop for the rest, then by the current blend mode
+- 11.7.4.5 (Summary of overprinting behavior) `core_pdf.impl.graphics.overprint.overprint_marks`: under overprint mode 1 a zero DeviceCMYK component of the current colour keeps the backdrop's
 - 12.5.6.2 (Markup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations.reply_relation`: IRT names the annotation this one replies to (RT R) or is grouped with (RT Group)
 - 12.5.6.14 (Popup annotations) `core_pdf.impl.spec.s_07_document.markup_annotations.popup_link`: a markup annotation's Popup names its pop-up; the pop-up's Parent names it back
 - 12.7.4.3 (Variable text) `core_pdf.impl.spec.s_07_document.fields.field_quadding`: Q, inheritable from the field tree and the AcroForm dictionary, quads variable text

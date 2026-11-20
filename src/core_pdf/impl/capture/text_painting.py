@@ -86,6 +86,21 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
     if self.options.render_details:
         fill_pattern = graphics.fill_pattern
         stroke_pattern = graphics.stroke_pattern
+    fill_overprint = (
+        self.capture_overprint(stroke=False)
+        if graphics.fill_overprint and render_mode in {0, 2, 4, 6}
+        else None
+    )
+    stroke_overprint = (
+        self.capture_overprint(stroke=True)
+        if graphics.stroke_overprint and render_mode in {1, 2, 5, 6}
+        else None
+    )
+    stroke_color = self.capture_color(stroke=True)
+    if fill_overprint is not None:
+        fill_color = self.overprint_color(fill_color, fill_overprint, stroke=False)
+    if stroke_overprint is not None:
+        stroke_color = self.overprint_color(stroke_color, stroke_overprint, stroke=True)
     return GlyphPaint(
         clip_bbox=self.clip_bbox,
         page_clip=self.page_clip,
@@ -102,7 +117,7 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
             else None
         ),
         fill_opacity=self.graphics.fill_opacity,
-        stroke_color=self.capture_color(stroke=True),
+        stroke_color=stroke_color,
         stroke_opacity=self.graphics.stroke_opacity,
         line_width=self.transformed_line_width(),
         line_cap=self.graphics.line_cap,
@@ -115,6 +130,8 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
         clip_glyph=4 <= self.graphics.render_mode <= 7 and self.is_graphics_visible(),
         miter_limit=graphics.miter_limit,
         stroke_matrix=scale_cache[2],
+        fill_overprint=fill_overprint,
+        stroke_overprint=stroke_overprint,
     )
 
 

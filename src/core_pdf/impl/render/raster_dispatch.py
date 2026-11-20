@@ -25,6 +25,7 @@ from core_pdf.impl.render.model import (
     PathPaintKind,
     ScopeBeginItem,
     ShadingItem,
+    SpaceMode,
     is_plain_fill,
 )
 from core_pdf.impl.render.raster_images import blit_image
@@ -65,7 +66,31 @@ def paint_items(
 
 
 def paint_item(self: RasterTarget, item: DisplayItem) -> None:
-    if type(item) is PathPaintItem and item.edge_array is not None and self.paint_glyph_fill(item):
+    overprint = None
+    apart: tuple[Any, Any] | None = None
+    # In a DeviceCMYK group, a paint may overprint components (raster_overprint).
+    if (
+        self.space_mode is not SpaceMode.RGB
+        and self.space_mode is not SpaceMode.GRAY
+        and self.overprint_enabled
+        and isinstance(item, PaintItemBase)
+    ):
+        if type(item) is PathPaintItem and item.paint_kind is PathPaintKind.FILL_STROKE:
+            # A fill and stroke whose fill or stroke overprints in this pass paints them one
+            # after the other, inside its elementary group if it has one; where shape is
+            # tracked, paint_typed_path's knockout group paints them, and each overprints.
+            channels = self.fill_stroke_channels(item)
+            if channels != (None, None) and self.group_source_shape is None:
+                apart = channels
+        else:
+            overprint = self.overprint_channels(item)
+    if (
+        overprint is None
+        and apart is None
+        and type(item) is PathPaintItem
+        and item.edge_array is not None
+        and self.paint_glyph_fill(item)
+    ):
         return
     if isinstance(item, PaintItemBase):
         previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
@@ -101,6 +126,7 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                 elementary_group
                 and knockout
                 and mask_alpha is None
+                and overprint is None
                 and self.knockout_glyph_fill(item)
             ):
                 return
@@ -109,11 +135,19 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                     None,
                     None,
                     track_shape=mask_alpha is not None,
-                    mask_alpha=None if fillstroke else mask_alpha,
+                    # A fill and stroke painted by paint_typed_path takes the mask in
+                    # each part's own paint_item; painted apart here, in this group.
+                    mask_alpha=None if fillstroke and apart is None else mask_alpha,
                     alpha_is_shape=self.paint_alpha_is_shape,
                 )
             try:
-                self.paint_display_item(item)
+                if apart is not None:
+                    assert type(item) is PathPaintItem
+                    self.paint_fill_stroke_apart(item, *apart)
+                elif overprint is None:
+                    self.paint_display_item(item)
+                else:
+                    self.paint_overprinting(item, overprint)
             finally:
                 if elementary_group:
                     self.composite_group(self.pop_group())
