@@ -208,12 +208,14 @@ def push_scratch_group(
     alpha_is_shape: bool,
     region: PixelBox | None = None,
     sync_box: PixelBox | None = None,
-) -> None:
+) -> PixelBox | None:
     """Push a non-isolated group on the scratch planes of its depth, its pixels the
     backdrop's. A knockout group (region given) is a copy of the backdrop in region only.
 
-    sync_box, for a group that paints only inside it, limits a copy of the whole backdrop
-    to that box: paint_item checks the group painted nowhere else.
+    sync_box, for a group that paints only inside it, may limit the copy of the backdrop
+    to that box. Return the box the group's paint must stay inside for its pixels to be
+    those of a copy of the whole backdrop, or None when its copy is whole: paint_item
+    paints an item that goes outside it again, with no sync_box.
     """
     parent = self.buffer_stack[-1]
     backdrop = parent.backdrop if parent.knockout else self.pixels
@@ -229,7 +231,7 @@ def push_scratch_group(
             mask_alpha=mask_alpha,
             alpha_is_shape=alpha_is_shape,
         )
-        return
+        return None
     depth = len(self.buffer_stack)
     scratch = self.elementary_scratch.get(depth)
     if scratch is None:
@@ -239,33 +241,34 @@ def push_scratch_group(
     buffer = scratch.buffer
     source_alpha = scratch.source_alpha
     source_shape = scratch.source_shape
-    window = region
-    if (
-        window is None
-        and sync_box is not None
-        and not (parent.knockout and scratch.synced_parent is parent)
-    ):
-        window = sync_box
-    if window is not None:
-        x0, y0, x1, y1 = window
-        if x1 > x0 and y1 > y0:
-            scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
-            source_alpha[y0:y1, x0:x1] = 0.0
-            source_shape[y0:y1, x0:x1] = 0.0
+    synced_box = scratch.synced_box
+    limit = None
+    if region is not None:
+        copy_box(self, scratch, backdrop, region)
         scratch.synced_parent = None
-    elif parent.knockout and scratch.synced_parent is parent:
+    elif (
+        parent.knockout
+        and scratch.synced_parent is parent
+        and (synced_box is None or (sync_box is not None and box_within(sync_box, synced_box)))
+    ):
+        # Synced but for the last group's paint, which stayed inside synced_box.
         dirty = scratch.dirty
         if dirty is not None:
             rows, columns = dirty
             scratch.view[rows, columns] = self.pixel_view(backdrop)[rows, columns]
             source_alpha[rows, columns] = 0.0
             source_shape[rows, columns] = 0.0
-        scratch.synced_parent = parent
+        limit = synced_box
+    elif sync_box is not None:
+        copy_box(self, scratch, backdrop, sync_box)
+        scratch.synced_parent = parent if parent.knockout else None
+        scratch.synced_box = limit = sync_box
     else:
         buffer[:] = backdrop
         source_alpha.fill(0.0)
         source_shape.fill(0.0)
         scratch.synced_parent = parent if parent.knockout else None
+        scratch.synced_box = None
     scratch.dirty = None
     self.buffer_stack.append(
         RasterGroup(
@@ -285,6 +288,27 @@ def push_scratch_group(
         )
     )
     self.sync_group_mirrors()
+    return limit
+
+
+def copy_box(
+    self: RasterTarget, scratch: ElementaryScratch, backdrop: bytearray, box: PixelBox
+) -> None:
+    """Copy backdrop into scratch inside box, its source planes cleared there."""
+    x0, y0, x1, y1 = box
+    if x1 > x0 and y1 > y0:
+        scratch.view[y0:y1, x0:x1] = self.pixel_view(backdrop)[y0:y1, x0:x1]
+        scratch.source_alpha[y0:y1, x0:x1] = 0.0
+        scratch.source_shape[y0:y1, x0:x1] = 0.0
+
+
+def box_within(inner: PixelBox, outer: PixelBox) -> bool:
+    return (
+        outer[0] <= inner[0]
+        and outer[1] <= inner[1]
+        and inner[2] <= outer[2]
+        and inner[3] <= outer[3]
+    )
 
 
 def push_group(

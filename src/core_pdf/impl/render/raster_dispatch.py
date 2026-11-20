@@ -137,14 +137,14 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                     if skip_box is not None:
                         self.record_knockout_paint(skip_box)
                 return
-            # The group need copy the backdrop only where the item paints; one that paints
-            # outside sync_box is painted again on a copy of the whole backdrop, so the
-            # pixels are the same either way.
+            # The group may copy the backdrop only where the item paints; one that paints
+            # outside the box its copy holds is painted again on a copy of the whole
+            # backdrop, so the pixels are the same either way.
             sync_box = self.elementary_sync_box(item)
             # A fill and stroke painted by paint_typed_path takes the mask in each part's
             # own paint_item; painted apart here, in this group.
             group_mask = None if fillstroke and apart is None else mask_alpha
-            self.push_scratch_group(
+            limit = self.push_scratch_group(
                 None,
                 None,
                 track_shape=mask_alpha is not None,
@@ -154,25 +154,26 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
             )
             try:
                 self.paint_member(item, apart, overprint)
-            finally:
-                group = self.pop_group()
-                # Painted again even after an error, which raises again having painted
-                # the same pixels.
-                if sync_box is not None and not group.paint_window.within(sync_box):
-                    self.paint_alpha_is_shape = item.alpha_is_shape
-                    self.shape_alpha = 1.0
-                    self.push_scratch_group(
-                        None,
-                        None,
-                        track_shape=mask_alpha is not None,
-                        mask_alpha=group_mask,
-                        alpha_is_shape=self.paint_alpha_is_shape,
-                    )
-                    try:
-                        self.paint_member(item, apart, overprint)
-                    finally:
-                        group = self.pop_group()
+            except BaseException:
+                self.composite_group(self.pop_group())
+                raise
+            group = self.pop_group()
+            if limit is None or group.paint_window.within(limit):
                 self.composite_group(group)
+            else:
+                self.paint_alpha_is_shape = item.alpha_is_shape
+                self.shape_alpha = 1.0
+                self.push_scratch_group(
+                    None,
+                    None,
+                    track_shape=mask_alpha is not None,
+                    mask_alpha=group_mask,
+                    alpha_is_shape=self.paint_alpha_is_shape,
+                )
+                try:
+                    self.paint_member(item, apart, overprint)
+                finally:
+                    self.composite_group(self.pop_group())
         finally:
             self.paint_alpha_is_shape, self.shape_alpha = previous_shape_state
         return
@@ -181,8 +182,9 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
 
 def elementary_sync_box(self: RasterTarget, item: PaintItemBase) -> PixelBox | None:
     """The pixel box a fill paints inside, its clipped box, for paint_item to copy only
-    that much of the backdrop into its elementary group; None for any other item, a
-    stroke's box leaving out its pen."""
+    that much of the backdrop into its elementary group, EMPTY_PIXEL_BOX for one clipped
+    away; None, for a copy of the whole backdrop, for any other item, a stroke's box
+    leaving out its pen."""
     bbox = item.bbox
     if (
         type(item) is not PathPaintItem
@@ -192,7 +194,7 @@ def elementary_sync_box(self: RasterTarget, item: PaintItemBase) -> PixelBox | N
     ):
         return None
     clipped = self.clip.clipped_pixel_box(bbox)
-    return clipped[1] if clipped is not None else None
+    return clipped[1] if clipped is not None else EMPTY_PIXEL_BOX
 
 
 def paint_member(

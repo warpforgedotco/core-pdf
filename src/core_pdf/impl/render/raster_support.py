@@ -266,7 +266,19 @@ type FloatPlane = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 
 class ElementaryScratch:
-    __slots__ = ("buffer", "dirty", "source_alpha", "source_shape", "synced_parent", "view")
+    """A depth's planes for non-isolated groups. synced_parent is the knockout group whose
+    backdrop they hold, but for dirty, the last group's paint window: everywhere, or only
+    inside synced_box when that is set."""
+
+    __slots__ = (
+        "buffer",
+        "dirty",
+        "source_alpha",
+        "source_shape",
+        "synced_box",
+        "synced_parent",
+        "view",
+    )
 
     def __init__(self, size: int, height: int, width: int) -> None:
         self.buffer = bytearray(size)
@@ -274,6 +286,7 @@ class ElementaryScratch:
         self.source_alpha = numpy.zeros((height, width), dtype=numpy.float32)
         self.source_shape = numpy.zeros((height, width), dtype=numpy.float32)
         self.synced_parent: RasterGroup | None = None
+        self.synced_box: PixelBox | None = None
         self.dirty: tuple[slice, slice] | None = None
 
 

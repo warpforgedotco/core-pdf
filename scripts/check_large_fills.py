@@ -1564,12 +1564,30 @@ def check_pattern_scratch() -> int:
 
 
 def check_elementary_sync() -> int:
-    """A fill in a knockout group paints in an elementary group that copies the backdrop
-    only inside the fill's clipped box, and paints again on a copy of the whole backdrop
-    when it paints outside it: its pixels must be those of a copy of the whole backdrop,
-    also when the box is too small."""
+    """A fill in a knockout group, or under a soft mask, paints in an elementary group that
+    copies the backdrop only inside the fill's clipped box, and paints again on a copy of
+    the whole backdrop when it paints outside it: its pixels must be those of a copy of
+    the whole backdrop, also when the box is too small. The pages include knockout groups
+    whose fills and strokes alternate, whose groups copy the backdrop in part and whole
+    by turns."""
     original = RasterTarget.elementary_sync_box
-    pages = [case for case in cases() if case.knockout]
+    pages = [case for case in cases() if case.knockout or case.before == b"/Mask gs"]
+    alternating = (
+        b"0 0 1 RG 8 w 20 20 m 300 300 l S 0 1 0 rg 50 50 200 200 re f "
+        b"1 0 1 RG 40 300 m 300 40 l S 1 1 0 rg 100 10 120 280 re f "
+        b"0 1 1 rg 150 150 100 100 re f 0 0 0 RG 160 20 m 160 300 l S"
+    )
+    pages += [
+        Case(
+            f"{case.name}, fills and strokes after",
+            case.shape,
+            case.expected,
+            knockout=True,
+            after=alternating,
+        )
+        for case in pages[:2]
+        if case.knockout
+    ]
 
     def pixels(sync: Callable[[PixelBox | None], PixelBox | None]) -> list[bytes]:
         def sync_box(self: RasterTarget, item: Any) -> PixelBox | None:
@@ -1600,7 +1618,7 @@ def check_elementary_sync() -> int:
             if image != expected:
                 print(f"  {case.name}: copying the backdrop in {name} changes the pixels")
                 failed += 1
-    print(f"{tried} knockout group pages with the backdrop copied in part: {failed} differ")
+    print(f"{tried} elementary group pages with the backdrop copied in part: {failed} differ")
     return failed
 
 
