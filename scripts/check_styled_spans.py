@@ -9,12 +9,16 @@ bold highlighted run then a bold one is `**<mark>a</mark>b**`. This checks it on
 built here for every layer the serializer writes (bold, italic, both, strikeout,
 underline, highlight, superscript, subscript and an abbreviation's expansion), for spaces
 between and around spans, and for neighbours that differ, then on the upstream test PDFs:
-no line's Markdown joins two emphasis markers (`****`, `~~~~`), no HTML
-closes a tag only to reopen it, and no Markdown emphasis marker sits on whitespace (the
-Markdown checks skip a line whose text has a literal * or ~, which Markdown output does
-not escape).
+no line's Markdown joins two emphasis markers (`****`, `~~~~`), no HTML closes a tag only
+to reopen it, and no Markdown emphasis marker sits on whitespace. On both, an HTML parser
+and a CommonMark parser (markdown-it-py, with strikethrough) must read back the markup
+each non-space character's span carries. Markdown output does not escape characters
+Markdown reads as syntax, so the Markdown checks skip a line whose text has any. A
+missing corpus file fails the check.
 
-uv run --all-packages python scripts/check_styled_spans.py [--all]
+uv run --all-packages --group benchmark python scripts/check_styled_spans.py [--all]
+
+markdown-it-py is locked in the benchmark group, through pytest-codspeed's rich.
 
 Without --all, the corpus scan reads the upstream PDFs that showed split markup; with it,
 every PDF in the checkouts CI's core shard has.
@@ -27,7 +31,11 @@ import logging
 import re
 import sys
 import warnings
+from collections import Counter
+from html.parser import HTMLParser
 from pathlib import Path
+
+from markdown_it import MarkdownIt
 
 from core_pdf import PdfDocument
 from core_pdf.impl.output.model import Block, TextLine, TextSpan
@@ -102,11 +110,13 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
         "x<sup>2</sup><sub>i</sub>",
         "x<sup>2</sup><sub>i</sub>",
     ),
+    # Layout gives an abbreviation one span, its runs joined, so two spans with one
+    # expansion are two abbreviations.
     (
-        "one abbreviation in two runs",
+        "two abbreviations with one expansion",
         (S("CI", expansion="Central Agency"), S("A", expansion="Central Agency")),
-        '<abbr title="Central Agency">CIA</abbr>',
-        '<abbr title="Central Agency">CIA</abbr>',
+        '<abbr title="Central Agency">CI</abbr><abbr title="Central Agency">A</abbr>',
+        '<abbr title="Central Agency">CI</abbr><abbr title="Central Agency">A</abbr>',
     ),
     (
         "two abbreviations",
@@ -154,7 +164,7 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
     (
         "bold then italic",
         (S("a", bold=True), S("b", italic=True)),
-        "**a***b*",
+        "**a**<em>b</em>",
         "<strong>a</strong><em>b</em>",
     ),
     (
@@ -216,7 +226,7 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
         "bold spaces at the end",
         (S("A ", bold=True), S("  ", bold=True)),
         "**A**   ",
-        "<strong>A</strong>   ",
+        "<strong>A   </strong>",
     ),
     (
         "bold spaces at the start",
@@ -235,6 +245,41 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
         (S("Name:"), S("    ", underline=True, bold=True)),
         "Name:<u>    </u>",
         "Name:<strong><u>    </u></strong>",
+    ),
+    # A bold blank keeps a bold neighbour's markup only where the two share it, and
+    # emphasis a crossing layer splits reopens after the blank, not before it.
+    (
+        "bold blank after italic bold",
+        (S("x", italic=True), S("A", italic=True, bold=True), S(" ", bold=True), S("B", bold=True)),
+        "*x**A*** **B**",
+        "<em>x<strong>A</strong></em><strong> B</strong>",
+    ),
+    # Whitespace inside a layer that stays open stays inside it: an underlined form blank.
+    (
+        "underlined blank after an underlined label",
+        (S("Name: ", underline=True), S("    ", underline=True)),
+        "<u>Name:     </u>",
+        "<u>Name:     </u>",
+    ),
+    # Markdown emphasis is written as HTML where CommonMark would not read its delimiters:
+    # `</mark>**c` cannot close, and in `**a***b*` the run between closes and opens.
+    (
+        "bold closing after a tag before a letter",
+        (S("a", bold=True), S("b", bold=True, mark=True), S("c")),
+        "<strong>a<mark>b</mark></strong>c",
+        "<strong>a<mark>b</mark></strong>c",
+    ),
+    (
+        "bold punctuation inside a word",
+        (S("a"), S("(b)", bold=True), S("c")),
+        "a<strong>(b)</strong>c",
+        "a<strong>(b)</strong>c",
+    ),
+    (
+        "struck then bold",
+        (S("a", strikeout=True), S("b", bold=True), S(" c", strikeout=True)),
+        "~~a~~**b** ~~c~~",
+        "<del>a</del><strong>b</strong> <del>c</del>",
     ),
     (
         "abbreviation after a space",
@@ -261,6 +306,123 @@ def marker_on_space(markdown: str) -> str | None:
     return None
 
 
+# The markup each Markdown and HTML marker stands for.
+TAG_STYLES = {
+    "strong": "bold",
+    "em": "italic",
+    "del": "strikeout",
+    "u": "underline",
+    "mark": "mark",
+    "sup": "sup",
+    "sub": "sub",
+}
+MARKDOWN_STYLES = {"strong": "bold", "em": "italic", "s": "strikeout"}
+HTML_TAG_RE = re.compile(r'<(/?)(\w+)(?: title="([^"]*)")?>')
+# Characters markdown-it may read as more than text in a line Markdown output leaves as is.
+MARKDOWN_SYNTAX = frozenset("*_~`\\<>&[]!")
+MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
+
+type Styled = list[tuple[str, frozenset[str]]]
+
+
+class StyleCounter:
+    """The markup open at each point of a parsed line."""
+
+    def __init__(self) -> None:
+        self.open: Counter[str] = Counter()
+        self.titles: list[str] = []
+        self.styled: Styled = []
+
+    def change(self, style: str, opening: bool) -> None:
+        self.open[style] += 1 if opening else -1
+
+    def tag(self, name: str, closing: bool, title: str | None) -> None:
+        if name == "abbr":
+            if closing:
+                self.change(self.titles.pop() if self.titles else "abbr:", False)
+            else:
+                self.titles.append(f"abbr:{title}")
+                self.change(self.titles[-1], True)
+        elif name in TAG_STYLES:
+            self.change(TAG_STYLES[name], not closing)
+
+    def text(self, text: str) -> None:
+        current = frozenset(style for style, count in self.open.items() if count > 0)
+        self.styled.extend((character, current) for character in text if not character.isspace())
+
+
+def markdown_styles(markdown: str) -> Styled:
+    """The non-space characters CommonMark reads in a line, each with its markup."""
+    counter = StyleCounter()
+    for token in MARKDOWN.parseInline(markdown)[0].children or ():
+        name, _, side = token.type.rpartition("_")
+        if name in MARKDOWN_STYLES and side in {"open", "close"}:
+            counter.change(MARKDOWN_STYLES[name], side == "open")
+        elif token.type == "html_inline" and (match := HTML_TAG_RE.fullmatch(token.content)):
+            counter.tag(match.group(2), bool(match.group(1)), match.group(3))
+        else:
+            counter.text(token.content)
+    return counter.styled
+
+
+class HtmlStyles(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.counter = StyleCounter()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.counter.tag(tag, False, dict(attrs).get("title"))
+
+    def handle_endtag(self, tag: str) -> None:
+        self.counter.tag(tag, True, None)
+
+    def handle_data(self, data: str) -> None:
+        self.counter.text(data)
+
+
+def html_styles(html: str) -> Styled:
+    parser = HtmlStyles()
+    parser.feed(html)
+    parser.close()
+    return parser.counter.styled
+
+
+def span_styles(line: TextLine, start: int = 0) -> Styled:
+    """The line's non-space characters from start, each with the markup of its span."""
+    styled: Styled = []
+    for span in line.styled_spans():
+        styles = frozenset(
+            style
+            for style, flag in (
+                ("bold", span.bold),
+                ("italic", span.italic),
+                ("strikeout", span.strikeout),
+                ("underline", span.underline),
+                ("mark", span.mark),
+                ("sup", span.superscript),
+                ("sub", span.subscript and not span.superscript),
+                (f"abbr:{span.expansion}", span.expansion is not None),
+            )
+            if flag
+        )
+        styled.extend((character, styles) for character in span.text if not character.isspace())
+    skipped = sum(not character.isspace() for character in line.text[:start])
+    return styled[skipped:]
+
+
+def structure_failure(line: TextLine, start: int = 0) -> str | None:
+    """How the markup an HTML and a CommonMark parser read back differs from the spans'."""
+    expected = span_styles(line, start)
+    html = html_line(line, start=start)
+    if html_styles(html) != expected:
+        return f"HTML reads back other markup: {html!r}"
+    if MARKDOWN_SYNTAX.isdisjoint(line.text):
+        markdown = markdown_line(line, start=start)
+        if markdown_styles(markdown) != expected:
+            return f"Markdown reads back other markup: {markdown!r}"
+    return None
+
+
 def check_cases() -> list[str]:
     failures: list[str] = []
     for name, spans, markdown, html in CASES:
@@ -269,10 +431,14 @@ def check_cases() -> list[str]:
             failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
         if (got := html_line(line)) != html:
             failures.append(f"{name}: HTML {got!r}, expected {html!r}")
+        if (failure := structure_failure(line)) is not None:
+            failures.append(f"{name}: {failure}")
     # A list item's marker is cut from the spans before they render.
     item = styled_line((S("1. "), S("A", bold=True), S("B", bold=True)))
     if (got := markdown_line(item, start=3)) != "**AB**":
         failures.append(f"list item: Markdown {got!r}, expected '**AB**'")
+    if (failure := structure_failure(item, start=3)) is not None:
+        failures.append(f"list item: {failure}")
     return failures
 
 
@@ -287,14 +453,16 @@ def check_line(line: TextLine) -> str | None:
     html = html_line(line)
     if REOPENED_TAG.search(html):
         return f"HTML reopens a tag: {html!r}"
-    return None
+    return structure_failure(line)
 
 
 def check_corpus(patterns: tuple[str, ...]) -> list[str]:
     paths = sorted({path for pattern in patterns for path in glob.glob(pattern, recursive=True)})
-    if not paths:
-        print("no upstream test PDFs: run git submodule update --init --recursive --depth 1")
-        return []
+    missing = [pattern for pattern in patterns if not glob.glob(pattern, recursive=True)]
+    if missing:
+        for pattern in missing:
+            print(f"missing {pattern}: run git submodule update --init --recursive --depth 1")
+        return [f"missing {pattern}" for pattern in missing]
     failures: list[str] = []
     lines = styled = 0
     for path in paths:
@@ -316,7 +484,7 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
         print(failure)
     print(
         f"{lines} lines ({styled} of several spans) in {len(paths)} upstream PDFs, "
-        f"{len(failures)} with split markup"
+        f"{len(failures)} with split or misread markup"
     )
     return failures
 

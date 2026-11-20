@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from csv import writer
 from functools import partial
@@ -479,111 +480,230 @@ MARKDOWN_MARKUP = InlineMarkup(False, ("~~", "~~"), ("**", "**"), ("*", "*"))
 HTML_MARKUP = InlineMarkup(True, ("<del>", "</del>"), ("<strong>", "</strong>"), ("<em>", "</em>"))
 
 
-# A layer of inline markup: its opening and closing markers, and whether the markers may
-# sit next to whitespace inside them (HTML tags may; Markdown emphasis does not open
-# before or close after whitespace).
-type InlineLayer = tuple[str, str, bool]
+# A layer of inline markup: its kind, and for an abbreviation its expansion and the span it
+# marks, which keeps two abbreviations apart: layout gives each one span, its runs joined.
+type InlineLayer = tuple[str, str, int]
+# Outermost first, where layers opening together run on equally far.
+LAYER_KINDS = ("abbr", "italic", "bold", "strikeout", "underline", "mark", "sup", "sub")
+EMPHASIS_KINDS = frozenset(("italic", "bold", "strikeout"))
+INLINE_TAGS = {
+    "underline": ("<u>", "</u>"),
+    "mark": ("<mark>", "</mark>"),
+    "sup": ("<sup>", "</sup>"),
+    "sub": ("<sub>", "</sub>"),
+}
+INLINE_UNITS_RE = re.compile(r"\s+|\S+")
+# An inline token: ("text", text, unit index) or ("open" or "close", layer, instance).
+type InlineToken = tuple[str, InlineLayer | str, int]
 
 
-def span_layers(span: TextSpan, markup: InlineMarkup) -> tuple[InlineLayer, ...]:
-    """The markup a span is wrapped in, outermost first."""
-    spaced = markup.escape_text
-    layers: list[InlineLayer] = []
-    if span.expansion is not None:
+def span_layers(span: TextSpan, index: int) -> tuple[InlineLayer, ...]:
+    """The markup a span is wrapped in, in LAYER_KINDS order."""
+    flags = (
+        span.expansion is not None,
+        span.italic,
+        span.bold,
+        span.strikeout,
+        span.underline,
+        span.mark,
+        span.superscript,
+        span.subscript and not span.superscript,
+    )
+    return tuple(
+        (kind, span.expansion or "", index) if kind == "abbr" else (kind, "", -1)
+        for kind, flag in zip(LAYER_KINDS, flags, strict=True)
+        if flag
+    )
+
+
+def layer_markers(layer: InlineLayer, markup: InlineMarkup) -> tuple[str, str]:
+    kind = layer[0]
+    if kind == "abbr":
         # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one.
-        title = escape(span.expansion, quote=True)
-        layers.append((f'<abbr title="{title}">', "</abbr>", True))
-    if span.italic:
-        layers.append((*markup.italic, spaced))
-    if span.bold:
-        layers.append((*markup.bold, spaced))
-    if span.strikeout:
-        layers.append((*markup.strikeout, spaced))
-    if span.underline:
-        layers.append(("<u>", "</u>", True))
-    if span.mark:
-        layers.append(("<mark>", "</mark>", True))
-    if span.superscript:
-        layers.append(("<sup>", "</sup>", True))
-    elif span.subscript:
-        layers.append(("<sub>", "</sub>", True))
-    return tuple(layers)
+        return f'<abbr title="{escape(layer[1], quote=True)}">', "</abbr>"
+    if kind in EMPHASIS_KINDS:
+        markers: tuple[str, str] = getattr(markup, kind)
+        return markers
+    return INLINE_TAGS[kind]
 
 
-def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
-    # A line keeps a span per text run, and runs split at every font or glyph-run change,
-    # so neighbours often share markup. A layer stays open across the spans that share it,
-    # so `UN` in two bold runs is `**UN**`, not `**U****N**`, and a bold run then a bold
-    # highlighted one is `**a<mark>b</mark>**`. Layers opening together nest by how far
-    # they run on, the longest outermost.
+def styled_units(
+    line: TextLine, markup: InlineMarkup, start: int
+) -> list[tuple[str, tuple[InlineLayer, ...]]]:
+    """The line's words and runs of whitespace, each with the layers it sits in.
+
+    Whitespace inside a span keeps the span's layers, and so does a span of spaces only,
+    a fill-in blank say. Whitespace at a span's end keeps only the layers the unit beyond
+    it shares, so markup that ends there closes before it and markup that starts there
+    opens after it, while markup running on across it holds it.
+    """
     pieces: list[tuple[str, tuple[InlineLayer, ...]]] = []
-    for span in line.styled_spans():
+    for index, span in enumerate(line.styled_spans()):
         text = span.text
         if start:
             text = text[start:]
             start = max(0, start - len(span.text))
             if not text:
                 continue
-        pieces.append((escape(text) if markup.escape_text else text, span_layers(span, markup)))
+        pieces.append((escape(text) if markup.escape_text else text, span_layers(span, index)))
+    units: list[tuple[str, tuple[InlineLayer, ...]]] = []
+    edges: list[int] = []  # -1 a span's leading whitespace, 1 its trailing, 0 neither
+    for text, layers in pieces:
+        parts = INLINE_UNITS_RE.findall(text)
+        blank = len(parts) == 1 and parts[0].isspace()
+        for position, part in enumerate(parts):
+            units.append((part, layers))
+            edge = 0
+            if part.isspace() and not blank:
+                edge = -1 if position == 0 else 1 if position == len(parts) - 1 else 0
+            edges.append(edge)
+    return [
+        (
+            text,
+            tuple(
+                layer
+                for layer in layers
+                if edge == 0 or 0 <= index + edge < len(units) and layer in units[index + edge][1]
+            ),
+        )
+        for index, ((text, layers), edge) in enumerate(zip(units, edges, strict=True))
+    ]
 
-    rendered: list[str] = []
-    stack: list[InlineLayer] = []
-    # Whitespace not yet written, and whether it lies inside the open layers (a span of
-    # spaces only) rather than at a span's end, which stays outside markers that close.
-    pending = ""
-    pending_inside = True
 
-    def close_to(keep: int) -> None:
-        nonlocal pending
-        for layer in reversed(stack[keep:]):
-            # Spaces a tag holds stay in it; Markdown emphasis closes before them.
-            if pending and pending_inside and layer[2]:
-                rendered.append(pending)
-                pending = ""
-            rendered.append(layer[1])
-        del stack[keep:]
+def inline_tokens(
+    units: list[tuple[str, tuple[InlineLayer, ...]]], markup: InlineMarkup
+) -> list[InlineToken]:
+    """Open and close each layer around the units it holds, keeping it open across them.
+
+    Layers opening together nest by how far they run on, the longest outermost. In
+    Markdown, whitespace opens no emphasis, which cannot start or end with whitespace, and
+    whitespace before emphasis closes moves after its marker.
+    """
+    markdown = not markup.escape_text
+    tokens: list[InlineToken] = []
+    stack: list[tuple[InlineLayer, int]] = []
+    instances = 0
 
     def reach(layer: InlineLayer, index: int) -> int:
-        """How many spans after the one at index the layer runs on into."""
         count = 0
-        for _, later in pieces[index + 1 :]:
+        for _, later in units[index + 1 :]:
             if layer not in later:
                 break
             count += 1
         return count
 
-    for index, (text, layers) in enumerate(pieces):
-        body = text.strip()
-        if not body:
-            # A span of spaces only, a fill-in blank say, keeps them inside its tags. It
-            # opens no Markdown emphasis, which cannot hold only spaces, but stays inside
-            # emphasis already open around it.
-            layers = tuple(layer for layer in layers if layer[2] or layer in stack)
+    def close_to(keep: int) -> None:
+        for layer, instance in reversed(stack[keep:]):
+            moved: list[InlineToken] = []
+            if markdown and layer[0] in EMPHASIS_KINDS:
+                while tokens and isinstance(tokens[-1][1], str) and tokens[-1][1].isspace():
+                    moved.append(tokens.pop())
+            tokens.append(("close", layer, instance))
+            tokens.extend(reversed(moved))
+        del stack[keep:]
+
+    for index, (text, layers) in enumerate(units):
         keep = 0
-        while keep < len(stack) and stack[keep] in layers:
+        while keep < len(stack) and stack[keep][0] in layers:
             keep += 1
+        kept = [layer for layer, _ in stack[:keep]]
+        if markdown and text.isspace():
+            layers = tuple(
+                layer for layer in layers if layer[0] not in EMPHASIS_KINDS or layer in kept
+            )
         close_to(keep)
-        opening = [layer for layer in layers if layer not in stack]
-        if body:
-            start_at = text.index(body)
-            leading, trailing = text[:start_at], text[start_at + len(body) :]
-        else:
-            leading, trailing = "", ""
-            if not opening:
-                pending += text
-                continue
-        if leading:
-            pending, pending_inside = pending + leading, False
-        if len(opening) > 1:
-            opening.sort(key=lambda layer: reach(layer, index), reverse=True)
-        rendered.append(pending)
-        pending, pending_inside = trailing, not trailing
-        rendered.extend(layer[0] for layer in opening)
-        stack.extend(opening)
-        rendered.append(body or text)
+        opening = sorted(
+            (layer for layer in layers if layer not in kept),
+            key=lambda layer: reach(layer, index),
+            reverse=True,
+        )
+        for layer in opening:
+            tokens.append(("open", layer, instances))
+            stack.append((layer, instances))
+            instances += 1
+        tokens.append(("text", text, index))
     close_to(0)
-    rendered.append(pending)
-    return "".join(rendered)
+    return tokens
+
+
+def flanking(before: str, after: str) -> tuple[bool, bool]:
+    """Whether a delimiter run between these characters is left- and right-flanking
+    (CommonMark 6.2); an empty string is the line's edge."""
+
+    def space(character: str) -> bool:
+        return not character or character.isspace()
+
+    def punctuation(character: str) -> bool:
+        return bool(character) and unicodedata.category(character)[0] in "PS"
+
+    left = not space(after) and (not punctuation(after) or space(before) or punctuation(before))
+    right = not space(before) and (not punctuation(before) or space(after) or punctuation(after))
+    return left, right
+
+
+def render_tokens(tokens: list[InlineToken], markup: InlineMarkup, tagged: set[int]) -> list[str]:
+    rendered: list[str] = []
+    for kind, value, instance in tokens:
+        if isinstance(value, str):
+            rendered.append(value)
+            continue
+        markers = layer_markers(value, HTML_MARKUP if instance in tagged else markup)
+        rendered.append(markers[0] if kind == "open" else markers[1])
+    return rendered
+
+
+def is_delimiter(token: InlineToken, tagged: set[int]) -> bool:
+    """Whether the token is a Markdown emphasis marker, not written as an HTML tag."""
+    value = token[1]
+    return not isinstance(value, str) and value[0] in EMPHASIS_KINDS and token[2] not in tagged
+
+
+def untagged_delimiters(tokens: list[InlineToken], tagged: set[int]) -> set[int]:
+    """The emphasis written with Markdown delimiters that CommonMark would not read back.
+
+    A run of one delimiter character must open or close only, an opening run be
+    left-flanking and a closing run right-flanking; an emphasis whose run fails is
+    written with HTML tags instead (where a run opens and closes, the opening ones).
+    """
+    rendered = render_tokens(tokens, MARKDOWN_MARKUP, tagged)
+    failing: set[int] = set()
+    index = 0
+    while index < len(tokens):
+        if not is_delimiter(tokens[index], tagged):
+            index += 1
+            continue
+        character = rendered[index][0]
+        end = index + 1
+        while (
+            end < len(tokens)
+            and is_delimiter(tokens[end], tagged)
+            and rendered[end][0] == character
+        ):
+            end += 1
+        # Neither text units nor markers are empty.
+        before = rendered[index - 1][-1] if index else ""
+        after = rendered[end][0] if end < len(rendered) else ""
+        left, right = flanking(before, after)
+        opens = {tokens[at][2] for at in range(index, end) if tokens[at][0] == "open"}
+        closes = {tokens[at][2] for at in range(index, end) if tokens[at][0] == "close"}
+        if opens and (closes or not left):
+            failing |= opens
+        elif closes and not right:
+            failing |= closes
+        index = end
+    return failing
+
+
+def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
+    # A line keeps a span per text run, and runs split at every font or glyph-run change,
+    # so neighbours often share markup: a layer stays open across the spans that share it,
+    # so `UN` in two bold runs is `**UN**`, not `**U****N**`.
+    tokens = inline_tokens(styled_units(line, markup, start), markup)
+    tagged: set[int] = set()
+    if not markup.escape_text:
+        while failing := untagged_delimiters(tokens, tagged):
+            tagged |= failing
+    return "".join(render_tokens(tokens, markup, tagged))
 
 
 def markdown_line(line: TextLine, *, start: int = 0) -> str:
