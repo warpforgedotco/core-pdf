@@ -158,7 +158,7 @@ class ProgramLowering:
     def finish_text(self, seqno: int) -> None:
         text = self.text
         if text.group_open:
-            self.display_list.append("group-end", seqno)
+            self.display_list.append_group_end(seqno)
         self.flush_text_clip(seqno)
         text.active = False
         text.group_open = False
@@ -173,15 +173,7 @@ class ProgramLowering:
             self.begin_text_group(seqno, knockout=True)
 
     def begin_text_group(self, seqno: int, *, knockout: bool) -> None:
-        self.display_list.append(
-            "group-begin",
-            seqno,
-            fill_opacity=1.0,
-            blend_mode=None,
-            group_isolated=False,
-            group_knockout=knockout,
-            group_track_shape=True,
-        )
+        self.display_list.append_text_group(seqno, knockout=knockout)
 
     def lower_boundary(self, command: CapturedTextBoundary) -> None:
         match command.kind:
@@ -208,7 +200,7 @@ class ProgramLowering:
             case "glyph-end":
                 if self.glyph_scope_depth:
                     if self.include_text:
-                        self.display_list.append("group-end", command.seqno)
+                        self.display_list.append_group_end(command.seqno)
                     self.glyph_scope_depth -= 1
 
     def lower_text_run(self, run: TextRun) -> None:
@@ -340,7 +332,7 @@ class ProgramLowering:
                     self.append_glyph_bitmap(glyph)
             finally:
                 if glyph_group_open:
-                    display_list.append("group-end", seqno)
+                    display_list.append_group_end(seqno)
             command = next(commands, END_OF_COMMANDS)
             # A text run's item comes between its glyphs' items.
             while type(command) is TextRun:

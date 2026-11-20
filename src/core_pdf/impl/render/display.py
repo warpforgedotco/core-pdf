@@ -13,8 +13,10 @@ from core_pdf.impl.graphics.color_spec import describe_color_space
 from core_pdf.impl.graphics.filter_registry import declared_filter_names
 from core_pdf.impl.render.model import (
     DEFAULT_MITER_LIMIT,
+    ControlItem,
     DisplayItem,
     DisplayListItem,
+    GroupBeginItem,
     ImagePaintItem,
     PathPaintItem,
     PathPaintKind,
@@ -409,6 +411,34 @@ class DisplayList:
                 # plain_fill_members_box passes over text.
                 scans[-1].end += 1
         items.append(display_item(kind, seqno, data))
+
+    def append_text_group(self, seqno: int, *, knockout: bool) -> None:
+        """append("group-begin", ...) for a text object's or glyph's group: non-isolated,
+        opaque, in the Normal blend mode, tracking shape, and a knockout group when
+        knockout."""
+        data: dict[str, Any] = {
+            "fill_opacity": 1.0,
+            "blend_mode": None,
+            "group_isolated": False,
+            "group_knockout": knockout,
+            "group_track_shape": True,
+        }
+        items = self.items
+        # track_group_boundary for a group that tracks shape.
+        self.shape_tracking_groups.append(True)
+        self.open_group_indexes.append(len(items))
+        self.open_group_scans.append(PlainFillScan(len(items) + 1))
+        items.append(
+            GroupBeginItem(
+                seqno, 1.0, None, None, False, knockout, True, False, None, None, None, data
+            )
+        )
+
+    def append_group_end(self, seqno: int) -> None:
+        """append("group-end", seqno)."""
+        data: dict[str, Any] = {}
+        self.track_group_boundary("group-end", data)
+        self.items.append(ControlItem("group-end", seqno, data))
 
     def append_text(self, seqno: int, **data: Any) -> None:
         """append("text", seqno, **data), for data without a graphics_soft_mask."""
