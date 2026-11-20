@@ -479,8 +479,44 @@ MARKDOWN_MARKUP = InlineMarkup(False, ("~~", "~~"), ("**", "**"), ("*", "*"))
 HTML_MARKUP = InlineMarkup(True, ("<del>", "</del>"), ("<strong>", "</strong>"), ("<em>", "</em>"))
 
 
+# A layer of inline markup: its opening and closing markers, and whether the markers may
+# sit next to whitespace inside them (HTML tags may; Markdown emphasis does not open
+# before or close after whitespace).
+type InlineLayer = tuple[str, str, bool]
+
+
+def span_layers(span: TextSpan, markup: InlineMarkup) -> tuple[InlineLayer, ...]:
+    """The markup a span is wrapped in, outermost first."""
+    spaced = markup.escape_text
+    layers: list[InlineLayer] = []
+    if span.expansion is not None:
+        # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one.
+        title = escape(span.expansion, quote=True)
+        layers.append((f'<abbr title="{title}">', "</abbr>", True))
+    if span.italic:
+        layers.append((*markup.italic, spaced))
+    if span.bold:
+        layers.append((*markup.bold, spaced))
+    if span.strikeout:
+        layers.append((*markup.strikeout, spaced))
+    if span.underline:
+        layers.append(("<u>", "</u>", True))
+    if span.mark:
+        layers.append(("<mark>", "</mark>", True))
+    if span.superscript:
+        layers.append(("<sup>", "</sup>", True))
+    elif span.subscript:
+        layers.append(("<sub>", "</sub>", True))
+    return tuple(layers)
+
+
 def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) -> str:
-    rendered: list[str] = []
+    # A line keeps a span per text run, and runs split at every font or glyph-run change,
+    # so neighbours often share markup. A layer stays open across the spans that share it,
+    # so `UN` in two bold runs is `**UN**`, not `**U****N**`, and a bold run then a bold
+    # highlighted one is `**a<mark>b</mark>**`. Layers opening together nest by how far
+    # they run on, the longest outermost.
+    pieces: list[tuple[str, tuple[InlineLayer, ...]]] = []
     for span in line.styled_spans():
         text = span.text
         if start:
@@ -488,37 +524,65 @@ def render_styled_line(line: TextLine, markup: InlineMarkup, *, start: int = 0) 
             start = max(0, start - len(span.text))
             if not text:
                 continue
-        text = escape(text) if markup.escape_text else text
-        # Spaces at either end stay outside the markers: Markdown emphasis does not open
-        # before or close after whitespace. A span of spaces only, a fill-in blank say, keeps
-        # them inside its tags, and gets no Markdown emphasis, which cannot hold only spaces.
+        pieces.append((escape(text) if markup.escape_text else text, span_layers(span, markup)))
+
+    rendered: list[str] = []
+    stack: list[InlineLayer] = []
+    # Whitespace not yet written, and whether it lies inside the open layers (a span of
+    # spaces only) rather than at a span's end, which stays outside markers that close.
+    pending = ""
+    pending_inside = True
+
+    def close_to(keep: int) -> None:
+        nonlocal pending
+        for layer in reversed(stack[keep:]):
+            # Spaces a tag holds stay in it; Markdown emphasis closes before them.
+            if pending and pending_inside and layer[2]:
+                rendered.append(pending)
+                pending = ""
+            rendered.append(layer[1])
+        del stack[keep:]
+
+    def reach(layer: InlineLayer, index: int) -> int:
+        """How many spans after the one at index the layer runs on into."""
+        count = 0
+        for _, later in pieces[index + 1 :]:
+            if layer not in later:
+                break
+            count += 1
+        return count
+
+    for index, (text, layers) in enumerate(pieces):
         body = text.strip()
-        leading = trailing = ""
+        if not body:
+            # A span of spaces only, a fill-in blank say, keeps them inside its tags. It
+            # opens no Markdown emphasis, which cannot hold only spaces, but stays inside
+            # emphasis already open around it.
+            layers = tuple(layer for layer in layers if layer[2] or layer in stack)
+        keep = 0
+        while keep < len(stack) and stack[keep] in layers:
+            keep += 1
+        close_to(keep)
+        opening = [layer for layer in layers if layer not in stack]
         if body:
             start_at = text.index(body)
             leading, trailing = text[:start_at], text[start_at + len(body) :]
-            text = body
-        emphasis = bool(body) or markup.escape_text
-        if span.superscript:
-            text = f"<sup>{text}</sup>"
-        elif span.subscript:
-            text = f"<sub>{text}</sub>"
-        if span.mark:
-            text = f"<mark>{text}</mark>"
-        if span.underline:
-            text = f"<u>{text}</u>"
-        if span.strikeout and emphasis:
-            text = f"{markup.strikeout[0]}{text}{markup.strikeout[1]}"
-        if span.bold and emphasis:
-            text = f"{markup.bold[0]}{text}{markup.bold[1]}"
-        if span.italic and emphasis:
-            text = f"{markup.italic[0]}{text}{markup.italic[1]}"
-        if span.expansion is not None:
-            # An abbreviation and its expansion (ISO 32000-2 14.9.5), as HTML marks one; a
-            # space joining it to the text before stays outside it and its styles.
-            title = escape(span.expansion, quote=True)
-            text = f'<abbr title="{title}">{text}</abbr>'
-        rendered.append(f"{leading}{text}{trailing}")
+        else:
+            leading, trailing = "", ""
+            if not opening:
+                pending += text
+                continue
+        if leading:
+            pending, pending_inside = pending + leading, False
+        if len(opening) > 1:
+            opening.sort(key=lambda layer: reach(layer, index), reverse=True)
+        rendered.append(pending)
+        pending, pending_inside = trailing, not trailing
+        rendered.extend(layer[0] for layer in opening)
+        stack.extend(opening)
+        rendered.append(body or text)
+    close_to(0)
+    rendered.append(pending)
     return "".join(rendered)
 
 
