@@ -10,6 +10,7 @@ from cython.cimports.core_pdf_cythonized._rect import fill_rect_pixels
 from cython.cimports.core_pdf_cythonized._stroke import (
     CAP_BUTT,
     CAP_ROUND,
+    CAP_SQUARE,
     CLIP_NONE,
     CLIP_ROWS,
     COVER_DISC,
@@ -1350,14 +1351,15 @@ def join(
     ay: cython.double,
     bx: cython.double,
     by: cython.double,
+    reaches: cython.bint,
 ) -> cython.int:
     """The join at (x, y) of a segment arriving along the unit vector (ax, ay) and one
-    leaving along (bx, by). The two segments' rectangles leave uncovered only the wedge on
-    the outer side between their ends; a miter join fills it out to where the outer edges
-    meet, a bevel join only to the line between their corners, and a round join with the
-    disc around (x, y) (ISO 32000-2 8.4.3.4). A miter whose length over the line width,
-    1 / sin(angle / 2) = sqrt(2 / (1 + cos)), passes the miter limit is a bevel instead
-    (8.4.3.5)."""
+    leaving along (bx, by), reaches when both are at least half the pen's width long. The two
+    segments' rectangles leave uncovered only the wedge on the outer side between their
+    ends; a miter join fills it out to where the outer edges meet, a bevel join only to the
+    line between their corners, and a round join with the disc around (x, y) (ISO 32000-2
+    8.4.3.4). A miter whose length over the line width, 1 / sin(angle / 2) =
+    sqrt(2 / (1 + cos)), passes the miter limit is a bevel instead (8.4.3.5)."""
     if w.line_join == JOIN_ROUND:
         return terminal(p, w, calls, x, y, True)
     cross: cython.double = ax * by - ay * bx
@@ -1366,9 +1368,11 @@ def join(
         return 0
     dot: cython.double = ax * bx + ay * by
     miter: cython.bint = w.line_join == JOIN_MITER and (1.0 + dot) * w.miter_limit_squared >= 2.0
-    if miter and (ax == 0.0 or ay == 0.0) and (bx == 0.0 or by == 0.0):
+    if reaches and miter and (ax == 0.0 or ay == 0.0) and (bx == 0.0 or by == 0.0):
         # A right angle between axis-aligned segments: the miter is the outer quarter of
-        # the square around the corner, whose other three quarters the segments cover.
+        # the square around the corner, whose other three quarters the segments cover when
+        # both reach past it. A shorter one leaves part of them out, which the square would
+        # paint, so the miter is then worked out as it is at any other angle.
         return terminal(p, w, calls, x, y, False)
     # The outer side: right of the path on a left turn, left of it on a right turn.
     side: cython.double = w.half if cross > 0.0 else -w.half
@@ -1404,15 +1408,20 @@ def cap(
     y: cython.double,
     ux: cython.double,
     uy: cython.double,
+    reaches: cython.bint,
 ) -> cython.int:
     """The cap at the end (x, y) of a subpath leaving it along the unit vector (ux, uy):
-    nothing, the disc around it, or the half line width square beyond it (8.4.3.3)."""
+    nothing, the disc around it, or the half line width square beyond it (8.4.3.3). reaches
+    when the segment ending there is at least half the pen's width long."""
     if w.line_cap == CAP_BUTT:
         return 0
     if w.line_cap == CAP_ROUND:
         return terminal(p, w, calls, x, y, True)
-    if ux == 0.0 or uy == 0.0:
-        # Along an axis, the square around the end: its inner half is the segment's.
+    if reaches and (ux == 0.0 or uy == 0.0):
+        # Along an axis, the square around the end: its inner half is the segment's, when
+        # the segment is that long. Past a shorter one, it would paint beyond the segment's
+        # other end, where the cap is not, and what it painted would hang on whether the
+        # segment ran along the axis or a rounding away from it.
         return terminal(p, w, calls, x, y, False)
     normal_x: cython.double = -uy * w.half
     normal_y: cython.double = ux * w.half
@@ -1514,6 +1523,8 @@ def walk_range(
     first_y: cython.double = 0.0
     last_x: cython.double = 0.0
     last_y: cython.double = 0.0
+    first_length: cython.double = 0.0
+    last_length: cython.double = 0.0
     for k in range(first, last):
         start = w.bounds[3 * k]
         end = w.bounds[3 * k + 1]
@@ -1559,13 +1570,26 @@ def walk_range(
             ux = dx / length
             uy = dy / length
             if found:
-                join(p, w, calls, w.xs[index], w.ys[index], last_x, last_y, ux, uy)
+                join(
+                    p,
+                    w,
+                    calls,
+                    w.xs[index],
+                    w.ys[index],
+                    last_x,
+                    last_y,
+                    ux,
+                    uy,
+                    py_min(last_length, length) >= w.half,
+                )
             else:
                 first_x = ux
                 first_y = uy
+                first_length = length
                 found = True
             last_x = ux
             last_y = uy
+            last_length = length
         if closed:
             if x0 != x1 or y0 != y1:
                 dx = x0 - x1
@@ -1573,13 +1597,36 @@ def walk_range(
                 length = pow(dx * dx + dy * dy, p.exponent)
                 ux = dx / length
                 uy = dy / length
-                join(p, w, calls, x1, y1, last_x, last_y, ux, uy)
+                join(
+                    p,
+                    w,
+                    calls,
+                    x1,
+                    y1,
+                    last_x,
+                    last_y,
+                    ux,
+                    uy,
+                    py_min(last_length, length) >= w.half,
+                )
                 last_x = ux
                 last_y = uy
-            join(p, w, calls, x0, y0, last_x, last_y, first_x, first_y)
+                last_length = length
+            join(
+                p,
+                w,
+                calls,
+                x0,
+                y0,
+                last_x,
+                last_y,
+                first_x,
+                first_y,
+                py_min(last_length, first_length) >= w.half,
+            )
         else:
-            cap(p, w, calls, x0, y0, -first_x, -first_y)
-            cap(p, w, calls, x1, y1, last_x, last_y)
+            cap(p, w, calls, x0, y0, -first_x, -first_y, first_length >= w.half)
+            cap(p, w, calls, x1, y1, last_x, last_y, last_length >= w.half)
         if (
             w.cover != cython.NULL
             and short_span(
@@ -1633,13 +1680,17 @@ def in_pieces(
     every segment running along an axis and every corner a disc or the square around it,
     with no miter or bevel polygon meeting a segment's end along an edge, where two partial
     coverages painted in turn leave a lighter seam; and none of its subpaths is shorter
-    than SHORT_PIXELS, which paint_once keeps from disappearing."""
+    than SHORT_PIXELS, which paint_once keeps from disappearing. A segment shorter than half
+    the pen's width has its square caps and miters worked out as polygons, as at any angle,
+    so a stroke with one paints at once unless its joins are round and its caps are not
+    square."""
     k: cython.Py_ssize_t
     index: cython.Py_ssize_t
     start: cython.Py_ssize_t
     end: cython.Py_ssize_t
     segments: cython.Py_ssize_t = 0
     aligned: cython.bint = True
+    short: cython.bint = False
     for k in range(first, last):
         start = w.bounds[3 * k]
         end = w.bounds[3 * k + 1]
@@ -1654,16 +1705,23 @@ def in_pieces(
             segments += 1
             if w.xs[index] != w.xs[index + 1] and w.ys[index] != w.ys[index + 1]:
                 aligned = False
+            # Along an axis, its length is the sum of its sides.
+            if fabs(w.xs[index + 1] - w.xs[index]) + fabs(w.ys[index + 1] - w.ys[index]) < w.half:
+                short = True
         if w.bounds[3 * k + 2] and (w.xs[start] != w.xs[end - 1] or w.ys[start] != w.ys[end - 1]):
             segments += 1
             if w.xs[start] != w.xs[end - 1] and w.ys[start] != w.ys[end - 1]:
                 aligned = False
+            if fabs(w.xs[start] - w.xs[end - 1]) + fabs(w.ys[start] - w.ys[end - 1]) < w.half:
+                short = True
         elif w.bounds[3 * k + 2]:
             # Closed: its last point meets its first at a join.
             segments += 1
     if segments <= 1 and w.line_cap == CAP_BUTT:
         return True
     if not opaque or not aligned or w.line_join == JOIN_BEVEL:
+        return False
+    if short and (w.line_join == JOIN_MITER or w.line_cap == CAP_SQUARE):
         return False
     # A right angle's miter is a bevel below a miter limit of the square root of 2.
     return w.line_join != JOIN_MITER or w.miter_limit_squared >= 2.0

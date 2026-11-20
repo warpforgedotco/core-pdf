@@ -76,10 +76,14 @@ def dash_subpath(
                 break
             step = min(remaining, distance - position)
             # The segment's own end where the dash reaches it, so that a closed subpath's
-            # last dash still ends on its first point and joins its first dash.
+            # last dash still ends on its first point and joins its first dash. A dash that
+            # runs on past it reaches it whatever position + step rounds to: a sum an ulp
+            # short would end this piece of it a hair before the end and add a segment that
+            # long after it, whose direction, a rounding's, turns the joins either side.
+            reaches = step == distance - position or position + step >= distance
             endpoint = (
                 end
-                if position + step >= distance
+                if reaches
                 else (
                     start[0] + dx * ((position + step) / distance),
                     start[1] + dy * ((position + step) / distance),
@@ -93,7 +97,7 @@ def dash_subpath(
             elif current:
                 pieces.append(CapturedSubpath(current))
                 current = []
-            position += step
+            position = distance if reaches else position + step
             remaining -= step
     if current:
         pieces.append(CapturedSubpath(current))

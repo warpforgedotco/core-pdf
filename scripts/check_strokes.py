@@ -730,6 +730,22 @@ def cases() -> list[Case]:
             "skewed circle of curves", [Stroke((), circle=((0.0, 0.0), 60.0), width=10.0)], ctm=SKEW
         ),
     ]
+    # A segment along an axis shorter than half the line width: its square cap, and a right
+    # angle's miter at its other end, reach no further back than it does.
+    short_end = [
+        Stroke([(40.0, 120.0), (140.0, 220.0), (140.0, 214.0)], cap=SQUARE, join=BEVEL, width=20.0),
+        Stroke([(160.0, 40.0), (260.0, 40.0), (260.0, 46.0)], join=MITER, width=20.0),
+        Stroke(
+            [(170.0, 130.0), (250.0, 130.0), (250.0, 136.0), (180.0, 210.0)],
+            cap=SQUARE,
+            join=MITER,
+            width=20.0,
+        ),
+    ]
+    found += [
+        Case("short segments along the axes, opaque", short_end),
+        Case("short segments along the axes, alpha 0.5", short_end, alpha=0.5),
+    ]
     # A path holding its subpath twice strokes one shape: no edge pixel blends twice.
     diagonal = [(40.0, 40.0), (260.0, 230.0)]
     found += [
