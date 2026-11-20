@@ -506,6 +506,12 @@ MARKDOWN_SYNTAX_RE = re.compile(
 # start of a line; an ordered list marker is escaped at its . or ).
 MARKDOWN_LINE_START = frozenset("#>+=-")
 ORDERED_MARKER_RE = re.compile(r"^([0-9]{1,9})([.)])(?=[ \t]|$)")
+# A heading's closing sequence: a run of # its text ends with, after a space or alone.
+HEADING_CLOSING_RE = re.compile(r"(^|[ \t])(#+)$")
+# The CommonMark list markers a list line's own marker is written as: a numbered marker
+# stays, a bullet glyph becomes -, and a letter (or a longer number) stays text after -.
+NUMBERED_MARKER_RE = re.compile(r"[0-9]{1,9}[.)]")
+BULLET_MARKERS = frozenset("-*•▪◦")
 # An inline token: ("text", text, unit index) or ("open" or "close", layer, instance).
 type InlineToken = tuple[str, InlineLayer | str, int]
 
@@ -662,30 +668,35 @@ def escape_markdown(text: str, *, line_start: bool) -> str:
     text = MARKDOWN_SYNTAX_RE.sub(lambda match: f"\\{match.group()}", text)
     if not line_start:
         return text
-    # A block marker may follow up to three spaces.
-    indent = len(text) - len(text.lstrip(" "))
-    head = text[indent:]
-    if head[:1] and head[0] in MARKDOWN_LINE_START:
-        head = f"\\{head}"
-    else:
-        head = ORDERED_MARKER_RE.sub(r"\1\\\2", head, count=1)
-    return text[:indent] + head
+    if text[:1] in MARKDOWN_LINE_START:
+        return f"\\{text}"
+    return ORDERED_MARKER_RE.sub(r"\1\\\2", text, count=1)
 
 
 def escaped_tokens(tokens: list[InlineToken]) -> list[InlineToken]:
     """The tokens with their text escaped for Markdown, text between two markers joined,
-    and the line's text escaped as a line start unless markup comes first."""
+    and the line's text escaped as a line start unless markup comes first.
+
+    Spaces and tabs at the line's ends go: a paragraph line loses them anyway, and kept
+    they would open an indented code block (four columns at the start) or a hard line
+    break (two spaces at the end).
+    """
     joined: list[InlineToken] = []
     for token in tokens:
         if joined and isinstance(token[1], str) and isinstance(joined[-1][1], str):
             joined[-1] = (joined[-1][0], joined[-1][1] + token[1], joined[-1][2])
         else:
             joined.append(token)
+    if joined and isinstance(joined[0][1], str):
+        joined[0] = (joined[0][0], joined[0][1].lstrip(" \t"), joined[0][2])
+    if joined and isinstance(joined[-1][1], str):
+        joined[-1] = (joined[-1][0], joined[-1][1].rstrip(" \t"), joined[-1][2])
     return [
         (kind, escape_markdown(value, line_start=index == 0), unit)
         if isinstance(value, str)
         else (kind, value, unit)
         for index, (kind, value, unit) in enumerate(joined)
+        if value != ""
     ]
 
 
@@ -899,17 +910,32 @@ def page_to_markdown(page: Page) -> str:
     return MARKDOWN_FORMATTER.format_page(page)
 
 
+def markdown_list_item(line: TextLine) -> tuple[str, int]:
+    """The CommonMark list marker a list line is written with, and where its text starts."""
+    prefix = list_prefix(line.text)
+    marker = prefix.strip()
+    if NUMBERED_MARKER_RE.fullmatch(marker):
+        return f"{marker} ", len(prefix)
+    if marker in BULLET_MARKERS:
+        return "- ", len(prefix)
+    # A letter marker, or none, stays text after a bullet.
+    return "- ", 0
+
+
 def block_to_markdown(block: Block) -> str:
     if block.kind is BlockKind.LIST:
         return "\n".join(
-            f"{prefix or '- '}{markdown_line(line, start=len(prefix))}"
+            f"{marker}{markdown_line(line, start=start)}"
             for line in block.lines
-            for prefix in (list_prefix(line.text),)
+            for marker, start in (markdown_list_item(line),)
         )
-    text = "\n".join(markdown_line(line) for line in block.lines)
+    # A line of spaces only would end the paragraph.
+    lines = [text for line in block.lines if (text := markdown_line(line))]
     if block.kind is BlockKind.HEADING:
-        return f"{'#' * (block.level or 2)} {text}"
-    return text
+        # An ATX heading is one line, and a run of # ending it would close it.
+        text = HEADING_CLOSING_RE.sub(r"\1\\\2", " ".join(lines))
+        return f"{'#' * min(max(block.level or 2, 1), 6)} {text}"
+    return "\n".join(lines)
 
 
 def document_to_html(document: Document) -> str:

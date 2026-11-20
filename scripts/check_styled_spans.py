@@ -9,12 +9,15 @@ bold highlighted run then a bold one is `**<mark>a</mark>b**`. This checks it on
 built here for every layer the serializer writes (bold, italic, both, strikeout,
 underline, highlight, superscript, subscript and an abbreviation's expansion), for spaces
 between and around spans, and for neighbours that differ, then on the upstream test PDFs:
-no line's Markdown joins two emphasis markers (`****`, `~~~~`), no HTML closes a tag only
-to reopen it, and no Markdown emphasis marker sits on whitespace. On both, an HTML parser
-and a CommonMark parser (markdown-it-py, with strikethrough) must read back the text and
-the markup each non-space character's span carries, the Markdown as one paragraph on its
-own and after another line, so text that reads as syntax must be escaped. A missing
-corpus file fails the check.
+no HTML closes a tag only to reopen it (Markdown nests the same way, so `**U****N**` is
+caught there; a `****` of layers that cross, bold over `a b` and italic over `b c` in
+`**a*b****c*`, is valid), and no Markdown emphasis marker sits on whitespace. On both, an
+HTML parser and a CommonMark parser (markdown-it-py, with strikethrough) must read back
+the text and the markup each non-space character's span carries, a line's Markdown as one
+paragraph on its own and after another line, and a block's as the heading, paragraph or
+list it is, so text that reads as syntax must be escaped. Seeded random lines and blocks,
+of characters Markdown reads as syntax, leading and trailing spaces and tabs, and random
+markup, go through the same checks. A missing corpus file fails the check.
 
 uv run --all-packages --group test python scripts/check_styled_spans.py [--all]
 
@@ -27,18 +30,26 @@ from __future__ import annotations
 import glob
 import html as html_module
 import logging
+import random
 import re
 import sys
 import warnings
 from collections import Counter
+from collections.abc import Iterable
 from html.parser import HTMLParser
 from pathlib import Path
 
 from markdown_it import MarkdownIt
+from markdown_it.token import Token
 
 from core_pdf import PdfDocument
-from core_pdf.impl.output.model import Block, TextLine, TextSpan
-from core_pdf.impl.output.serialize import html_line, markdown_line
+from core_pdf.impl.output.model import Block, BlockKind, TextLine, TextSpan
+from core_pdf.impl.output.serialize import (
+    block_to_markdown,
+    html_line,
+    markdown_line,
+    markdown_list_item,
+)
 
 S = TextSpan
 # Upstream PDFs whose Markdown wrapped neighbouring spans that share markup one by one.
@@ -68,8 +79,8 @@ FULL_CORPUS = (
     "tests/upstream/pdfplumber/**/*.pdf",
     "tests/upstream/pypdf/**/*.pdf",
 )
-# (name, spans, Markdown, HTML)
-CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
+# (name, spans, Markdown, HTML or None to leave it unchecked)
+CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str | None], ...] = (
     (
         "bold runs",
         (S("U", bold=True), S("N", bold=True), S("I", bold=True)),
@@ -218,19 +229,19 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
     (
         "end spaces",
         (S("a "), S(" word  ", bold=True), S("b", italic=True), S(" ", italic=True)),
-        "a  **word**  *b* ",
+        "a  **word**  *b*",
         "a  <strong>word</strong>  <em>b </em>",
     ),
     (
         "bold spaces at the end",
         (S("A ", bold=True), S("  ", bold=True)),
-        "**A**   ",
+        "**A**",
         "<strong>A   </strong>",
     ),
     (
         "bold spaces at the start",
         (S("  ", bold=True), S(" A", bold=True)),
-        "   **A**",
+        "**A**",
         "<strong>   A</strong>",
     ),
     (
@@ -300,7 +311,12 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
         "12\\. x **y**",
         "12. x <strong>y</strong>",
     ),
-    ("indented heading", (S("  #"), S(" x")), "  \\# x", "  # x"),
+    ("indented heading", (S("  #"), S(" x")), "\\# x", "  # x"),
+    # Four columns of indentation would open a code block, two spaces at the end a line
+    # break: Markdown drops a line's end spaces and tabs.
+    ("indented code", (S("    # x"),), "\\# x", "    # x"),
+    ("tab before a marker", (S("\t- x  "),), "\\- x", "\t- x  "),
+    ("tab after spaces", (S("  \t"), S("1. x", bold=True)), "**1. x**", None),
     ("rule at the line start", (S("---"),), "\\---", "---"),
     ("number not starting a list", (S("1.5 x"),), "1.5 x", "1.5 x"),
     ("marker after markup", (S("-", bold=True), S(" x")), "**-** x", "<strong>-</strong> x"),
@@ -318,6 +334,7 @@ CASES: tuple[tuple[str, tuple[TextSpan, ...], str, str], ...] = (
     ),
 )
 MARKER_RUN = re.compile(r"[*~]+")
+ESCAPED_RE = re.compile(r"\\.")
 REOPENED_TAG = re.compile(r"</(strong|em|del|u|mark|sup|sub)><\1>")
 
 
@@ -349,6 +366,18 @@ MARKDOWN_STYLES = {"strong": "bold", "em": "italic", "s": "strikeout"}
 HTML_TAG_RE = re.compile(r'<(/?)(\w+)(?: title="([^"]*)")?>')
 MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
 PARAGRAPH = ["paragraph_open", "inline", "paragraph_close"]
+HEADING = ["heading_open", "inline", "heading_close"]
+LIST_TOKENS = frozenset(
+    (
+        "bullet_list_open",
+        "bullet_list_close",
+        "ordered_list_open",
+        "ordered_list_close",
+        "list_item_open",
+        "list_item_close",
+        *PARAGRAPH,
+    )
+)
 # CommonMark's whitespace (2.1): Unicode Zs, tab, line feed, form feed and carriage return.
 SPACE_RE = re.compile("[\t\n\f\r \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")
 
@@ -393,8 +422,12 @@ def markdown_styles(markdown: str) -> Styled | None:
         token.type for token in MARKDOWN.parse(f"a\n{markdown}")
     ] != PARAGRAPH:
         return None
+    return inline_styles(blocks[1].children or ())
+
+
+def inline_styles(children: Iterable[Token]) -> Styled:
     counter = StyleCounter()
-    for token in blocks[1].children or ():
+    for token in children:
         name, _, side = token.type.rpartition("_")
         if name in MARKDOWN_STYLES and side in {"open", "close"}:
             counter.change(MARKDOWN_STYLES[name], side == "open")
@@ -469,13 +502,138 @@ def structure_failure(line: TextLine, start: int = 0) -> str | None:
     return None
 
 
+def block_failure(block: Block) -> str | None:
+    """How the block CommonMark reads in a block's Markdown differs from the block."""
+    markdown = block_to_markdown(block)
+    tokens = MARKDOWN.parse(markdown)
+    types = [token.type for token in tokens]
+    starts = [0] * len(block.lines)
+    if block.kind is BlockKind.HEADING:
+        tag = f"h{min(max(block.level or 2, 1), 6)}"
+        shape = types == HEADING and tokens[0].tag == tag
+    elif block.kind is BlockKind.LIST:
+        shape = LIST_TOKENS.issuperset(types) and types.count("list_item_open") == len(block.lines)
+        starts = [markdown_list_item(line)[1] for line in block.lines]
+    else:
+        shape = types == PARAGRAPH or not types and not markdown.strip()
+    if not shape:
+        return f"{block.kind} Markdown reads as {types}: {markdown!r}"
+    read = [
+        styled
+        for token in tokens
+        if token.type == "inline"
+        for styled in inline_styles(token.children or ())
+    ]
+    expected = [
+        styled
+        for line, start in zip(block.lines, starts, strict=True)
+        for styled in span_styles(line, start)
+    ]
+    if read != expected:
+        return f"{block.kind} Markdown reads back other text or markup: {markdown!r}"
+    return None
+
+
+def block_of(kind: BlockKind, *lines: TextLine, level: int | None = None) -> Block:
+    return Block(0, kind, lines=lines, level=level)
+
+
+def plain(text: str) -> TextLine:
+    return TextLine(text)
+
+
+# (name, block, Markdown)
+BLOCK_CASES: tuple[tuple[str, Block, str], ...] = (
+    (
+        "heading ending in a # run",
+        block_of(BlockKind.HEADING, plain("Item #"), level=2),
+        "## Item \\#",
+    ),
+    ("heading of a # only", block_of(BlockKind.HEADING, plain("#"), level=1), "# \\#"),
+    (
+        "heading of two lines",
+        block_of(BlockKind.HEADING, plain("Annual  "), plain("  Report"), level=3),
+        "### Annual Report",
+    ),
+    ("heading past level 6", block_of(BlockKind.HEADING, plain("x"), level=9), "###### x"),
+    (
+        "paragraph lines with end spaces",
+        block_of(BlockKind.PARAGRAPH, plain("one  "), plain("    two"), plain("   "), plain("3.")),
+        "one\ntwo\n3\\.",
+    ),
+    (
+        "setext underline",
+        block_of(BlockKind.PARAGRAPH, plain("Title"), plain("====="), plain("---")),
+        "Title\n\\=====\n\\---",
+    ),
+    (
+        "bullet glyphs",
+        block_of(BlockKind.LIST, plain("• one"), plain("▪ two"), plain("◦ three"), plain("- four")),
+        "- one\n- two\n- three\n- four",
+    ),
+    (
+        "letter markers",
+        block_of(BlockKind.LIST, plain("a) one"), plain("b. two")),
+        "- a) one\n- b. two",
+    ),
+    (
+        "numbered markers",
+        block_of(BlockKind.LIST, plain("1. one"), plain("2) two"), plain("10. # ten")),
+        "1. one\n2) two\n10. \\# ten",
+    ),
+    (
+        "unmarked list line",
+        block_of(BlockKind.LIST, plain("    plain *item*")),
+        "- plain \\*item\\*",
+    ),
+)
+FUZZ_PIECES = (
+    "a", "Z", "7", "é", "—", "•", "▪", " ", "  ", "\t", "    ", "\u00a0", "\\", "*", "**",
+    "_", "~", "~~", "`", "<", ">", "<u>", "[", "]", "&", "&amp;", "&#35;", "#", "##", "+",
+    "-", "---", "=", "1.", "2)", "a)", "!", "(", ")", ".", ":", '"', "'",
+)  # fmt: skip
+FUZZ_STYLES = ("bold", "italic", "strikeout", "underline", "mark", "superscript", "subscript")
+
+
+def fuzz_line(rng: random.Random) -> TextLine:
+    spans = []
+    for _ in range(rng.randint(1, 5)):
+        text = "".join(rng.choice(FUZZ_PIECES) for _ in range(rng.randint(1, 4)))
+        styles = {style: rng.random() < 0.25 for style in FUZZ_STYLES}
+        expansion = rng.choice((None,) * 18 + ("x", '"A" & <B>'))
+        spans.append(TextSpan(text, **styles, expansion=expansion))
+    return styled_line(tuple(spans))
+
+
+def check_fuzz(count: int, seed: int) -> list[str]:
+    """Random lines, and blocks of them, through the line and block checks."""
+    rng = random.Random(seed)
+    failures: list[str] = []
+    lines: list[TextLine] = []
+    for index in range(count):
+        line = fuzz_line(rng)
+        lines.append(line)
+        if (failure := check_line(line)) is not None:
+            failures.append(f"random line {index}: {failure}")
+        if len(lines) == 3:
+            kind = rng.choice((BlockKind.PARAGRAPH, BlockKind.HEADING, BlockKind.LIST))
+            block = block_of(kind, *lines, level=rng.randint(1, 7))
+            if (failure := block_failure(block)) is not None:
+                failures.append(f"random block {index}: {failure}")
+            lines = []
+    for failure in failures[:20]:
+        print(failure)
+    print(f"{count} random lines (seed {seed}), {len(failures)} misread")
+    return failures
+
+
 def check_cases() -> list[str]:
     failures: list[str] = []
     for name, spans, markdown, html in CASES:
         line = styled_line(spans)
         if (got := markdown_line(line)) != markdown:
             failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
-        if (got := html_line(line)) != html:
+        if html is not None and (got := html_line(line)) != html:
             failures.append(f"{name}: HTML {got!r}, expected {html!r}")
         if (failure := structure_failure(line)) is not None:
             failures.append(f"{name}: {failure}")
@@ -485,15 +643,18 @@ def check_cases() -> list[str]:
         failures.append(f"list item: Markdown {got!r}, expected '**AB**'")
     if (failure := structure_failure(item, start=3)) is not None:
         failures.append(f"list item: {failure}")
+    for name, block, markdown in BLOCK_CASES:
+        if (got := block_to_markdown(block)) != markdown:
+            failures.append(f"{name}: Markdown {got!r}, expected {markdown!r}")
+        if (failure := block_failure(block)) is not None:
+            failures.append(f"{name}: {failure}")
     return failures
 
 
 def check_line(line: TextLine) -> str | None:
     markdown = markdown_line(line)
-    # A literal * or ~ is escaped, so neither joins nor sits beside a marker.
-    if "****" in markdown or "~~~~" in markdown:
-        return f"Markdown joins markers: {markdown!r}"
-    if (run := marker_on_space(markdown)) is not None:
+    # A literal * or ~ is escaped: with escapes read as letters, only markers remain.
+    if (run := marker_on_space(ESCAPED_RE.sub("x", markdown))) is not None:
         return f"Markdown {run!r} on whitespace: {markdown!r}"
     html = html_line(line)
     if REOPENED_TAG.search(html):
@@ -509,7 +670,7 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
             print(f"missing {pattern}: run git submodule update --init --recursive --depth 1")
         return [f"missing {pattern}" for pattern in missing]
     failures: list[str] = []
-    lines = styled = 0
+    lines = styled = blocks = 0
     for path in paths:
         try:
             with PdfDocument(path) as pdf:
@@ -520,6 +681,9 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
             for element in page.elements:
                 if not isinstance(element, Block):
                     continue
+                blocks += 1
+                if (failure := block_failure(element)) is not None:
+                    failures.append(f"{Path(path).name} page {page.page_number}: {failure}")
                 for line in element.lines:
                     lines += 1
                     styled += len(line.spans) > 1
@@ -528,8 +692,8 @@ def check_corpus(patterns: tuple[str, ...]) -> list[str]:
     for failure in failures[:20]:
         print(failure)
     print(
-        f"{lines} lines ({styled} of several spans) in {len(paths)} upstream PDFs, "
-        f"{len(failures)} with split or misread markup"
+        f"{blocks} blocks, {lines} lines ({styled} of several spans) in {len(paths)} "
+        f"upstream PDFs, {len(failures)} with split or misread markup"
     )
     return failures
 
@@ -540,9 +704,13 @@ def main(argv: list[str]) -> int:
     failures = check_cases()
     for failure in failures:
         print(failure)
-    print(f"{len(CASES) + 1} lines built here, {len(failures)} rendered wrong")
+    print(
+        f"{len(CASES) + 1} lines and {len(BLOCK_CASES)} blocks built here, "
+        f"{len(failures)} rendered wrong"
+    )
+    fuzz_failures = check_fuzz(3000, seed=20261120)
     corpus_failures = check_corpus(FULL_CORPUS if "--all" in argv else CORPUS)
-    return 1 if failures or corpus_failures else 0
+    return 1 if failures or fuzz_failures or corpus_failures else 0
 
 
 if __name__ == "__main__":
