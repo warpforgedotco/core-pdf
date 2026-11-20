@@ -182,7 +182,7 @@ def stroke_reach(
     if matrix is None:
         return stroke_half_width(scale, line_width) * max(reach, 1.5)
     smallest, largest = singular_values(matrix)
-    half = stroke_half_width(scale * smallest, line_width) if smallest else line_width * 0.5
+    half = stroke_half_width(scale * smallest if smallest else scale, line_width)
     return half * largest * max(reach, 1.5)
 
 

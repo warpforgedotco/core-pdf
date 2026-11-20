@@ -1095,7 +1095,7 @@ def hairlines() -> list[Hairline]:
         for name, ctm in (
             ("stretched", (1.0, 0.0, 0.0, 0.4, 150.0, 150.0)),
             ("skewed", SKEW),
-            ("stretched and rotated", stretched_rotation(35.0, 2.5, 0.4)),
+            ("stretched and rotated", stretched_rotation(35.0, 1.6, 0.5)),
         )
         for width in widths
     ]
@@ -1107,11 +1107,13 @@ def hairlines() -> list[Hairline]:
     return found
 
 
-def stretched_rotation(degrees: float, x_scale: float, y_scale: float) -> Affine:
-    """Scale by x_scale and y_scale along the axes, then rotate by degrees, about the page's
-    centre."""
+def stretched_rotation(
+    degrees: float, x_scale: float, y_scale: float, e: float = SIZE / 2.0, f: float = SIZE / 2.0
+) -> Affine:
+    """Scale by x_scale and y_scale along the axes, then rotate by degrees, then move by
+    (e, f), by default to the page's centre."""
     a, b, c, d, _, _ = rotation(degrees)
-    return (a * x_scale, b * x_scale, c * y_scale, d * y_scale, SIZE / 2.0, SIZE / 2.0)
+    return (a * x_scale, b * x_scale, c * y_scale, d * y_scale, e, f)
 
 
 # Sampling a quarter of a pixel apart, the samples a band meets vary with where it lies: the

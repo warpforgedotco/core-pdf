@@ -33,7 +33,7 @@ import numpy
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.render.model import PathPaintItem  # noqa: E402
-from scripts.check_strokes import SIZE, Affine, document, numbers, rotation  # noqa: E402
+from scripts.check_strokes import SIZE, Affine, document, numbers, rotation, stretched_rotation  # noqa: E402
 
 type Pixels = numpy.ndarray[tuple[int, int, int], numpy.dtype[numpy.uint8]]
 type Point = tuple[float, float]
@@ -179,9 +179,9 @@ STRETCH: Affine = (1.6, 0.0, 0.0, 0.55, 0.13, 60.37)
 SKEW: Affine = (1.0, 0.0, 0.5, 1.0, -40.21, 20.43)
 
 
-def stretched_rotation(degrees: float, x_scale: float, y_scale: float) -> Affine:
-    a, b, c, d, _, _ = rotation(degrees)
-    return (a * x_scale, b * x_scale, c * y_scale, d * y_scale, 40.29, 10.11)
+def turned(degrees: float, x_scale: float, y_scale: float) -> Affine:
+    """stretched_rotation, moved away from whole and quarter pixels."""
+    return stretched_rotation(degrees, x_scale, y_scale, 40.29, 10.11)
 
 
 def cases() -> list[Case]:
@@ -214,7 +214,7 @@ def cases() -> list[Case]:
         for name, ctm in (
             ("stretched", STRETCH),
             ("skewed", SKEW),
-            ("stretched and rotated", stretched_rotation(20.0, 1.4, 0.7)),
+            ("stretched and rotated", turned(20.0, 1.4, 0.7)),
         )
         for join in (MITER, ROUND, BEVEL)
     ]
@@ -223,9 +223,7 @@ def cases() -> list[Case]:
         Case("skewed, alpha 0.5", ctm=SKEW, alpha=0.5, width=6.0),
         Case("stretched, width 0.12", ctm=STRETCH, width=0.12),
         Case("stretched, width 0", ctm=STRETCH, width=0.0),
-        Case(
-            "stretched and rotated, width 0.05", ctm=stretched_rotation(47.0, 1.2, 0.75), width=0.05
-        ),
+        Case("stretched and rotated, width 0.05", ctm=turned(47.0, 1.2, 0.75), width=0.05),
         Case("skewed, fill, then stroke", ctm=SKEW, mode=2, width=4.0),
     ]
     # The text matrix and horizontal scaling shape the glyphs, not the pen.
@@ -268,10 +266,7 @@ def check_zero_width() -> int:
     """Text stroked at a line width of 0 paints the pixels it does at a tiny width: both are
     floored at one device pixel. Returns the pages that differ."""
     failures = 0
-    for name, ctm in (
-        ("upright", IDENTITY),
-        ("stretched and rotated", stretched_rotation(20.0, 1.4, 0.7)),
-    ):
+    for name, ctm in (("upright", IDENTITY), ("stretched and rotated", turned(20.0, 1.4, 0.7))):
         zero, _ = render(Case(name, width=0.0, ctm=ctm).pdf())
         tiny, _ = render(Case(name, width=1e-4, ctm=ctm).pdf())
         if not numpy.array_equal(zero, tiny):
