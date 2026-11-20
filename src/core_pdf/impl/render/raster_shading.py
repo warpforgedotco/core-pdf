@@ -1073,7 +1073,7 @@ def coverage_alpha(view: UInt8Array, pixel_box: tuple[int, int, int, int]) -> UI
 
 
 class PatternScratch:
-    """Zeroed planes a pattern fill at one depth of the group stack draws on and leaves zero:
+    """Zeroed planes a pattern fill draws on and leaves zero:
     page, the blank page its coverage is drawn on and then the pattern's group, which never
     live at once, and alpha, the coverage's alpha."""
 
@@ -1086,24 +1086,33 @@ class PatternScratch:
         self.busy = False
 
 
+# pattern_scratch's key for the one idle set of planes, kept for the next fill at any depth.
+IDLE_SCRATCH = -1
+
+
 def pattern_scratch_for(self: RasterTarget) -> PatternScratch:
-    """The scratch planes of the current depth of the group stack, marked busy until
-    pattern_scratch_done."""
+    """The scratch planes for a pattern fill at the current depth of the group stack: the
+    idle ones, when a fill left them, else new ones; busy until pattern_scratch_done."""
     depth = len(self.buffer_stack)
     scratch = self.pattern_scratch.get(depth)
     if scratch is None:
-        scratch = self.pattern_scratch[depth] = PatternScratch(self.width, self.height)
+        scratch = self.pattern_scratch.pop(IDLE_SCRATCH, None)
+        if scratch is None:
+            scratch = PatternScratch(self.width, self.height)
+        self.pattern_scratch[depth] = scratch
     scratch.busy = True
     return scratch
 
 
 def pattern_scratch_done(self: RasterTarget, scratch: PatternScratch) -> None:
-    """Mark scratch idle and keep it, freeing every other idle depth's planes: the fills
-    still drawing keep theirs, and at most one page waits idle for the next fill."""
+    """Give scratch's depth up: its planes become the idle ones, unless another fill's are
+    idle already, when they are freed. At most one page waits idle, and fills that move
+    between depths one at a time reuse it."""
     scratch.busy = False
     for depth, other in list(self.pattern_scratch.items()):
-        if other is not scratch and not other.busy:
+        if other is scratch and depth != IDLE_SCRATCH:
             del self.pattern_scratch[depth]
+    self.pattern_scratch.setdefault(IDLE_SCRATCH, scratch)
 
 
 def blank_sibling(

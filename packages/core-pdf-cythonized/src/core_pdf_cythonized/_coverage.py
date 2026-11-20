@@ -283,6 +283,8 @@ Rows = cython.struct(
     sampled=cython.pointer[Span],
     sampled_count=cython.Py_ssize_t,
     sampled_y=cython.double,
+    # CROSS_SLACK times the largest |x| of the edges, at least 1.
+    cross_slack=cython.double,
     # How _rows_next measured the last row: 0 by the sums, 1 exactly, 2 supersampled past
     # the budget, 3 supersampled for its many edges.
     kind=cython.int,
@@ -343,8 +345,10 @@ ROW_SAMPLES = cython.declare(cython.Py_ssize_t, 4)
 OUTLINE_ROWS = cython.declare(cython.Py_ssize_t, 1)
 # How far outside two edges a worked-out crossing may fall and still be taken at their end.
 TOUCH = cython.declare(cython.double, 1e-7)
-# How far two chains' x may overlap from rounding, relative to x, before they count as crossed.
-CROSS_SLACK = cython.declare(cython.double, 1e-9)
+# How far two chains' x may overlap from rounding before they count as crossed, relative to
+# the largest |x| of the sweep's edges (at least 1): a few hundred times a double's rounding
+# of x, and far below any overlap that changes a pixel.
+CROSS_SLACK = cython.declare(cython.double, 1e-12)
 
 
 @cython.cfunc
@@ -810,6 +814,7 @@ def _rows_begin(
     last_y: cython.double = 0.0
     last_direction: cython.double = 0.0
     chain: cython.Py_ssize_t = -1
+    reach: cython.double = 1.0
     for i in range(kept):
         sx = device[i * 4]
         sy = device[i * 4 + 1]
@@ -850,9 +855,11 @@ def _rows_begin(
         last_x = ex
         last_y = ey
         last_direction = edge.direction
+        reach = py_max(reach, py_max(fabs(sx), fabs(ex)))
         out += 1
     rows.count = out
     rows.ordered = False
+    rows.cross_slack = CROSS_SLACK * reach
     if mode & SIMPLE_OUTLINE:
         memset(rows.mixed, 0, 3 * (height + 1))
     else:
@@ -1165,7 +1172,7 @@ def _pair_crossing(
         below = py_min(py_min(el.bottom_y, er.bottom_y), yb)
         xl = _edge_x(el, below)
         # A gap within rounding of the coordinates is chains that meet, not cross.
-        if xl - _edge_x(er, below) > CROSS_SLACK * py_max(1.0, fabs(xl)):
+        if xl - _edge_x(er, below) > rows.cross_slack:
             return y
         y = below
         if el.bottom_y <= y and li != left.last:
@@ -1881,9 +1888,9 @@ def windings_mix(edges) -> bool:
     scale: cython.double = OUTLINE_ROWS / (high - low)
     if left - left != 0.0:
         left = 0.0
-    # x from the outline's left, so CROSS_SLACK, relative to x, is relative to the outline's
-    # size, not to how far from the origin it lies: a reversal it lets pass is a billionth
-    # of the outline's height.
+    # x from the outline's left, in units of its height, so the sweep's slack, CROSS_SLACK
+    # times the largest |x|, is that share of the outline's larger extent, not of how far
+    # from the origin it lies.
     device_stack = cython.declare(cython.double[STACK_EDGE_VALUES])
     device: cython.p_double = _device_edges(
         array, kept, left, high, scale, 0.0, 0.0, device_stack, STACK_EDGES

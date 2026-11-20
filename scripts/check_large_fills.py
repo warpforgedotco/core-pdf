@@ -42,6 +42,7 @@ import numpy
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core_pdf import PdfDocument  # noqa: E402
 from core_pdf.impl.fonts.glyph_geometry import outline_arrays  # noqa: E402
+from core_pdf.impl.render import raster_shading  # noqa: E402
 from core_pdf_cythonized import (  # noqa: E402
     SimpleEdges,
     area_coverage_plane,
@@ -73,8 +74,9 @@ SAMPLED_TOLERANCE = 0.3
 SAMPLED_MEAN_TOLERANCE = 0.1
 # The kernel's TOUCH: a crossing this close outside two edges is taken at their end.
 TOUCH = 1e-7
-# The kernel's CROSS_SLACK: chains closer than this, relative to x, meet rather than cross.
-CROSS_SLACK = 1e-9
+# The kernel's CROSS_SLACK: chains closer than this, relative to the largest |x| of the edges
+# (at least 1), meet rather than cross.
+CROSS_SLACK = 1e-12
 # The kernel's sweep budget: work per edge and per row, on top of 4096.
 SWEEP_WORK_PER_EDGE = 64
 SWEEP_WORK_PER_ROW = 16
@@ -767,6 +769,7 @@ def mark_rows(table: list[Edge], height: int, budgeted: bool = False) -> list[in
         return edge_x(edge, y)
 
     walked = [0]
+    slack = CROSS_SLACK * max([1.0, *(abs(v) for edge in table for v in (edge[0], edge[8]))])
 
     def crossing(left: int, right: int, ya: float, yb: float) -> float | None:
         # As the kernel's _pair_crossing walks, step for step, which the budget counts.
@@ -777,7 +780,7 @@ def mark_rows(table: list[Edge], height: int, budgeted: bool = False) -> list[in
             walked[0] += 1
             below = py_min(py_min(el[2], er[2]), yb)
             xl = edge_x(el, below)
-            if xl - edge_x(er, below) > CROSS_SLACK * py_max(1.0, abs(xl)):
+            if xl - edge_x(er, below) > slack:
                 return y
             y = below
             if el[2] <= y and li != chains[left][1]:
@@ -1241,6 +1244,16 @@ MIXED_GLYPHS.append(
         ),
     )
 )
+MIXED_GLYPHS.append(
+    (
+        "a contour at the origin and two at x = 1e9 whose sides cross by 0.15",
+        (
+            ((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)),
+            ((1e9, 0.0), (1e9 + 0.25, 5.0), (1e9, 10.0), (1e9 - 5.0, 10.0), (1e9 - 5.0, 0.0)),
+            ((1e9 + 0.1, 0.0), (1e9 + 5.0, 0.0), (1e9 + 5.0, 10.0), (1e9 + 0.1, 10.0)),
+        ),
+    )
+)
 # A plain glyph, an O: an outer contour and a reversed hole, which is simple.
 SIMPLE_GLYPH: tuple[tuple[Point, ...], ...] = (
     ((0.0, 0.0), (20.0, 0.0), (20.0, 40.0), (0.0, 40.0)),
@@ -1501,6 +1514,52 @@ def traced_peak(pdf: bytes, scale: float) -> int:
             tracemalloc.stop()
 
 
+def check_pattern_scratch() -> int:
+    """Pattern fills that alternate between the page and a transparency group, one depth at
+    a time, share one set of scratch planes: one allocation, and at most one idle after."""
+    triangle = b"/Pattern cs /P scn 50 50 m 500 80 l 300 700 l h f"
+    content = b"\n".join([triangle, b"/G Do"] * 4)
+    pdf = document(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+            b"/Resources 5 0 R >>",
+            stream(b"", content),
+            b"<< /Pattern << /P 6 0 R >> /XObject << /G 7 0 R >> >>",
+            b"<< /PatternType 2 /Shading << /ShadingType 2 /ColorSpace /DeviceRGB "
+            b"/Coords [0 0 612 0] /Function << /FunctionType 2 /Domain [0 1] /C0 [1 0 0] "
+            b"/C1 [0 0 1] /N 1 >> >> >>",
+            stream(
+                b"/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources 5 0 R "
+                b"/Group << /S /Transparency /I true >>",
+                triangle,
+            ),
+        ]
+    )
+    made = [0]
+    original = raster_shading.PatternScratch
+
+    class Counted(original):  # type: ignore[misc, valid-type]
+        __slots__ = ()
+
+        def __init__(self, width: int, height: int) -> None:
+            made[0] += 1
+            super().__init__(width, height)
+
+    raster_shading.PatternScratch = Counted  # ty: ignore[invalid-assignment]
+    try:
+        with PdfDocument(pdf) as opened:
+            opened.pages[0].render().rasterize()
+    finally:
+        raster_shading.PatternScratch = original
+    failed = int(made[0] != 1)
+    if failed:
+        print(f"  pattern fills alternating depths made {made[0]} scratch planes, not 1")
+    print(f"8 pattern fills at alternating depths: {made[0]} scratch planes made")
+    return failed
+
+
 def check_memory() -> int:
     """A fill's memory must not follow its pixel box: the peak while rasterizing a page of
     large fills may exceed an empty page's by at most MEMORY_ALLOWANCE."""
@@ -1529,6 +1588,7 @@ def main(argv: Sequence[str]) -> int:
         + check_area_kernel()
         + check_glyph_outlines()
         + check_engine_edges()
+        + check_pattern_scratch()
         + check_memory()
     )
     references: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}
