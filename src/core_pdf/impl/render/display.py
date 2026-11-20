@@ -423,16 +423,8 @@ class DisplayList:
             "group_knockout": knockout,
             "group_track_shape": True,
         }
-        items = self.items
-        # track_group_boundary for a group that tracks shape.
-        self.shape_tracking_groups.append(True)
-        self.open_group_indexes.append(len(items))
-        self.open_group_scans.append(PlainFillScan(len(items) + 1))
-        items.append(
-            GroupBeginItem(
-                seqno, 1.0, None, None, False, knockout, True, False, None, None, None, data
-            )
-        )
+        self.track_group_boundary("group-begin", data)
+        self.items.append(GroupBeginItem.from_data(seqno, data))
 
     def append_group_end(self, seqno: int) -> None:
         """append("group-end", seqno)."""
