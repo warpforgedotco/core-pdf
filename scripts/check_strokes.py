@@ -412,8 +412,10 @@ class Case:
     """A page stroking `strokes` in `colour` under `ctm`. With `extgstate`, the page sets
     the parameters with gs instead of the operators. A graphics state sets the blend mode
     `blend`, the constant alpha `alpha` and, with `soft_mask`, a luminosity soft mask of
-    MASK_GREY; `backdrop` fills the page first. Each stroke on a page is apart from the
-    others, so that each pixel is painted by at most one."""
+    MASK_GREY; `backdrop` fills the page first. With `group`, the strokes are painted in a
+    non-isolated transparency group, where an opaque stroke is not painted natively. Each
+    stroke on a page is apart from the others, so that each pixel is painted by at most
+    one."""
 
     def __init__(
         self,
@@ -427,6 +429,7 @@ class Case:
         soft_mask: bool = False,
         backdrop: Colour | None = None,
         colour: Colour = BLACK,
+        group: bool = False,
     ) -> None:
         self.name = name
         self.strokes = tuple(strokes)
@@ -437,6 +440,7 @@ class Case:
         self.soft_mask = soft_mask
         self.backdrop = backdrop
         self.colour = colour
+        self.group = group
 
     def pdf(self) -> bytes:
         states: list[bytes] = []
@@ -444,7 +448,8 @@ class Case:
         body = b""
         if self.backdrop is not None:
             body += b"%s rg 0 0 %d %d re f " % (numbers(self.backdrop), SIZE, SIZE)
-        body += b"%s RG q %s cm " % (numbers(self.colour), numbers(self.ctm))
+        backdrop = body
+        body = b"%s RG q %s cm " % (numbers(self.colour), numbers(self.ctm))
         paint: list[bytes] = []
         if self.blend is not None:
             paint.append(b"/BM /%s" % self.blend.encode())
@@ -487,7 +492,17 @@ class Case:
         resources = b"<< /ExtGState << %s >> >>" % b" ".join(
             b"/G%d << /Type /ExtGState %s >>" % (index, state) for index, state in enumerate(states)
         )
-        return document(body, resources, extra)
+        if self.group:
+            extra.append(
+                stream(
+                    b"/Type /XObject /Subtype /Form /BBox [0 0 %d %d] /Resources %s"
+                    b" /Group << /S /Transparency /I false >>" % (SIZE, SIZE, resources),
+                    body,
+                )
+            )
+            body = b"/X Do"
+            resources = b"<< /XObject << /X %d 0 R >> >>" % (4 + len(extra))
+        return document(backdrop + body, resources, extra)
 
     def shapes(self) -> list[Shape]:
         return [shape for stroke in self.strokes for shape in stroke_shapes(stroke)]
@@ -745,6 +760,16 @@ def cases() -> list[Case]:
     found += [
         Case("short segments along the axes, opaque", short_end),
         Case("short segments along the axes, alpha 0.5", short_end, alpha=0.5),
+    ]
+    # Dashes shorter than half the line width, along the axes, with projecting caps: an
+    # opaque stroke painted in pieces would leave a seam where each cap meets its dash.
+    short_dashes = [
+        Stroke([(20.29, 100.37), (250.29, 100.37)], width=5.0, cap=SQUARE, dash=([1.0, 6.0], 0.0)),
+        Stroke([(150.21, 140.13), (150.21, 280.13)], width=5.0, cap=SQUARE, dash=([1.0, 6.0], 0.0)),
+    ]
+    found += [
+        Case(f"short dashes along the axes, square caps{suffix}", short_dashes, group=group)
+        for suffix, group in (("", False), (", in a group", True))
     ]
     # A path holding its subpath twice strokes one shape: no edge pixel blends twice.
     diagonal = [(40.0, 40.0), (260.0, 230.0)]

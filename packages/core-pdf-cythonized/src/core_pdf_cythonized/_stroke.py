@@ -1440,6 +1440,29 @@ def cap(
     return polygon(p, w, calls, xs, ys, 4)
 
 
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def axis_reaches(dx: cython.double, dy: cython.double, half: cython.double) -> cython.bint:
+    """Whether a segment of some length (dx, dy) along an axis, whose length is then the sum
+    of its sides, exactly, is at least half the pen's width long: then the square around its
+    end or corner holds no more than its cap or miter adds to the segment. cap and join ask
+    only of segments along an axis; in_pieces and axis_aligned_polylines ask the same."""
+    return fabs(dx) + fabs(dy) >= half
+
+
+@cython.cfunc
+@cython.inline
+@cython.nogil
+@cython.exceptval(check=False)
+def axis_short(
+    x0: cython.double, y0: cython.double, x1: cython.double, y1: cython.double, half: cython.double
+) -> cython.bint:
+    """Whether the segment from (x0, y0) to (x1, y1) has some length but does not reach."""
+    return (x0 != x1 or y0 != y1) and not axis_reaches(x1 - x0, y1 - y0, half)
+
+
 # A subpath shorter than this, in device pixels, may fall between the samples whatever
 # its width: a segment across a thick pen with butt caps is a bar as thin as it is long.
 SHORT_PIXELS = cython.declare(cython.double, 1.0)
@@ -1523,8 +1546,9 @@ def walk_range(
     first_y: cython.double = 0.0
     last_x: cython.double = 0.0
     last_y: cython.double = 0.0
-    first_length: cython.double = 0.0
-    last_length: cython.double = 0.0
+    first_reaches: cython.bint = False
+    last_reaches: cython.bint = False
+    reaches: cython.bint
     for k in range(first, last):
         start = w.bounds[3 * k]
         end = w.bounds[3 * k + 1]
@@ -1569,6 +1593,7 @@ def walk_range(
             length = pow(dx * dx + dy * dy, p.exponent)
             ux = dx / length
             uy = dy / length
+            reaches = axis_reaches(dx, dy, w.half)
             if found:
                 join(
                     p,
@@ -1580,16 +1605,16 @@ def walk_range(
                     last_y,
                     ux,
                     uy,
-                    py_min(last_length, length) >= w.half,
+                    last_reaches and reaches,
                 )
             else:
                 first_x = ux
                 first_y = uy
-                first_length = length
+                first_reaches = reaches
                 found = True
             last_x = ux
             last_y = uy
-            last_length = length
+            last_reaches = reaches
         if closed:
             if x0 != x1 or y0 != y1:
                 dx = x0 - x1
@@ -1597,21 +1622,11 @@ def walk_range(
                 length = pow(dx * dx + dy * dy, p.exponent)
                 ux = dx / length
                 uy = dy / length
-                join(
-                    p,
-                    w,
-                    calls,
-                    x1,
-                    y1,
-                    last_x,
-                    last_y,
-                    ux,
-                    uy,
-                    py_min(last_length, length) >= w.half,
-                )
+                reaches = axis_reaches(dx, dy, w.half)
+                join(p, w, calls, x1, y1, last_x, last_y, ux, uy, last_reaches and reaches)
                 last_x = ux
                 last_y = uy
-                last_length = length
+                last_reaches = reaches
             join(
                 p,
                 w,
@@ -1622,11 +1637,11 @@ def walk_range(
                 last_y,
                 first_x,
                 first_y,
-                py_min(last_length, first_length) >= w.half,
+                last_reaches and first_reaches,
             )
         else:
-            cap(p, w, calls, x0, y0, -first_x, -first_y, first_length >= w.half)
-            cap(p, w, calls, x1, y1, last_x, last_y, last_length >= w.half)
+            cap(p, w, calls, x0, y0, -first_x, -first_y, first_reaches)
+            cap(p, w, calls, x1, y1, last_x, last_y, last_reaches)
         if (
             w.cover != cython.NULL
             and short_span(
@@ -1705,14 +1720,13 @@ def in_pieces(
             segments += 1
             if w.xs[index] != w.xs[index + 1] and w.ys[index] != w.ys[index + 1]:
                 aligned = False
-            # Along an axis, its length is the sum of its sides.
-            if fabs(w.xs[index + 1] - w.xs[index]) + fabs(w.ys[index + 1] - w.ys[index]) < w.half:
+            if axis_short(w.xs[index], w.ys[index], w.xs[index + 1], w.ys[index + 1], w.half):
                 short = True
         if w.bounds[3 * k + 2] and (w.xs[start] != w.xs[end - 1] or w.ys[start] != w.ys[end - 1]):
             segments += 1
             if w.xs[start] != w.xs[end - 1] and w.ys[start] != w.ys[end - 1]:
                 aligned = False
-            if fabs(w.xs[start] - w.xs[end - 1]) + fabs(w.ys[start] - w.ys[end - 1]) < w.half:
+            if axis_short(w.xs[end - 1], w.ys[end - 1], w.xs[start], w.ys[start], w.half):
                 short = True
         elif w.bounds[3 * k + 2]:
             # Closed: its last point meets its first at a join.
@@ -2211,9 +2225,11 @@ def axis_aligned_polylines(
     ys: cython.const[cython.double][::1],
     spans: list,
     outline: cython.bint,
+    shortest: cython.double,
 ) -> bool:
     """Whether every segment of the subpaths, the one closing a closed subpath included,
-    runs along an axis or has no length."""
+    runs along an axis or has no length, and none of some length is shorter than shortest,
+    measured as in_pieces measures it."""
     k: cython.Py_ssize_t
     index: cython.Py_ssize_t
     start: cython.Py_ssize_t
@@ -2227,6 +2243,11 @@ def axis_aligned_polylines(
         for index in range(start, end - 1):
             if xs[index] != xs[index + 1] and ys[index] != ys[index + 1]:
                 return False
-        if (outline or flag) and xs[start] != xs[end - 1] and ys[start] != ys[end - 1]:
-            return False
+            if axis_short(xs[index], ys[index], xs[index + 1], ys[index + 1], shortest):
+                return False
+        if outline or flag:
+            if xs[start] != xs[end - 1] and ys[start] != ys[end - 1]:
+                return False
+            if axis_short(xs[end - 1], ys[end - 1], xs[start], ys[start], shortest):
+                return False
     return True

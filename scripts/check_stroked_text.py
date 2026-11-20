@@ -22,8 +22,12 @@ both partly cover, where a dash leaves the fill's edge bare, a byte apart. The t
 outlines back to user space with the CTM as the page writes it, rounded to six decimals:
 inverting the unrounded CTM would move each point by up to 1e-4 of a pixel, enough to move a
 sample across a stroke's edge. The rest of the twin's arithmetic moves a point by an ulp or
-so, which must not change a pixel: a seeded sweep of rotating, unevenly scaling CTMs, with
-each line width, join, cap, miter limit and dashes, checks that it does not.
+so, which must not move a sample: a seeded sweep of rotating, unevenly scaling CTMs, with
+each line width, join, cap, miter limit and dashes, checks that it does not. The sweep's
+pages are allowed a byte, as the filled pages are: a sample of an opaque stroke is 16 levels,
+so the byte hides no sample, while it spares the sweep's hundred-odd random pages any last-
+bit difference between one platform's maths library and another's that rounds a blended
+pixel the other way. The fixed pages, stroked only, must match exactly.
 A thin stroke is floored at one device pixel across the pen's narrower axis, as a path's
 is (8.4.3.2, 10.7.4): text stroked at a line width of 0 must also match, pixel for pixel,
 the same text stroked at a tiny width, upright and under a rotating, stretching CTM.
@@ -87,6 +91,7 @@ class Case:
         origin: Point = (14.137, 120.291),
         alpha: float = 1.0,
         blend: str | None = None,
+        exact: bool = True,
     ) -> None:
         self.name = name
         self.mode = mode
@@ -104,6 +109,8 @@ class Case:
         self.origin = origin
         self.alpha = alpha
         self.blend = blend
+        # Whether the twin must match byte for byte where the text is only stroked.
+        self.exact = exact
 
     def state(self) -> bytes:
         dash = b"[] 0 d"
@@ -333,6 +340,7 @@ def sweep() -> list[Case]:
                 limit=limit,
                 dash=dash if dashed else None,
                 ctm=ctm,
+                exact=False,
             )
         )
     return found
@@ -345,7 +353,7 @@ def check(case: Case) -> int:
         return 1
     twin, _ = render(case.twin(outlines))
     difference = numpy.abs(pixels.astype(int) - twin.astype(int)).max(axis=2)
-    wrong = numpy.argwhere(difference > (1 if case.mode in {2, 6} else 0))
+    wrong = numpy.argwhere(difference > (0 if case.exact and case.mode in {1, 5} else 1))
     for row, column in wrong[:3]:
         print(
             f"  {case.name}: pixel {column},{row}: {tuple(int(v) for v in pixels[row, column])},"

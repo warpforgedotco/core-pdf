@@ -135,25 +135,41 @@ def stroke_half_width(scale: float, line_width: float) -> float:
     return max(0.5 / scale, line_width * 0.5)
 
 
-def seamless_in_pieces(path: CapturedPath, line_join: int, miter_limit: float) -> bool:
+def seamless_in_pieces(
+    path: CapturedPath,
+    line_width: float,
+    line_cap: int,
+    line_join: int,
+    miter_limit: float,
+    scale: float,
+) -> bool:
     """Whether an opaque stroke blending Normal paints, piece by piece, the pixels it
     would as one shape, and so with other such strokes as one path. Its pieces then only
     overlap: every segment runs along an axis, and each corner is a disc or the square
     around it, never a miter or bevel polygon meeting a segment's end along an edge, where
-    two partial coverages painted in turn leave a lighter seam."""
+    two partial coverages painted in turn leave a lighter seam. A segment shorter than half
+    the pen's width has its square caps and right angles' miters worked out as polygons, as
+    the stroke kernel's in_pieces knows, so with either of those it is not seamless."""
     # Bevel joins are 2, miter joins 0, and a right angle's miter is a bevel below a miter
-    # limit of the square root of 2 (ISO 32000-2 8.4.3.4, 8.4.3.5).
+    # limit of the square root of 2 (ISO 32000-2 8.4.3.4, 8.4.3.5). Projecting square caps
+    # are 2 (8.4.3.3).
     if line_join == 2 or (line_join == 0 and float(miter_limit) ** 2 < 2.0):
         return False
+    # Along an axis, a segment's length is the sum of its sides, as the kernel measures it.
+    shortest = (
+        stroke_half_width(scale, float(line_width)) if line_join == 0 or line_cap == 2 else 0.0
+    )
     deferred = path.deferred_columns()
     if deferred is not None:
         xs, ys, spans, outline = deferred
-        return axis_aligned_polylines(xs, ys, spans, outline)
+        return axis_aligned_polylines(xs, ys, spans, outline, shortest)
     for subpath in path.subpaths:
         points = subpath.points
         ends = [*points, points[0]] if subpath.closed and points else points
         for (x0, y0), (x1, y1) in zip(ends, ends[1:]):
             if x0 != x1 and y0 != y1:
+                return False
+            if (x0 != x1 or y0 != y1) and not abs(x1 - x0) + abs(y1 - y0) >= shortest:
                 return False
     return True
 

@@ -219,7 +219,13 @@ def stroke_path(
     once = (
         matrix is None
         and native
-        and (not dashed or (rgba[3] >= 255 and seamless_in_pieces(path, line_join, miter_limit)))
+        and (
+            not dashed
+            or (
+                rgba[3] >= 255
+                and seamless_in_pieces(path, line_width, line_cap, line_join, miter_limit, scale)
+            )
+        )
     )
     if not once:
         pieces = (
@@ -227,7 +233,7 @@ def stroke_path(
             and blend_mode is None
             and rgba[3] >= 255
             and self.group_source_shape is None
-            and seamless_in_pieces(path, line_join, miter_limit)
+            and seamless_in_pieces(path, line_width, line_cap, line_join, miter_limit, scale)
         )
         if (not pieces or has_short_subpath(path, scale)) and (
             matrix is not None or not single_segment(self, path, dash_pattern, line_cap)
