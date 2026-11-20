@@ -36,10 +36,10 @@ Features a version introduced, which core reads whatever version a document decl
 | Introduced | Feature | Clause | Code |
 | --- | --- | --- | --- |
 | PDF 1.0 | Interpolate asks for an image drawn larger than its samples to be smoothed | ISO 32000-2 8.9.5.3 (Image interpolation) | `core_pdf.impl.render.raster_images.image_interpolates` |
-| PDF 1.0 | a line width of 0 is the thinnest line the device renders: 1 device pixel wide | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.paths.stroke_half_width` |
+| PDF 1.0 | a line width of 0 is 1 device pixel wide, and thinner strokes are floored there too | ISO 32000-2 8.4.3.2 (Line width) | `core_pdf.impl.render.paths.stroke_half_width` |
 | PDF 1.0 | a miter past the miter limit is a bevel | ISO 32000-2 8.4.3.5 (Miter limit) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | a stroke is one shape: its segments, joins, caps and dashes are painted once | ISO 32000-2 8.5.3.2 (Stroking) | `core_pdf.impl.render.raster_strokes.stroke_once` |
-| PDF 1.0 | a stroke of non-zero width never disappears, whatever its place on the pixel grid | ISO 32000-2 10.7.4 (Scan conversion rules) | `core_pdf.impl.render.paths.stroke_half_width` |
+| PDF 1.0 | a stroke never disappears: thin strokes are floored at 1 device pixel, like Acrobat | ISO 32000-2 10.7.4 (Scan conversion rules) | `core_pdf.impl.render.paths.stroke_half_width` |
 | PDF 1.0 | an interpolated stencil mask smooths the mask's edges, not the painted colour | ISO 32000-2 8.9.6.2 (Stencil masking) | `core_pdf.impl.render.raster_images.image_interpolates` |
 | PDF 1.0 | butt, round and projecting square caps | ISO 32000-2 8.4.3.3 (Line cap style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
 | PDF 1.0 | miter, round and bevel joins | ISO 32000-2 8.4.3.4 (Line join style) | `core_pdf.impl.render.raster_strokes.stroke_path` |
@@ -268,7 +268,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.11.4 (Embedded file streams) `core_pdf.impl.spec.s_07_document.file_specification.embedded_file_stream`: the embedded file streams of EF
 - 7.12.6 (URL) `core_pdf.impl.document.standards.extension_diagnostics`: a developer extension declares its URL
 - 8.4.3.2 (Line width) `core_pdf.impl.capture.path_painting.stroke_space`: the line width is measured in user space, so the pen is an ellipse on the page
-- 8.4.3.2 (Line width) `core_pdf.impl.render.paths.stroke_half_width`: a line width of 0 is the thinnest line the device renders: 1 device pixel wide
+- 8.4.3.2 (Line width) `core_pdf.impl.render.paths.stroke_half_width`: a line width of 0 is 1 device pixel wide, and thinner strokes are floored there too
 - 8.4.3.2 (Line width) `core_pdf.impl.render.raster_strokes.stroke_once`: the line width and dashes are measured in user space, where the pen is a circle
 - 8.4.3.3 (Line cap style) `core_pdf.impl.render.raster_strokes.stroke_path`: butt, round and projecting square caps
 - 8.4.3.4 (Line join style) `core_pdf.impl.render.raster_strokes.stroke_path`: miter, round and bevel joins
@@ -320,7 +320,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 9.8.2 (Font descriptor flags) `core_pdf.impl.spec.s_09_fonts.descriptor_flags.read_descriptor_style`: Flags is an unsigned 32-bit integer whose bits Table 121 defines
 - 10.4.2.2 (Conversion between DeviceGray and DeviceRGB) `core_pdf.impl.spec.s_11_transparency.blending_space.gray_from_rgb`: the gray level of an RGB colour
 - 10.4.2.3 (Conversion between DeviceGray and DeviceCMYK) `core_pdf.impl.spec.s_11_transparency.blending_space.cmyk_from_gray`: the CMYK colour of a gray level
-- 10.7.4 (Scan conversion rules) `core_pdf.impl.render.paths.stroke_half_width`: a stroke of non-zero width never disappears, whatever its place on the pixel grid
+- 10.7.4 (Scan conversion rules) `core_pdf.impl.render.paths.stroke_half_width`: a stroke never disappears: thin strokes are floored at 1 device pixel, like Acrobat
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blend_in_space`: blend a subtractive space's complements
 - 11.3.4 (Blending colour space) `core_pdf.impl.spec.s_11_transparency.blending_space.blending_space_family`: the colour spaces that blend
 - 11.3.5.2 (Separable blend modes) `core_pdf.impl.spec.s_11_transparency.blend.revised_blending`: revised ColorDodge and ColorBurn
