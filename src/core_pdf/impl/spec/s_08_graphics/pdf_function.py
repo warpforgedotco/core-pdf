@@ -255,19 +255,16 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
         sample_count *= size
     data = function.data
     table = sample_values(data, bits, sample_count * len(ranges))
-    # One at a time reads Python ints: an 8-bit function's bytes, or the samples as a list,
-    # made the first time it is needed (sum() adds floats the way the batch does only when
-    # every term is a Python float, which a numpy integer times a float is not).
-    scalar_samples: list[Any] = [data if bits == 8 else None]
+    # One at a time reads the table through a memoryview, whose items are Python ints: sum()
+    # adds floats the way the batch does only when every term is a Python float, which a
+    # numpy integer times a float is not.
+    samples = memoryview(numpy.ascontiguousarray(table))
     # The largest sample, which Decode maps to its upper bound: 255.0 for 8 bits.
     maximum = float((1 << bits) - 1)
 
     def evaluate(*inputs: float) -> tuple[float, ...]:
         if len(inputs) != len(sizes):
             raise ValueError("invalid sampled function input count")
-        samples = scalar_samples[0]
-        if samples is None:
-            samples = scalar_samples[0] = table.tolist()
         corners: list[tuple[int, float]] = [(0, 1.0)]
         stride = 1
         for raw_input, size, domain, encode in zip(inputs, sizes, domains, encodes, strict=True):
@@ -409,6 +406,15 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
             values = values[:, None]
         if values.ndim != 2 or values.shape[1] != len(sizes):
             raise ValueError("invalid sampled function input count")
+        finite = numpy.isfinite(values).all(axis=1)
+        if not finite.all():
+            # A row with an input that is not finite goes one at a time, which clips a NaN to
+            # the top of the Domain as min and max find it.
+            outputs = numpy.empty((len(values), len(ranges)), dtype=numpy.float64)
+            for row in numpy.flatnonzero(~finite).tolist():
+                outputs[row] = evaluate(*values[row].tolist())
+            outputs[finite] = batch_sampled(values[finite])
+            return outputs
         if len(values) <= SAMPLED_BATCH_ROWS:
             return batch_chunk(values)
         return numpy.concatenate(

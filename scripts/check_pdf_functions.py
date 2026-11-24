@@ -12,7 +12,8 @@ their colours. This checks it in two ways.
 
 - Functions: thousands of random functions, compiled both as the specification module compiles
   them and as graphics.functions does, with inputs inside and outside each Domain, on the
-  stitching Bounds and a sampled function's grid points, at -0.0, and where an operator fails.
+  stitching Bounds and a sampled function's grid points, at -0.0, NaN and infinities, and where
+  an operator fails.
   Sampled functions have every BitsPerSample, one to four inputs (and one of twelve), Encode,
   Decode and Range;
   calculator programs use every operator, conditionals, copy, index and roll with counts that
@@ -111,7 +112,7 @@ def inputs_for(random: numpy.random.Generator, function: object) -> Inputs:
     if isinstance(function, dict):
         values += [float(value) for value in function.get("Domain", ())]
         values += [float(value) for value in function.get("Bounds", ())]
-    return [(value,) for value in values]
+    return with_nonfinite(random, [(value,) for value in values])
 
 
 SAMPLE_BITS = (1, 2, 4, 8, 12, 16, 24, 32)
@@ -185,7 +186,22 @@ def sampled_inputs(random: numpy.random.Generator, function: PdfStream) -> Input
                 value = float(random.uniform(low, high))
             row.append(value)
         rows.append(tuple(row))
-    return rows
+    return with_nonfinite(random, rows)
+
+
+def with_nonfinite(random: numpy.random.Generator, rows: Inputs) -> Inputs:
+    """rows, with NaN, inf or -inf for some of the inputs of a few of them."""
+    changed: Inputs = []
+    for row in rows:
+        if random.random() < 0.1:
+            row = tuple(
+                float(random.choice([math.nan, math.inf, -math.inf]))
+                if random.random() < 0.5
+                else value
+                for value in row
+            )
+        changed.append(row)
+    return changed
 
 
 INTEGERS = (0, 1, 2, 3, -1, -2, 5, 7, 10, 255, 360, 65536, 2147483647, -2147483648)
@@ -454,7 +470,7 @@ def calculator_inputs(random: numpy.random.Generator, function: PdfStream) -> In
                 value = float(random.choice([low, high]))
             row.append(value)
         rows.append(tuple(row))
-    return rows
+    return with_nonfinite(random, rows)
 
 
 WIDE_INPUTS = 12
@@ -560,6 +576,8 @@ def check_function(function: object, rows: Inputs) -> tuple[int, list[str]]:
     """The number of batches compared and any differences, for both compilers."""
     compared = 0
     problems: list[str] = []
+    # A sampled function's batch must find NaN and infinite inputs too.
+    exact = isinstance(function, PdfStream) and function.dictionary.get("FunctionType") == 0
     compilers: list[tuple[str, Callable[[object], Any]]] = [
         ("spec", pdf_function.compile_pdf_function),
         ("graphics", graphics_functions.compile_pdf_function),
@@ -588,6 +606,8 @@ def check_function(function: object, rows: Inputs) -> tuple[int, list[str]]:
         if found is None:
             if numpy.isnan(wanted).any():
                 continue  # a NaN is left to one at a time, which then finds it
+            if not exact and not numpy.isfinite(numpy.asarray(succeeded)).all():
+                continue  # so is an input that is not finite, but a sampled function's batch
             problems.append(f"{label}: the batch fails where every input succeeds: {function!r}")
         elif not same_bits(found, wanted):
             problems.append(f"{label}: the batch differs for {function!r}")

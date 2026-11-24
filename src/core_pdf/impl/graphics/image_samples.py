@@ -294,7 +294,7 @@ def convert_tint_components(
             columns = distinct[:, 0] if distinct.shape[1] == 1 else distinct
             try:
                 tinted = batch(numpy.ascontiguousarray(columns, dtype=numpy.float64))
-            except TypeError, ValueError, ArithmeticError:
+            except TypeError, ValueError, ArithmeticError, IndexError:
                 tinted = None
         if tinted is None:
             tinted = numpy.asarray(
