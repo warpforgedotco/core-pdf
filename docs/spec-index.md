@@ -217,6 +217,7 @@ its behaviour for them; `core-pdf-validate` checks conformance with veraPDF.
 - 7.9.2.2 (Text string type) `core_pdf.impl.spec.s_07_syntax_primitives.text_string`: text strings in PDFDocEncoding, UTF-16BE or UTF-8
 - 7.10 (Functions) `core_pdf.impl.spec.s_08_graphics.pdf_function`: functions: sampled, exponential, stitching and PostScript calculator
 - 7.10.5 (Type 4 (PostScript calculator) functions) `core_pdf.impl.postscript.calculator`: PostScript calculator (Type 4) functions
+- 7.10.5 (Type 4 (PostScript calculator) functions) `core_pdf.impl.postscript.calculator_batch`: PostScript calculator (Type 4) functions run over many inputs at once
 - 7.11 (File specifications) `core_pdf.impl.spec.s_07_document.file_specification`: file specification dictionaries and their embedded file streams
 - 7.12 (Extensions dictionary) `core_pdf.impl.spec.standards`: PDF versions, the extensions core implements, and known profiles
 - 8.3 (Coordinate systems) `core_pdf.impl.spec.s_08_graphics.geometry`: bounding boxes in transformed coordinate systems

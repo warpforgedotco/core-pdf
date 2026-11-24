@@ -366,7 +366,8 @@ class SpaceEvaluator:
         """What calling it on each value, or each tuple of values, gives, converting every
         colour in one pass; None when a value's colour fails, which calling one at a time
         then reports."""
-        many = batch_evaluator(self.function) if values and type(values[0]) is not tuple else None
+        # A tuple of values is a row of inputs: (n, m) for the batch.
+        many = batch_evaluator(self.function) if values else None
         try:
             if many is not None:
                 rows = many(numpy.asarray(values, dtype=numpy.float64))

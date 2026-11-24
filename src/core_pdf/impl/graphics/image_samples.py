@@ -285,11 +285,18 @@ def convert_tint_components(
             raise ValueError("missing tint alternate")
         function = tint_function(space.tint_fn)
         distinct, inverse = distinct_component_rows(values)
-        batch = batch_evaluator(function) if distinct.shape[1] == 1 else None
+        batch = batch_evaluator(function)
+        tinted = None
         if batch is not None:
-            # A Separation's tints through the transform at once, as one at a time finds them.
-            tinted = batch(numpy.ascontiguousarray(distinct[:, 0], dtype=numpy.float64))
-        else:
+            # The tints through the transform at once, as one at a time finds them: a
+            # Separation's one tint each, a DeviceN's row of them. Where the batch fails,
+            # one at a time finds the colours, or the error, itself.
+            columns = distinct[:, 0] if distinct.shape[1] == 1 else distinct
+            try:
+                tinted = batch(numpy.ascontiguousarray(columns, dtype=numpy.float64))
+            except TypeError, ValueError, ArithmeticError, IndexError:
+                tinted = None
+        if tinted is None:
             tinted = numpy.asarray(
                 [function(*(float(component) for component in row)) for row in distinct],
                 dtype=numpy.float64,

@@ -30,7 +30,9 @@ Where the clauses leave a choice open:
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+lazy import numpy
 
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_07_syntax.resolution import resolve_reference_chain
@@ -44,7 +46,13 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 from core_pdf.impl.spec.s_08_graphics.color import initial_color_components
 from core_pdf.impl.spec.s_08_graphics.color_spec import ColorSpace, parse_color_space
 from core_pdf.impl.spec.s_08_graphics.matrix import Matrix
-from core_pdf.impl.spec.s_08_graphics.pdf_function import PdfFunctionEvaluator, compile_pdf_function
+from core_pdf.impl.spec.s_08_graphics.pdf_function import (
+    PdfFunctionEvaluator,
+    batch_evaluator,
+    clipped,
+    compile_pdf_function,
+    with_batch,
+)
 from core_pdf.impl.spec.types import PdfReference
 from core_records import GeneratedRecord
 
@@ -138,7 +146,20 @@ def transfer(
         output = require_pdf_number(outputs[0], "invalid soft-mask transfer output")
         return (max(0.0, min(1.0, output)),)
 
-    return transfer
+    inner = batch_evaluator(evaluate)
+    if inner is None:
+        return transfer
+
+    def batch_transfer(inputs: Any) -> Any:
+        values = numpy.asarray(inputs, dtype=numpy.float64)
+        if values.ndim != 1 or not numpy.isfinite(values).all():
+            raise ValueError("soft-mask transfer inputs must be finite numbers")
+        outputs = inner(clipped(values, 0.0, 1.0))
+        if outputs.ndim != 2 or outputs.shape[1] != 1 or not numpy.isfinite(outputs).all():
+            raise ValueError("invalid soft-mask transfer output")
+        return clipped(outputs, 0.0, 1.0)
+
+    return with_batch(transfer, batch_transfer)
 
 
 def resolve_soft_mask_color_space(value: object, resolver: PdfValueResolver) -> ColorSpace:
