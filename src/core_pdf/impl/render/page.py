@@ -177,6 +177,7 @@ class RenderedPage(ReprFields, ReplaceFields, metaclass=RecordType, frozen=False
         rotate = self.rotate % 360
         raster_target.group_member_boxes = self.display_list.group_member_boxes
         raster_target.overprint_enabled = self.metadata.get("overprint") != "ignore"
+        raster_target.overprints = self.metadata.get("overprints", True) is not False
         items = self.render_items(crop, scale=device_scale)
         page_group = page_space_group(self.metadata.get("group_color_space"))
         if page_group is not None and raster_target.switches_space(page_group):
@@ -350,6 +351,7 @@ def compose_page(
             "group_alpha": (page.resolve_transparency_group_alpha()),
             "group_color_space": group_space,
             "overprint": options.overprint,
+            "overprints": page_program.overprint_on,
         },
     )
 

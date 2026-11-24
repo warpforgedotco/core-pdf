@@ -129,7 +129,7 @@ def paint_image(self: TextState, state: object, xobj: PdfStream) -> None:
 def image_overprint(self: TextState, stencil: bool, source: ImageSource) -> int | None:
     """The process components an image marks while overprinting: an image mask, those of
     the current colour; any other image, those of its colour space."""
-    if not self.graphics.fill_overprint:
+    if not self.graphics.fill_overprint and not self.capture_cmyk:
         return None
     if stencil:
         return self.capture_overprint(stroke=False)

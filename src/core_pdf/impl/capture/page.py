@@ -217,6 +217,11 @@ def capture_page_program(
         appearances = capture_annotation_appearances(
             page, state, fields=fields, annotations=annotations
         )
-        return PageProgram(body=body, appearances=appearances, overprints=state.uses_overprint)
+        return PageProgram(
+            body=body,
+            appearances=appearances,
+            overprints=state.uses_overprint,
+            overprint_on=state.overprint_on,
+        )
     finally:
         state.release()

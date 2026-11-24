@@ -628,6 +628,8 @@ class TilingPattern(GeneratedRecord):
     matrix: Matrix | None = None
     # Whether a paint in the cell overprints some process component (graphics.overprint).
     overprints: bool = False
+    # Whether a paint in the cell has its overprint parameter on, whatever it marks.
+    overprint_on: bool = False
 
 
 PatternPaint: TypeAlias = ShadingPattern | TilingPattern

@@ -80,17 +80,25 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
             # after the other, inside its elementary group if it has one; where shape is
             # tracked, paint_typed_path's knockout group paints them, and each overprints.
             channels = self.fill_stroke_channels(item)
-            if channels != (None, None) and self.group_source_shape is None:
+            if self.group_source_shape is None and (
+                channels != (None, None) or self.paints_apart(item)
+            ):
                 apart = channels
         else:
             overprint = self.overprint_channels(item)
+    # A glyph erasing the spot plates of a knockout group composites them with the group's
+    # initial ones, in its elementary group (raster_spots): it takes no fast path there.
+    erases = self.buffer_stack[-1].spots is not None and self.erases_plates(item)
     if (
         overprint is None
         and apart is None
         and type(item) is PathPaintItem
         and item.edge_array is not None
+        and not (erases and self.buffer_stack[-1].knockout)
         and self.paint_glyph_fill(item)
     ):
+        if erases:
+            self.erase_under(item)
         return
     if isinstance(item, PaintItemBase):
         previous_shape_state = self.paint_alpha_is_shape, self.shape_alpha
@@ -127,6 +135,7 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                 and knockout
                 and mask_alpha is None
                 and overprint is None
+                and not erases
                 and self.knockout_glyph_fill(item)
             ):
                 return
@@ -201,12 +210,15 @@ def paint_member(
     self: RasterTarget, item: DisplayItem, apart: tuple[Any, Any] | None, overprint: Any
 ) -> None:
     """Paint item as paint_item does once any group for it is open: its fill and stroke
-    apart, overprinting, or by its type's handler."""
+    apart, overprinting, or by its type's handler, erasing the spot plates under it when it
+    does not overprint (raster_spots)."""
     if apart is not None:
         assert type(item) is PathPaintItem
         self.paint_fill_stroke_apart(item, *apart)
     elif overprint is None:
         self.paint_display_item(item)
+        if self.buffer_stack[-1].spots is not None and self.erases_plates(item):
+            self.erase_under(item)
     else:
         assert isinstance(item, PaintItemBase)
         self.paint_overprinting(item, overprint)

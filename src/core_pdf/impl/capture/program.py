@@ -91,6 +91,9 @@ class PageProgram:
     appearances: tuple[AppearanceProgram, ...] = ()
     # Whether a paint overprints some process component (graphics.overprint).
     overprints: bool = False
+    # Whether a paint has its overprint parameter on, whatever it marks: only then can a
+    # spot plate a paint without overprinting leaves be kept by another (render.raster_spots).
+    overprint_on: bool = False
     runs: tuple[TextRun, ...] = field(init=False)
     glyphs: tuple[GlyphObservation, ...] = field(init=False)
     drawings: tuple[CapturedDrawing, ...] = field(init=False)

@@ -20,7 +20,7 @@ from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.graphics.color_spec import ColorSpace
 from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
-from core_pdf.impl.graphics.overprint import SPOT, process_color, process_indices
+from core_pdf.impl.graphics.overprint import OFF, paints_tints, process_color, process_indices
 from core_pdf.impl.graphics.shading import (
     DEVICE_COMPONENTS,
     FunctionGeometry,
@@ -365,8 +365,7 @@ def process_space(
     where it does not overprint."""
     if self.space_mode is not SpaceMode.CMY and self.space_mode is not SpaceMode.BLACK:
         return None
-    marks = item.payload.get("fill_overprint")
-    if not self.overprint_enabled or marks is None or marks & SPOT:
+    if not self.overprint_enabled or not paints_tints(item.payload.get("fill_overprint")):
         return None
     evaluator = shading.evaluator
     if not isinstance(evaluator, SpaceEvaluator) or process_indices(evaluator.space) is None:
@@ -755,6 +754,7 @@ def paint_tiling_pattern(
         blend_mode,
         isolated=cell_is_isolated(self, pattern),
         alpha_is_shape=target_data.alpha_is_shape,
+        keeps_plates=True,
     )
     try:
         if offsets is not None:
@@ -791,6 +791,24 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+def keeps_plates_through(pattern: ShadingPattern | TilingPattern, data: PathPaintItem) -> bool:
+    """Whether the group a fill or stroke data paints pattern through starts from its
+    parent's spot plates (raster_spots), keeping those its paint does not change.
+
+    A shading pattern's colours are the paint's, so its overprint parameter decides: on, the
+    paint keeps the plates it does not name ("Spot colourant" with OP true is Cb, ISO
+    32000-2 Table 146), off, it erases them. A coloured tiling pattern's cell paints with a
+    graphics state of its own (8.7.3.1), so its paints decide, each by its own overprint
+    parameters, and the fill painting it erases nothing itself (our reading; MuPDF's
+    separations agree): its groups always start from the parent's plates."""
+    if isinstance(pattern, TilingPattern):
+        return True
+    marks = (
+        data.stroke_overprint if data.paint_kind is PathPaintKind.STROKE else data.fill_overprint
+    )
+    return marks is not None and not marks & OFF
 
 
 def cell_is_isolated(self: RasterTarget, pattern: TilingPattern) -> bool:
@@ -1039,6 +1057,7 @@ def paint_pattern_through(
         isolated=isolated,
         alpha_is_shape=data.alpha_is_shape,
         mask_alpha=mask,
+        keeps_plates=keeps_plates_through(pattern, data),
     )
     group = self.buffer_stack[-1]
     limit = self.paint_limit
@@ -1205,4 +1224,5 @@ def blank_sibling(
         resources=self.resources,
     )
     sibling.overprint_enabled = self.overprint_enabled
+    sibling.overprints = self.overprints
     return sibling, view

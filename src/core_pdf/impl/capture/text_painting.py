@@ -86,14 +86,15 @@ def glyph_paint(self: TextState, fill_color: tuple[float, ...] | None) -> GlyphP
     if self.options.render_details:
         fill_pattern = graphics.fill_pattern
         stroke_pattern = graphics.stroke_pattern
+    # A paint that does not overprint has marks only for a spot plate (capture_overprint).
     fill_overprint = (
         self.capture_overprint(stroke=False)
-        if graphics.fill_overprint and render_mode in {0, 2, 4, 6}
+        if (graphics.fill_overprint or self.capture_cmyk) and render_mode in {0, 2, 4, 6}
         else None
     )
     stroke_overprint = (
         self.capture_overprint(stroke=True)
-        if graphics.stroke_overprint and render_mode in {1, 2, 5, 6}
+        if (graphics.stroke_overprint or self.capture_cmyk) and render_mode in {1, 2, 5, 6}
         else None
     )
     stroke_color = self.capture_color(stroke=True)

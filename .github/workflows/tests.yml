@@ -369,6 +369,7 @@ jobs:
           $run/check_group_profiles.py
           $run/check_group_spaces.py
           $run/check_overprint.py
+          $run/check_spot_plates.py
           $run/check_char_gaps.py
           $run/check_glyph_outline_edges.py
           $run/check_pdfminer_chars.py
