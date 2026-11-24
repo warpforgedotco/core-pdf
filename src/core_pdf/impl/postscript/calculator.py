@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Iterator, Sequence
 
 from core_records import GeneratedRecord
+lazy from core_pdf.impl.postscript.calculator_batch import batch_calculator
 
 STACK_LIMIT = 100
 NESTING_LIMIT = 255
@@ -368,6 +369,10 @@ def compile_calculator(
             for value, (lower, upper) in zip(stack, ranges, strict=True)
         )
 
+    batch = batch_calculator(program, domains, ranges)
+    if batch is not None:
+        # The batch form pdf_function.batch_evaluator finds: the program run over many inputs.
+        setattr(evaluate, "batch", batch)  # noqa: B010 - an attribute of a function object
     return evaluate
 
 

@@ -21,12 +21,14 @@ from core_pdf.impl.spec.s_07_syntax_primitives.coercion import (
 )
 
 PdfFunctionEvaluator = Callable[..., tuple[float, ...]]
-# The batch form of a one-input evaluator: from a float64 array of inputs to a float64 array of
-# their outputs, one row each, found with the same float operations in the same order, so equal
-# bit for bit to calling the evaluator on each. It raises where the evaluator would raise for
-# one of them, or where it cannot be sure of the same result (a NaN), so the caller then
-# evaluates one at a time.
+# The batch form of an evaluator: from a float64 array of inputs, (n,) for one input each or
+# (n, m) for m, to a float64 array of their outputs, one row each, found with the same float
+# operations in the same order, so equal bit for bit to calling the evaluator on each. It
+# raises where the evaluator would raise for one of them, or where it cannot be sure of the
+# same result (a NaN), so the caller then evaluates one at a time.
 type BatchEvaluator = Callable[[Any], Any]
+# The bit depths a sampled function's samples may have (7.10.2).
+SAMPLE_BITS = frozenset((1, 2, 4, 8, 12, 16, 24, 32))
 
 
 def batch_evaluator(evaluate: object) -> BatchEvaluator | None:
@@ -39,12 +41,22 @@ def with_batch(evaluate: PdfFunctionEvaluator, batch: BatchEvaluator) -> PdfFunc
     return evaluate
 
 
+def clipped(values: Any, lower: Any, upper: Any) -> Any:
+    """max(lower, min(upper, value)) of each value, as Python finds it, -0.0 and NaN included:
+    min keeps its first argument unless the second is less, and max unless it is greater."""
+    below = numpy.where(values < upper, values, upper)
+    return numpy.where(below > lower, below, lower)
+
+
 def clamped_inputs(inputs: Any, low: float, high: float) -> Any:
-    """max(low, min(high, value)) of each input, which must all be finite."""
+    """max(low, min(high, value)) of each input of a one-input function, which must all be
+    finite."""
     values = numpy.asarray(inputs, dtype=numpy.float64)
+    if values.ndim == 2 and values.shape[1] == 1:
+        values = values[:, 0]
     if values.ndim != 1 or not numpy.isfinite(values).all():
         raise ValueError("a batch of PDF function inputs must be finite numbers")
-    return numpy.maximum(low, numpy.minimum(high, values))
+    return clipped(values, low, high)
 
 
 def calculator_bounds(value: object, kind: str) -> tuple[tuple[float, float], ...]:
@@ -79,10 +91,10 @@ def with_pdf_function_range(
 
     def batch_clipped(inputs: Any) -> Any:
         outputs = inner(inputs)
-        # min(upper, NaN) is upper, which numpy.minimum does not give.
+        # A NaN output is left to one at a time, which finds min(upper, NaN) is upper.
         if outputs.shape[1] != len(ranges) or numpy.isnan(outputs).any():
             raise ValueError("PDF function range has incorrect output count")
-        return numpy.maximum(lowers, numpy.minimum(uppers, outputs))
+        return clipped(outputs, lowers, uppers)
 
     return with_batch(evaluate_clipped, batch_clipped)
 
@@ -97,11 +109,39 @@ def scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     return (domain[0], domain[1])
 
 
+def sample_values(data: bytes, bits: int, count: int) -> Any:
+    """The first count samples of bits each, packed with no padding (7.10.2), as uint64."""
+    if len(data) * 8 < count * bits:
+        raise ValueError("invalid sampled function data")
+    if bits in {8, 16, 32}:
+        return numpy.frombuffer(data, dtype=f">u{bits // 8}", count=count).astype(numpy.uint64)
+    packed = numpy.frombuffer(data, dtype=numpy.uint8, count=(count * bits + 7) // 8)
+    digits = numpy.unpackbits(packed)[: count * bits].reshape(count, bits).astype(numpy.uint64)
+    return digits @ (numpy.uint64(1) << numpy.arange(bits - 1, -1, -1, dtype=numpy.uint64))
+
+
+def neumaier_sum(terms: list[Any]) -> Any:
+    """sum() of the terms, elementwise, as Python (3.12 and later) sums floats: with Neumaier's
+    compensation, added at the end when it is finite and not zero. Every term must be finite,
+    as a sampled function's are."""
+    total = terms[0] + 0.0
+    compensation = numpy.zeros_like(total)
+    for term in terms[1:]:
+        step = total + term
+        compensation += numpy.where(
+            numpy.abs(total) >= numpy.abs(term), (total - step) + term, (term - step) + total
+        )
+        total = step
+    add = (compensation != 0.0) & numpy.isfinite(compensation)
+    return numpy.where(add, total + compensation, total)
+
+
 def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     dictionary = function.dictionary
     if require_function_type(dictionary) != 0:
         raise ValueError("invalid sampled function")
-    if type(dictionary.get("BitsPerSample")) is not int or dictionary["BitsPerSample"] != 8:
+    bits = dictionary.get("BitsPerSample")
+    if type(bits) is not int or bits not in SAMPLE_BITS:
         raise ValueError("unsupported sampled function bit depth")
 
     size_obj = dictionary.get("Size")
@@ -163,9 +203,10 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     sample_count = 1
     for size in sizes:
         sample_count *= size
-    samples = function.data
-    if len(samples) < sample_count * len(ranges):
-        raise ValueError("invalid sampled function data")
+    table = sample_values(function.data, bits, sample_count * len(ranges))
+    samples: list[int] = table.tolist()
+    # The largest sample, which Decode maps to its upper bound: 255.0 for 8 bits.
+    maximum = float((1 << bits) - 1)
 
     def evaluate(*inputs: float) -> tuple[float, ...]:
         if len(inputs) != len(sizes):
@@ -207,7 +248,7 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
                         samples[sample_index * len(ranges) + output_index] * weight
                         for sample_index, weight in corners
                     )
-                    / 255.0
+                    / maximum
                     * (decode_max - decode_min),
                 ),
             )
@@ -216,7 +257,57 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
             )
         )
 
-    return evaluate
+    rows = table.astype(numpy.float64).reshape(sample_count, len(ranges))
+    strides = [1]
+    for size in sizes[:-1]:
+        strides.append(strides[-1] * size)
+    decode_lows = numpy.asarray([low for low, _ in decodes], dtype=numpy.float64)
+    decode_spans = numpy.asarray([high - low for low, high in decodes], dtype=numpy.float64)
+    range_lows = numpy.asarray([low for low, _ in ranges], dtype=numpy.float64)
+    range_highs = numpy.asarray([high for _, high in ranges], dtype=numpy.float64)
+
+    def batch_sampled(inputs: Any) -> Any:
+        values = numpy.asarray(inputs, dtype=numpy.float64)
+        if values.ndim == 1:
+            values = values[:, None]
+        if values.ndim != 2 or values.shape[1] != len(sizes):
+            raise ValueError("invalid sampled function input count")
+        lowers: list[Any] = []
+        uppers: list[Any] = []
+        fractions: list[Any] = []
+        with numpy.errstate(all="ignore"):
+            for column, size, (domain_min, domain_max), (start, end) in zip(
+                values.T, sizes, domains, encodes, strict=True
+            ):
+                normalized = (clipped(column, domain_min, domain_max) - domain_min) / (
+                    domain_max - domain_min
+                )
+                encoded = clipped(start + normalized * (end - start), 0.0, float(size - 1))
+                lower = encoded.astype(numpy.int64)
+                lowers.append(lower)
+                uppers.append(numpy.minimum(size - 1, lower + 1))
+                fractions.append(encoded - lower)
+            # Every corner of the cell, in the order one at a time visits them: the first
+            # input's index the slowest to change. Along an input whose fraction is 0, one at
+            # a time keeps the lower corner alone; here the upper one has weight 0.0, and its
+            # 0.0 term changes neither the sum nor its compensation.
+            count = len(sizes)
+            terms: list[Any] = []
+            for corner in range(1 << count):
+                offset = numpy.zeros(len(values), dtype=numpy.int64)
+                weight = numpy.ones(len(values), dtype=numpy.float64)
+                for axis in range(count):
+                    if corner >> (count - 1 - axis) & 1:
+                        offset += uppers[axis] * strides[axis]
+                        weight = weight * fractions[axis]
+                    else:
+                        offset += lowers[axis] * strides[axis]
+                        weight = weight * (1.0 - fractions[axis])
+                terms.append(rows[offset] * weight[:, None])
+            decoded = decode_lows + neumaier_sum(terms) / maximum * decode_spans
+        return clipped(decoded, range_lows, range_highs)
+
+    return with_batch(evaluate, batch_sampled)
 
 
 def require_function_type(dictionary: dict[Any, Any]) -> int:

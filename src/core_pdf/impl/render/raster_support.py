@@ -50,6 +50,7 @@ from core_pdf.impl.render.raster_spaces import luminosity_mask_channel
 from core_pdf.impl.spec.s_07_syntax_primitives.coercion import is_pdf_number
 from core_pdf.impl.spec.s_08_graphics.color_rendering import DEFAULT_COLOR_RENDERING, ColorRendering
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
+from core_pdf.impl.spec.s_08_graphics.pdf_function import batch_evaluator
 from core_pdf.impl.spec.s_11_transparency.blend import revised_blending
 from core_pdf.impl.spec.standards import SemanticContext
 lazy from core_pdf_cythonized import (
@@ -592,6 +593,19 @@ def prepared_shading(
     return cache.put_key(dictionary, key, shading)
 
 
+def transfer_values(transfer: Callable[..., tuple[float, ...]], samples: Any) -> Any:
+    """The transfer function's output for each mask sample value (0 to 255) of samples: in one
+    batch through its function when it has a batch form, which gives the same bits, or else
+    (or when the batch fails) one at a time."""
+    batch = batch_evaluator(transfer)
+    if batch is not None:
+        try:
+            return batch(samples / 255.0)[:, 0]
+        except TypeError, ValueError, ArithmeticError:
+            pass
+    return [transfer(int(sample) / 255.0)[0] for sample in samples]
+
+
 def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskPlane | None:
     resources = target.resources
     key = (id(mask.program), id(mask.transfer), mask.offset)
@@ -616,7 +630,7 @@ def resolve_soft_mask(target: RasterTarget, mask: CapturedSoftMask) -> SoftMaskP
             result = SoftMaskPlane(alpha, None)
         else:
             samples = numpy.flatnonzero(present)
-            values = [mask.transfer(int(sample) / 255.0)[0] for sample in samples]
+            values = transfer_values(mask.transfer, samples)
             table = numpy.zeros(256, dtype=numpy.float32)
             table[samples] = numpy.asarray(values, dtype=numpy.float32)
             table.setflags(write=False)

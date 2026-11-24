@@ -414,7 +414,8 @@ def device_palette(
     count = DEVICE_COMPONENTS.get(color_model)
     if count is None:
         return None
-    many = batch_evaluator(evaluate) if batch is None and type(inputs[0]) is not tuple else None
+    # A tuple of values (a type 1 shading's point, a mesh's t) is a row of inputs: (n, m).
+    many = batch_evaluator(evaluate) if batch is None else None
     try:
         if many is not None:
             components = many(numpy.asarray(inputs, dtype=numpy.float64))
