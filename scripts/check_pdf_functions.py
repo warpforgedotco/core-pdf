@@ -13,7 +13,8 @@ their colours. This checks it in two ways.
 - Functions: thousands of random functions, compiled both as the specification module compiles
   them and as graphics.functions does, with inputs inside and outside each Domain, on the
   stitching Bounds and a sampled function's grid points, at -0.0, and where an operator fails.
-  Sampled functions have every BitsPerSample, one to four inputs, Encode, Decode and Range;
+  Sampled functions have every BitsPerSample, one to four inputs (and one of twelve), Encode,
+  Decode and Range;
   calculator programs use every operator, conditionals, copy, index and roll with counts that
   can differ between inputs, integers that overflow to reals, and operators that fail. Every
   output must have the bits of the one-at-a-time output. Where one input fails one at a
@@ -456,6 +457,48 @@ def calculator_inputs(random: numpy.random.Generator, function: PdfStream) -> In
     return rows
 
 
+WIDE_INPUTS = 12
+
+
+def wide_sampled_inputs(random: numpy.random.Generator) -> Inputs:
+    """2000 points of a 12-input function: on the sample grid along most inputs and between
+    samples along a few, as an image's colorants mostly are, and between samples along all."""
+    on_grid = random.integers(0, 2, (2000, WIDE_INPUTS)).astype(numpy.float64)
+    between = random.random((2000, WIDE_INPUTS))
+    rows = numpy.where(random.random((2000, WIDE_INPUTS)) < 0.85, on_grid, between)
+    rows[:100] = between[:100]
+    rows[100:200] = on_grid[100:200]
+    return [tuple(row) for row in rows.tolist()]
+
+
+def wide_image_samples() -> bytes:
+    """A 64 by 64 image of 12 colorants, most of them 0 or 255 at each pixel."""
+    random = numpy.random.default_rng(12)
+    levels = numpy.where(
+        random.random((64 * 64, WIDE_INPUTS)) < 0.9,
+        random.integers(0, 2, (64 * 64, WIDE_INPUTS)) * 255,
+        random.integers(0, 256, (64 * 64, WIDE_INPUTS)),
+    )
+    return levels.astype(numpy.uint8).tobytes()
+
+
+def check_wide_sampled(random: numpy.random.Generator) -> tuple[int, list[str]]:
+    """A sampled function of 12 inputs (Size [2] * 12, 4096 cells' corners), as a 12-colorant
+    DeviceN tint transform has: the batch interpolates along the inputs each row moves on."""
+    total = 2**WIDE_INPUTS * 3
+    function = PdfStream(
+        {
+            "FunctionType": 0,
+            "Domain": [0.0, 1.0] * WIDE_INPUTS,
+            "Range": [0.0, 1.0] * 3,
+            "Size": [2] * WIDE_INPUTS,
+            "BitsPerSample": 8,
+        },
+        random.integers(0, 256, total, dtype=numpy.uint8).tobytes(),
+    )
+    return check_function(function, wide_sampled_inputs(random))
+
+
 def check_bit_depths() -> list[str]:
     """A sampled function of each bit depth reads its packed samples and maps the largest to
     the top of Decode (7.10.2); before, every depth but 8 was refused."""
@@ -770,6 +813,15 @@ def function_pages() -> list[tuple[str, bytes]]:
                 for value in triple
             ),
         ),
+        (
+            "devicen 12 colorants sampled",
+            b"[/DeviceN [%s] /DeviceRGB 6 0 R]"
+            % b" ".join(b"/C%d" % index for index in range(WIDE_INPUTS)),
+            sampled_stream(
+                b"[%s]" % b" ".join([b"0 1"] * WIDE_INPUTS), [2] * WIDE_INPUTS, 3, 8, b""
+            ),
+            wide_image_samples(),
+        ),
     ]
     for label, space, function, data in images:
         components = len(data) // (64 * 64)
@@ -825,6 +877,9 @@ def main(argv: list[str]) -> int:
             compared += found
             problems += issues
     problems += check_bit_depths()
+    found, issues = check_wide_sampled(random)
+    compared += found
+    problems += issues
     pages = 0
     for space, c0, c1 in SPACES:
         for shading_type in (2, 3):

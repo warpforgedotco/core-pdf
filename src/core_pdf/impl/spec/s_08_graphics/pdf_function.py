@@ -109,31 +109,81 @@ def scalar_domain(dictionary: dict[Any, Any]) -> tuple[float, float]:
     return (domain[0], domain[1])
 
 
-def sample_values(data: bytes, bits: int, count: int) -> Any:
-    """The first count samples of bits each, packed with no padding (7.10.2), as uint64."""
+def sample_values(data: bytes | memoryview, bits: int, count: int) -> Any:
+    """The first count samples of bits each, packed with no padding (7.10.2), as uint32."""
     if len(data) * 8 < count * bits:
         raise ValueError("invalid sampled function data")
     if bits in {8, 16, 32}:
-        return numpy.frombuffer(data, dtype=f">u{bits // 8}", count=count).astype(numpy.uint64)
-    packed = numpy.frombuffer(data, dtype=numpy.uint8, count=(count * bits + 7) // 8)
-    digits = numpy.unpackbits(packed)[: count * bits].reshape(count, bits).astype(numpy.uint64)
-    return digits @ (numpy.uint64(1) << numpy.arange(bits - 1, -1, -1, dtype=numpy.uint64))
+        return numpy.frombuffer(data, dtype=f">u{bits // 8}", count=count).astype(numpy.uint32)
+    if bits < 8:
+        per_byte = 8 // bits
+        packed = numpy.frombuffer(data, dtype=numpy.uint8, count=-(-count // per_byte))
+        shifts = numpy.arange(8 - bits, -1, -bits, dtype=numpy.uint8)
+        values = (packed[:, None] >> shifts) & ((1 << bits) - 1)
+        return values.reshape(-1)[:count].astype(numpy.uint32)
+    # 12 bits: two samples in each three bytes; 24 bits: one.
+    groups = -(-count * bits // 24)
+    triples = numpy.zeros(groups * 3, dtype=numpy.uint8)
+    available = min(len(data), groups * 3)
+    triples[:available] = numpy.frombuffer(data, dtype=numpy.uint8, count=available)
+    words = triples[0::3].astype(numpy.uint32) << 16
+    words |= triples[1::3].astype(numpy.uint32) << 8
+    words |= triples[2::3]
+    if bits == 24:
+        return words[:count]
+    samples = numpy.empty(groups * 2, dtype=numpy.uint32)
+    samples[0::2] = words >> 12
+    samples[1::2] = words & 0xFFF
+    return samples[:count]
 
 
-def neumaier_sum(terms: list[Any]) -> Any:
-    """sum() of the terms, elementwise, as Python (3.12 and later) sums floats: with Neumaier's
-    compensation, added at the end when it is finite and not zero. Every term must be finite,
-    as a sampled function's are."""
-    total = terms[0] + 0.0
-    compensation = numpy.zeros_like(total)
-    for term in terms[1:]:
-        step = total + term
-        compensation += numpy.where(
-            numpy.abs(total) >= numpy.abs(term), (total - step) + term, (term - step) + total
-        )
-        total = step
-    add = (compensation != 0.0) & numpy.isfinite(compensation)
-    return numpy.where(add, total + compensation, total)
+# A sampled function's batch takes at most this many rows at a time.
+SAMPLED_BATCH_ROWS = 1 << 15
+# Measured costs, in microseconds, that choose between the batch and one row at a time for a
+# group of rows that interpolate along the same inputs. The batch costs about 20 for the group,
+# 7 for each corner of the cell and 0.025 for each corner of each row; one at a time costs a row
+# about 0.5 for each input and 0.1 for each corner of each output.
+BATCH_GROUP_COST = 20.0
+BATCH_CORNER_COST = 7.0
+BATCH_TERM_COST = 0.025
+SCALAR_INPUT_COST = 0.5
+SCALAR_TERM_COST = 0.1
+
+
+def moving_groups(fractions: list[Any]) -> list[tuple[Any, list[int]]]:
+    """The rows (their positions, in order) that interpolate along the same inputs, the ones
+    whose fraction is not 0, with those inputs, for each set of inputs some row moves along."""
+    count = len(fractions[0])
+    if len(fractions) > 62:
+        moving = numpy.stack([fraction != 0.0 for fraction in fractions], axis=1)
+        patterns, inverse = numpy.unique(moving, axis=0, return_inverse=True)
+        inverse = inverse.reshape(-1)
+        return [
+            (numpy.flatnonzero(inverse == index), numpy.flatnonzero(pattern).tolist())
+            for index, pattern in enumerate(patterns)
+        ]
+    keys = numpy.zeros(count, dtype=numpy.int64)
+    for axis, fraction in enumerate(fractions):
+        keys |= (fraction != 0.0).astype(numpy.int64) << axis
+    first = keys[0]
+    if (keys == first).all():
+        distinct = [int(first)]
+        groups = [numpy.arange(count)]
+    else:
+        distinct_keys = numpy.unique(keys)
+        if len(distinct_keys) <= 32:
+            distinct = distinct_keys.tolist()
+            groups = [numpy.flatnonzero(keys == key) for key in distinct]
+        else:
+            order = numpy.argsort(keys, kind="stable")
+            ordered = keys[order]
+            starts = numpy.flatnonzero(numpy.diff(ordered)) + 1
+            groups = numpy.split(order, starts)
+            distinct = ordered[numpy.concatenate(([0], starts))].tolist()
+    return [
+        (group, [axis for axis in range(len(fractions)) if key >> axis & 1])
+        for key, group in zip(distinct, groups, strict=True)
+    ]
 
 
 def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
@@ -203,14 +253,21 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     sample_count = 1
     for size in sizes:
         sample_count *= size
-    table = sample_values(function.data, bits, sample_count * len(ranges))
-    samples: list[int] = table.tolist()
+    data = function.data
+    table = sample_values(data, bits, sample_count * len(ranges))
+    # One at a time reads Python ints: an 8-bit function's bytes, or the samples as a list,
+    # made the first time it is needed (sum() adds floats the way the batch does only when
+    # every term is a Python float, which a numpy integer times a float is not).
+    scalar_samples: list[Any] = [data if bits == 8 else None]
     # The largest sample, which Decode maps to its upper bound: 255.0 for 8 bits.
     maximum = float((1 << bits) - 1)
 
     def evaluate(*inputs: float) -> tuple[float, ...]:
         if len(inputs) != len(sizes):
             raise ValueError("invalid sampled function input count")
+        samples = scalar_samples[0]
+        if samples is None:
+            samples = scalar_samples[0] = table.tolist()
         corners: list[tuple[int, float]] = [(0, 1.0)]
         stride = 1
         for raw_input, size, domain, encode in zip(inputs, sizes, domains, encodes, strict=True):
@@ -257,7 +314,7 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
             )
         )
 
-    rows = table.astype(numpy.float64).reshape(sample_count, len(ranges))
+    rows = table.reshape(sample_count, len(ranges))
     strides = [1]
     for size in sizes[:-1]:
         strides.append(strides[-1] * size)
@@ -266,12 +323,45 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
     range_lows = numpy.asarray([low for low, _ in ranges], dtype=numpy.float64)
     range_highs = numpy.asarray([high for _, high in ranges], dtype=numpy.float64)
 
-    def batch_sampled(inputs: Any) -> Any:
-        values = numpy.asarray(inputs, dtype=numpy.float64)
-        if values.ndim == 1:
-            values = values[:, None]
-        if values.ndim != 2 or values.shape[1] != len(sizes):
-            raise ValueError("invalid sampled function input count")
+    def interpolated(base: Any, steps: list[Any], fractions: list[Any]) -> Any:
+        """The decoded, clipped outputs of rows that interpolate along the same inputs: from
+        base, the offset of their lower corner, each corner along those inputs in the order one
+        at a time visits them (the first input's index the slowest to change), its weight the
+        product of its factors in input order, and the terms added up as sum() adds them, with
+        Neumaier's compensation."""
+        complements = [1.0 - fraction for fraction in fractions]
+        count = len(fractions)
+        total: Any = None
+        compensation: Any = None
+        for corner in range(1 << count):
+            offset = base
+            weight = numpy.ones(len(base), dtype=numpy.float64)
+            for axis in range(count):
+                if corner >> (count - 1 - axis) & 1:
+                    offset = offset + steps[axis]
+                    weight = weight * fractions[axis]
+                else:
+                    weight = weight * complements[axis]
+            term = rows[offset] * weight[:, None]
+            if total is None:
+                # sum() starts from 0: 0 + term is term, but 0.0 for -0.0.
+                total = term + 0.0
+                compensation = numpy.zeros_like(total)
+                continue
+            step = total + term
+            compensation += numpy.where(
+                numpy.abs(total) >= numpy.abs(term), (total - step) + term, (term - step) + total
+            )
+            total = step
+        # sum() adds the compensation at the end when it is finite and not zero.
+        add = (compensation != 0.0) & numpy.isfinite(compensation)
+        summed = numpy.where(add, total + compensation, total)
+        return clipped(decode_lows + summed / maximum * decode_spans, range_lows, range_highs)
+
+    def batch_chunk(values: Any) -> Any:
+        outputs = numpy.empty((len(values), len(ranges)), dtype=numpy.float64)
+        if not len(values):
+            return outputs
         lowers: list[Any] = []
         uppers: list[Any] = []
         fractions: list[Any] = []
@@ -287,25 +377,46 @@ def compile_sampled_function(function: PdfStream) -> PdfFunctionEvaluator:
                 lowers.append(lower)
                 uppers.append(numpy.minimum(size - 1, lower + 1))
                 fractions.append(encoded - lower)
-            # Every corner of the cell, in the order one at a time visits them: the first
-            # input's index the slowest to change. Along an input whose fraction is 0, one at
-            # a time keeps the lower corner alone; here the upper one has weight 0.0, and its
-            # 0.0 term changes neither the sum nor its compensation.
-            count = len(sizes)
-            terms: list[Any] = []
-            for corner in range(1 << count):
-                offset = numpy.zeros(len(values), dtype=numpy.int64)
-                weight = numpy.ones(len(values), dtype=numpy.float64)
-                for axis in range(count):
-                    if corner >> (count - 1 - axis) & 1:
-                        offset += uppers[axis] * strides[axis]
-                        weight = weight * fractions[axis]
-                    else:
-                        offset += lowers[axis] * strides[axis]
-                        weight = weight * (1.0 - fractions[axis])
-                terms.append(rows[offset] * weight[:, None])
-            decoded = decode_lows + neumaier_sum(terms) / maximum * decode_spans
-        return clipped(decoded, range_lows, range_highs)
+            # One at a time interpolates only along the inputs whose fraction is not 0: the
+            # rows that share those inputs go together.
+            for chosen, axes in moving_groups(fractions):
+                group_count = len(chosen)
+                corners = 1 << len(axes)
+                batch_cost = BATCH_GROUP_COST + corners * (
+                    BATCH_CORNER_COST + group_count * BATCH_TERM_COST
+                )
+                scalar_cost = group_count * (
+                    len(sizes) * SCALAR_INPUT_COST + corners * len(ranges) * SCALAR_TERM_COST
+                )
+                if scalar_cost < batch_cost:
+                    for row in chosen.tolist():
+                        outputs[row] = evaluate(*values[row].tolist())
+                    continue
+                base = lowers[0][chosen] * strides[0]
+                for axis in range(1, len(sizes)):
+                    base = base + lowers[axis][chosen] * strides[axis]
+                steps = [
+                    (uppers[axis][chosen] - lowers[axis][chosen]) * strides[axis] for axis in axes
+                ]
+                outputs[chosen] = interpolated(
+                    base, steps, [fractions[axis][chosen] for axis in axes]
+                )
+        return outputs
+
+    def batch_sampled(inputs: Any) -> Any:
+        values = numpy.asarray(inputs, dtype=numpy.float64)
+        if values.ndim == 1:
+            values = values[:, None]
+        if values.ndim != 2 or values.shape[1] != len(sizes):
+            raise ValueError("invalid sampled function input count")
+        if len(values) <= SAMPLED_BATCH_ROWS:
+            return batch_chunk(values)
+        return numpy.concatenate(
+            [
+                batch_chunk(values[start : start + SAMPLED_BATCH_ROWS])
+                for start in range(0, len(values), SAMPLED_BATCH_ROWS)
+            ]
+        )
 
     return with_batch(evaluate, batch_sampled)
 
