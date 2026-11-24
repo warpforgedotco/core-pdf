@@ -37,26 +37,34 @@ DeviceCMYK; see 8.6.5.7)", an implicit conversion of a CIE-based space whose con
 colour space (including other cases of DeviceCMYK)" the source's value in every component.
 
 A paint's marks are a mask of the process components, CYAN | MAGENTA | YELLOW | BLACK, with
-SPOT when its space also names a spot colorant, or None when it marks all four. A process
-colorant named in a Separation or DeviceN space is painted directly: its tint is that
-colorant's value (8.6.6.4), whatever the alternate space, and a component the space does not
-name keeps the backdrop's exactly. That holds for a sampled image and a shading too: an
+SPOT and the number of the plate its spot colorants stand on (spot_plate) when its space also
+names a spot colorant. ALL_PROCESS alone is a paint overprinting with every process component
+marked, which keeps the spot plates under it ("Spot colourant" with OP true is Cb, Table
+146), and None a paint that does not overprint, which erases them (0 with OP false); a paint
+naming a spot colorant that does not overprint has OFF too, and replaces its own spots' plate
+while it erases every other colorant.
+
+A process colorant named in a Separation or DeviceN space is painted directly: its tint is
+that colorant's value (8.6.6.4), whatever the alternate space, and a component the space does
+not name keeps the backdrop's exactly. That holds for a sampled image and a shading too: an
 image's samples are tints before the tint transform, and a shading's function gives tints,
 so in a space naming process colorants alone the renderer paints those tints rather than the
 alternate's conversion (process_color), which would put ink in the components the space does
-not name. A
-DeviceCMYK colour a DefaultCMYK space remaps is no DeviceCMYK colour: "Provisions in this
-standard that apply specifically to device colour spaces are then not applicable" (8.6.5.6),
-so its marks are those of the default space. A spot colorant, which a CMYK raster has no
-plate for, adds its alternate colour's tints to the backdrop's, clamped at full, as a press's
-separate plate of it would print over the process inks (the composite MuPDF's overprint
-simulation makes of spot plates). A spot overprinting the same spot therefore adds again,
-where Table 146 gives the source's value for "Spot colourant named in source space" and a
-press's plate would be replaced: a known difference, until spots get plates of their own.
+not name. A DeviceCMYK colour a DefaultCMYK space remaps is no DeviceCMYK colour: "Provisions
+in this standard that apply specifically to device colour spaces are then not applicable"
+(8.6.5.6), so its marks are those of the default space.
+
+A spot colorant, for which a CMYK group has no component, is kept on a plate of its own while
+the group paints (render.raster_spots), its alternate colour's tints standing for it: a spot
+overprinting the same spot replaces it, as Table 146 gives the source's value for "Spot
+colourant named in source space", and the plates add to the process inks, clamped at full,
+when the group ends, as a press's separate plate of the spot would print over them (the
+composite MuPDF's overprint simulation makes of its spot plates).
 """
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Sequence
 
 from core_pdf.impl.base.values import recover_pdf_name
@@ -68,9 +76,14 @@ MAGENTA = 2
 YELLOW = 4
 BLACK = 8
 ALL_PROCESS = CYAN | MAGENTA | YELLOW | BLACK
-# Set in a paint's marks when its space names a spot colorant: the components it does not
-# mark take its alternate colour's tints added to the backdrop's, rather than keeping it.
+# Set in a paint's marks when its space names a spot colorant: its alternate colour's tints
+# in the components it does not mark stand for its spots, on a plate of their own
+# (render.raster_spots), numbered by the bits from SPOT_SHIFT up (spot_plate).
 SPOT = 16
+# Set with SPOT for a paint naming a spot colorant that does not overprint: it replaces its
+# spots' plate and erases every other colorant (Table 146, OP false).
+OFF = 32
+SPOT_SHIFT = 6
 PROCESS_COLORANTS: dict[str, int] = {
     "Cyan": CYAN,
     "Magenta": MAGENTA,
@@ -91,22 +104,52 @@ CMYK_MARKS = (CYAN, MAGENTA, YELLOW, BLACK)
 def colorant_marks(kind: str, names: Sequence[str], *, device: bool = True) -> int | None:
     """The process components a Separation or DeviceN space naming names marks: each
     process colorant it names, and none for a spot colorant or None (8.6.6.4, 8.6.6.5), with
-    SPOT for a spot colorant; the separation All marks every component. device: the paint
-    lands in the device's native DeviceCMYK (capture.recording.TextState.device_cmyk_group);
-    elsewhere a space naming a process colorant
-    "shall be converted to its alternate colour space" (11.7.3), a process colour space
+    SPOT and the spot colorants' plate (spot_plate) for a spot colorant; the separation All
+    marks every component. device: the paint lands in the device's native DeviceCMYK
+    (capture.recording.TextState.device_cmyk_group); elsewhere a space naming a process
+    colorant "shall be converted to its alternate colour space" (11.7.3), a process colour space
     whose every component takes the source's value (Table 146), so it marks all four."""
     if kind == "Separation" and tuple(names) == ("All",):
         return None
     if not device and any(name in PROCESS_COLORANTS for name in names):
         return None
     marks = 0
+    spots = set()
     for name in names:
         if name in PROCESS_COLORANTS:
             marks |= PROCESS_COLORANTS[name]
         elif name != "None":
-            marks |= SPOT
-    return None if marks & ALL_PROCESS == ALL_PROCESS else marks
+            spots.add(name)
+    if marks & ALL_PROCESS == ALL_PROCESS:
+        return None
+    if spots:
+        marks |= SPOT | spot_plate(spots) << SPOT_SHIFT
+    return marks
+
+
+def spot_plate(names: set[str]) -> int:
+    """The number of the plate a paint naming the spot colorants names paints on: the same
+    for the same set in any order, from a CRC-32 of the names, whose collisions between the
+    few spots of a page are negligible; never 0."""
+    return zlib.crc32("\0".join(sorted(names)).encode("utf-8", "surrogatepass")) | 1 << 32
+
+
+def spot_key(marks: int | None) -> int:
+    """The plate a paint's spot colorants stand on (spot_plate), or 0 for none."""
+    return marks >> SPOT_SHIFT if marks is not None and marks & SPOT else 0
+
+
+def knockout_marks(marks: int | None) -> int | None:
+    """The marks of a paint that does not overprint, given those its space would have if it
+    did: OFF with them when they name a spot colorant, whose plate it replaces, and None,
+    erasing every plate, for any other."""
+    return marks | OFF if marks is not None and marks & SPOT else None
+
+
+def paints_tints(marks: int | None) -> bool:
+    """Whether a paint with marks overprints in a space naming process colorants alone, whose
+    tints it paints directly (process_color)."""
+    return marks is not None and not marks & SPOT and marks != ALL_PROCESS
 
 
 @cites(
@@ -219,7 +262,7 @@ def raw_overprint_marks(value: object, *, device: bool = True) -> int | None:
     overprint mode applies to them (Table 146 lists DeviceCMYK "not in a sampled image"
     alone). A Separation or DeviceN space marks the colorants it names, as for any paint;
     its process colorants' tints are painted directly (process_color), and its spot
-    colorants' alternate tints add to the backdrop's."""
+    colorants stand on a plate of their own (render.raster_spots)."""
     seen: set[int] = set()
     while isinstance(value, (list, tuple)) and value and id(value) not in seen:
         seen.add(id(value))

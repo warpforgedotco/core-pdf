@@ -20,7 +20,7 @@ from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.graphics.color_spec import ColorSpace
 from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
-from core_pdf.impl.graphics.overprint import SPOT, process_color, process_indices
+from core_pdf.impl.graphics.overprint import paints_tints, process_color, process_indices
 from core_pdf.impl.graphics.shading import (
     DEVICE_COMPONENTS,
     FunctionGeometry,
@@ -365,8 +365,7 @@ def process_space(
     where it does not overprint."""
     if self.space_mode is not SpaceMode.CMY and self.space_mode is not SpaceMode.BLACK:
         return None
-    marks = item.payload.get("fill_overprint")
-    if not self.overprint_enabled or marks is None or marks & SPOT:
+    if not self.overprint_enabled or not paints_tints(item.payload.get("fill_overprint")):
         return None
     evaluator = shading.evaluator
     if not isinstance(evaluator, SpaceEvaluator) or process_indices(evaluator.space) is None:
@@ -1205,4 +1204,5 @@ def blank_sibling(
         resources=self.resources,
     )
     sibling.overprint_enabled = self.overprint_enabled
+    sibling.overprints = self.overprints
     return sibling, view

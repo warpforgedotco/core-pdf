@@ -15,8 +15,10 @@ from core_pdf.impl.capture.records import PatternPaint, ShadingPattern, TilingPa
 from core_pdf.impl.graphics.color import color_operands_to_cmyk, color_operands_to_srgb
 from core_pdf.impl.graphics.color_spec import GRAY_RGB_KINDS
 from core_pdf.impl.graphics.overprint import (
-    SPOT,
+    ALL_PROCESS,
+    knockout_marks,
     overprint_marks,
+    paints_tints,
     process_color,
     raw_overprint_marks,
     shading_space,
@@ -106,10 +108,12 @@ def capture_color(self: TextState, *, stroke: bool) -> tuple[float, ...] | None:
 
 def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
     """The process components a paint with the current stroking or nonstroking colour
-    marks while that overprint parameter is on (graphics.overprint.overprint_marks), or None
-    for all four, as when it is off."""
+    marks while that overprint parameter is on (graphics.overprint.overprint_marks), or
+    ALL_PROCESS for all four. With it off, None, or in a CMYK blending space, where its
+    spots have plates, knockout_marks of a space naming a spot colorant."""
     graphics = self.graphics
-    if not (graphics.stroke_overprint if stroke else graphics.fill_overprint):
+    on = graphics.stroke_overprint if stroke else graphics.fill_overprint
+    if not on and not self.capture_cmyk:
         return None
     space = graphics.stroke_space if stroke else graphics.fill_space
     pattern = graphics.stroke_pattern if stroke else graphics.fill_pattern
@@ -117,7 +121,7 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
         # A shading pattern paints as its shading would with sh (11.6.7): it marks what
         # the shading's colour space, remapped where it paints, names.
         if not isinstance(pattern, model.ShadingPattern):
-            return None
+            return ALL_PROCESS if on else None
         marks = raw_overprint_marks(
             shading_space(self.capture_shading_dictionary(pattern.dictionary)),
             device=self.capture_device,
@@ -130,8 +134,17 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
             current_color=True,
             device=self.capture_device,
         )
-    if marks is not None:
-        self.uses_overprint = True
+    return self.overprint_result(marks, on=bool(on))
+
+
+def overprint_result(self: TextState, marks: int | None, *, on: bool) -> int | None:
+    """A paint's marks, given those of its space, marks: with its overprint parameter on,
+    them, or ALL_PROCESS for all four; off, knockout_marks."""
+    if not on:
+        return knockout_marks(marks)
+    if marks is None:
+        return ALL_PROCESS
+    self.uses_overprint = True
     return marks
 
 
@@ -142,7 +155,7 @@ def overprint_color(
     Separation or DeviceN colour naming process colorants alone paints their tints directly
     (graphics.overprint.process_color), not its alternate's conversion; any other paint keeps
     captured."""
-    if marks is None or marks & SPOT or not self.capture_cmyk:
+    if not paints_tints(marks) or not self.capture_cmyk:
         return captured
     graphics = self.graphics
     space = graphics.stroke_space if stroke else graphics.fill_space
@@ -156,12 +169,12 @@ def overprint_color(
 def capture_space_overprint(self: TextState, space: object) -> int | None:
     """capture_overprint for an image or a shading painted in space, a resolved ColorSpace
     entry, which the nonstroking overprint parameter governs."""
-    if not self.graphics.fill_overprint:
+    on = self.graphics.fill_overprint
+    if not on and not self.capture_cmyk:
         return None
-    marks = raw_overprint_marks(space, device=self.capture_device)
-    if marks is not None:
-        self.uses_overprint = True
-    return marks
+    return self.overprint_result(
+        raw_overprint_marks(space, device=self.capture_device), on=bool(on)
+    )
 
 
 # The entries of a shading dictionary the renderer reads, resolved when it is captured.

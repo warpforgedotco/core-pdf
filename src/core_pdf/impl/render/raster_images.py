@@ -15,7 +15,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import ByteBuffer, UInt8Array, uint8_view
 from core_pdf.impl.base.geometry import points_bbox, rect_tuple
 from core_pdf.impl.graphics.images import PreparedImage, image_color_key_mask_is_shape
-from core_pdf.impl.graphics.overprint import SPOT
+from core_pdf.impl.graphics.overprint import paints_tints
 from core_pdf.impl.render.blend import blend_visible_pixels, declared_blend, resolve_constant_alpha
 from core_pdf.impl.render.model import ImagePaintItem
 from core_pdf.impl.render.paths import intersect_box
@@ -489,12 +489,11 @@ def blit_image(self: RasterTarget, item: ImagePaintItem) -> None:
     if raster.has_alpha and soft_mask is None:
         source_alpha = raster.array[:, :, components].reshape(-1)
     if self.space_mode:
-        marks = item.fill_overprint
         converted, components = self.space_samples(
             item.source,
             converted,
             components,
-            process=self.overprint_enabled and marks is not None and not marks & SPOT,
+            process=self.overprint_enabled and paints_tints(item.fill_overprint),
         )
     device_extent = max(
         1,

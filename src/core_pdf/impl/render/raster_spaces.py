@@ -57,6 +57,7 @@ from core_pdf.impl.render.model import (
     RasterGroup,
     SpaceMode,
 )
+from core_pdf.impl.render.raster_spots import apply_plates
 from core_pdf.impl.spec.citations import cites
 from core_pdf.impl.spec.s_08_graphics.image_spec import ImageSource
 from core_pdf.impl.spec.s_11_transparency.blending_space import BlendingSpace, group_blending_space
@@ -286,7 +287,11 @@ def paint_space_group(
                 self.paint_items(members)
             finally:
                 self.pop_scope()
-                passes.append(self.pop_group())
+                group = self.pop_group()
+                # A CMYK pass's spot plates print over its process components (raster_spots);
+                # its parent, in another space, takes none of them.
+                apply_plates(group)
+                passes.append(group)
     finally:
         self.set_space_mode(parent_mode, parent_profile)
         if parent_mode is SpaceMode.RGB:
@@ -323,6 +328,7 @@ def luminosity_mask_channel(
         pixel = numpy.array((red, green, blue, 255), dtype=numpy.uint8).view(numpy.uint32)
         view.reshape(-1).view(numpy.uint32).fill(pixel[0])
         nested.paint_items(items, translation=mask.offset)
+        apply_plates(nested.buffer_stack[0])
         views.append(view)
     if mask.colorimetric:
         return colorimetric_luminosity_channel(views, profile, mask.transfer is not None)

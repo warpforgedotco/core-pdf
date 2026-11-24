@@ -18,6 +18,7 @@ from core_pdf.impl.capture.records import CapturedPath
 from core_pdf.impl.render.blend import BlendOp, composite_blended_group_numpy
 from core_pdf.impl.render.model import PixelWindow, RasterGroup, SoftMaskPlane
 from core_pdf.impl.render.raster_overprint import composite_overprint_layer
+from core_pdf.impl.render.raster_spots import KnockoutElement
 from core_pdf.impl.render.raster_support import (
     ElementaryScratch,
     PixelBox,
@@ -47,6 +48,12 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
     rows, columns = window
     if parent.painted_boxes is not None:
         self.record_knockout_paint((columns.start, rows.start, columns.stop, rows.stop))
+    # A group that changes spot plates (raster_spots) composites them once its colour has.
+    before = (
+        parent.view[rows, columns, 3].copy()
+        if self.involves_plates(parent, group, rows, columns)
+        else None
+    )
     shape = group.source_shape[rows, columns] if group.source_shape is not None else None
     if shape is not None and group.alpha_is_shape:
         shape = shape * group.source_scale
@@ -63,9 +70,10 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
     ):
         assert parent.source_alpha is not None
         assert shape is not None
+        initial_view = self.pixel_view(parent.backdrop)[rows, columns]
         composite_elementary_knockout(
             parent.view[rows, columns],
-            self.pixel_view(parent.backdrop)[rows, columns],
+            initial_view,
             group.view[rows, columns],
             group.source_alpha[rows, columns],
             parent.source_alpha[rows, columns],
@@ -73,6 +81,24 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
             parent.source_shape[rows, columns] if parent.source_shape is not None else None,
         )
         self.extend_paint_window(rows, columns)
+        if before is not None:
+            # The element is the group's paint where its alpha rounds to a byte above 0, and
+            # the initial backdrop elsewhere, as the kernel takes it.
+            quantized = numpy.rint(
+                numpy.clip(group.source_alpha[rows, columns], 0.0, 1.0) * 255.0
+            ).astype(numpy.uint8)
+            element_alpha = numpy.where(
+                quantized > 0, group.view[rows, columns, 3], initial_view[..., 3]
+            )
+            self.composite_plates(
+                parent,
+                group,
+                rows,
+                columns,
+                before,
+                quantized,
+                KnockoutElement(initial_view[..., 3], element_alpha, shape),
+            )
         return
     if parent.knockout:
         assert parent.source_alpha is not None
@@ -92,11 +118,23 @@ def composite_group(self: RasterTarget, group: RasterGroup) -> None:
             effective_alpha,
             shape,
         )
+        if before is not None:
+            self.composite_plates(
+                parent,
+                group,
+                rows,
+                columns,
+                before,
+                effective_alpha,
+                KnockoutElement(initial[..., 3], element[..., 3], shape),
+            )
     else:
         effective_alpha = self.composite_group_into(
             group, self.pixel_array[rows, columns], rows, columns
         )
         self.record_source_alpha(rows, columns, effective_alpha)
+        if before is not None:
+            self.composite_plates(parent, group, rows, columns, before, effective_alpha, None)
     if shape is not None and parent.source_shape is not None:
         parent_shape = parent.source_shape[rows, columns]
         parent_shape += (1.0 - parent_shape) * shape
@@ -285,6 +323,7 @@ def push_scratch_group(
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             painted_boxes=[] if knockout else None,
+            spots=self.child_plates(parent, False),
         )
     )
     self.sync_group_mirrors()
@@ -348,6 +387,7 @@ def push_group(
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             painted_boxes=[] if knockout else None,
+            spots=self.child_plates(parent, isolated),
         )
     )
     self.sync_group_mirrors()

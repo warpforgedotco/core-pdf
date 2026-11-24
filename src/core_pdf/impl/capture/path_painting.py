@@ -132,14 +132,15 @@ def paint_path(self: TextState, state: object, source: PdfPath, kind: str, fill_
         captured_stroke = last[4]
     else:
         captured_stroke = self.capture_color(stroke=True)
+    # A paint that does not overprint has marks only for a spot plate (capture_overprint).
     fill_overprint = (
         self.capture_overprint(stroke=False)
-        if graphics.fill_overprint and fills and fill_paints
+        if (graphics.fill_overprint or self.capture_cmyk) and fills and fill_paints
         else None
     )
     stroke_overprint = (
         self.capture_overprint(stroke=True)
-        if graphics.stroke_overprint and strokes and stroke_paints
+        if (graphics.stroke_overprint or self.capture_cmyk) and strokes and stroke_paints
         else None
     )
     if fill_overprint is not None:

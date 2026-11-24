@@ -1014,6 +1014,7 @@ class TextState(RecoveringTextState):
     initial_pattern = paint_sources.initial_pattern
     capture_color = paint_sources.capture_color
     capture_overprint = paint_sources.capture_overprint
+    overprint_result = paint_sources.overprint_result
     overprint_color = paint_sources.overprint_color
     capture_space_overprint = paint_sources.capture_space_overprint
     capture_shading_dictionary = paint_sources.capture_shading_dictionary

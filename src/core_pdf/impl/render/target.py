@@ -12,6 +12,7 @@ from core_pdf.impl.render import raster_images as images
 from core_pdf.impl.render import raster_overprint as overprint
 from core_pdf.impl.render import raster_shading as shading
 from core_pdf.impl.render import raster_spaces as spaces
+from core_pdf.impl.render import raster_spots as spots
 from core_pdf.impl.render import raster_strokes as strokes
 from core_pdf.impl.render.blend import blend_context
 from core_pdf.impl.render.clipping import ClipState, DeviceGrid
@@ -64,6 +65,8 @@ class RasterTarget:
         "space_images",
         "overprint_enabled",
         "overprint_scratch",
+        "overprints",
+        "plate_page",
     )
     pixels: bytearray
     pixel_array: UInt8Array
@@ -108,6 +111,12 @@ class RasterTarget:
     # overprinting paint is painted into, by group depth.
     overprint_enabled: bool
     overprint_scratch: dict[int, OverprintScratch]
+    # Whether some paint of the page overprints: only then does a paint naming a spot that
+    # does not overprint keep a plate (raster_spots), which nothing else could change.
+    overprints: bool
+    # The blank page a paint erasing spot plates is drawn on again to find its alpha
+    # (raster_spots), made when one first does.
+    plate_page: bytearray | None
 
     KNOCKOUT_DISJOINT_LIMIT = 96
 
@@ -154,6 +163,8 @@ class RasterTarget:
         self.space_images = {}
         self.overprint_enabled = True
         self.overprint_scratch = {}
+        self.overprints = True
+        self.plate_page = None
         if group_alpha is not None:
             self.push_group(bytearray(len(pixels)), group_alpha, None)
             self.group_floor = len(self.buffer_stack)
@@ -257,3 +268,12 @@ class RasterTarget:
     paint_overprinting = overprint.paint_overprinting
     fill_stroke_channels = overprint.fill_stroke_channels
     paint_fill_stroke_apart = overprint.paint_fill_stroke_apart
+    marks_channels = overprint.marks_channels
+
+    # Spot colorant plates in a DeviceCMYK group.
+    child_plates = spots.child_plates
+    erases_plates = spots.erases_plates
+    paints_apart = spots.paints_apart
+    erase_under = spots.erase_under
+    involves_plates = spots.involves_plates
+    composite_plates = spots.composite_plates

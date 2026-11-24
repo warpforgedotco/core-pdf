@@ -24,6 +24,12 @@ expected CMYK becomes sRGB through the built-in DeviceCMYK profile, as a CMYK gr
 does, and each pixel must be within TOLERANCE of it. Other pages must render exactly as a
 companion page does: overprinting RGB colour, an RGB page group, overprint off.
 
+A spot colorant keeps a plate of its own while its CMYK group paints, added to the process
+inks when the group ends: a spot over the same spot replaces it ("Spot colourant named in
+source space" is Cs, Table 146), whatever paints it, an overprinting paint keeps it and one
+that does not overprint erases it. The plates must reach the page from tiling cells and
+knockout groups, and cost memory for the area painted on them, not the page.
+
 With --mupdf (and PyMuPDF installed: uv run --with pymupdf), each page is also rendered by
 MuPDF with the overprint simulation mutool draw applies by default, the page's spot
 colorants composited from separations of their own, and the mean difference from core's
@@ -36,6 +42,7 @@ uv run --all-packages python scripts/check_overprint.py [--mupdf]
 from __future__ import annotations
 
 import sys
+import tracemalloc
 from collections.abc import Sequence
 from importlib import resources
 from typing import NamedTuple
@@ -890,47 +897,372 @@ def auto_cases() -> list[Case]:
     ]
 
 
-def spot_cases() -> list[Case]:
-    """A spot colorant over another spot adds to it, and a process paint that does not
-    overprint erases it. Known difference, reported rather than failed: a spot over the same
-    spot adds again too, where Table 146 gives the source's value for a spot colorant the
-    source space names and MuPDF, keeping a separation per spot, replaces it; that waits for
-    spot plates of their own."""
-    spot = (0.0, 0.5, 1.0, 0.0)
-    spot2 = (0.3, 0.0, 0.0, 0.0)
-    light = (0.0, 0.2, 0.4, 0.0)
+# The spot colorant Spot's alternate at tint 1 and at 0.4: c m y k of 0, t / 2, t, 0.
+SPOT_FULL: Cmyk = (0.0, 0.5, 1.0, 0.0)
+SPOT_LIGHT: Cmyk = (0.0, 0.2, 0.4, 0.0)
+# A cyan backdrop, then Spot at tint 1, overprinting, over x 20 to 180: what a paint of
+# Spot at 0.4 over the paint's rectangle replaces.
+SPOT_BACKDROP = b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f "
+# The same over the whole page, for text, whose glyph covers the pixel sampled at 48, 100.
+SPOT_PAGE = b"1 0 0 0 k 0 0 200 200 re f /On0 gs /Spot cs 1 sc 0 0 200 200 re f "
+SPOT_TEXT_SAMPLES = (((48, 100), add(CYAN, SPOT_LIGHT, "")), ((190, 190), add(CYAN, SPOT_FULL, "")))
+# A replaced spot: cyan and the full spot where only the backdrop is, cyan and the light one
+# where the paint is over it, and the light one alone.
+SPOT_REPLACED = regions(add(CYAN, SPOT_FULL, ""), SPOT_LIGHT, add(CYAN, SPOT_LIGHT, ""))
+SPOT_TEXT = b"BT /F 150 Tf 30 50 Td (H) Tj ET"
+SPOT_IMAGE = stream(
+    b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+    b"/ColorSpace " + SPOT_SEPARATION,
+    bytes([102]),
+)
+MAGENTA_IMAGE = stream(
+    b"/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+    b"/ColorSpace /DeviceCMYK",
+    bytes([0, 255, 0, 0]),
+)
+
+
+def constant_shading(space: bytes, values: bytes) -> bytes:
+    """An axial shading in space whose function gives values everywhere."""
+    return (
+        b"<< /ShadingType 2 /ColorSpace "
+        + space
+        + b" /Coords [0 0 200 0] /Function << /FunctionType 2 /Domain [0 1] /C0 ["
+        + values
+        + b"] /C1 ["
+        + values
+        + b"] /N 1 >> >>"
+    )
+
+
+def spot_tiling(content: bytes, cell: bytes, *, group: bytes = CMYK_GROUP) -> bytes:
+    """A page whose content fills with pattern T, a 40 by 40 tiling whose cell paints cell
+    (object 10), with the page's graphics states and colour spaces."""
+    pattern = stream(
+        b"/PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 40 40] /XStep 40 /YStep 40 "
+        b"/Resources << " + EXTGSTATES + SPACES + b">>",
+        cell,
+    )
+    return document(group, content, [pattern], resources_extra=b"/Pattern << /T 10 0 R >> ")
+
+
+def knockout_form(content: bytes, *, isolated: bool) -> bytes:
+    """A form XObject whose DeviceCMYK knockout group paints content."""
+    return stream(
+        b"/Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+        b"/Group << /S /Transparency /CS /DeviceCMYK /K true /I "
+        + (b"true" if isolated else b"false")
+        + b" >> /Resources << "
+        + EXTGSTATES
+        + SPACES
+        + b"/Font << /F << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>",
+        content,
+    )
+
+
+def spot_replace_cases() -> list[Case]:
+    """A spot colorant over the same spot replaces its tint, whatever paints it: "Spot
+    colourant named in source space" takes Cs (Table 146)."""
+    paint = b"/On0 gs "
+    shading = constant_shading(SPOT_SEPARATION, b"0.4")
     return [
         Case(
-            "a spot over the same spot replaces its tint",
+            "a spot fill over the same spot replaces its tint",
+            document(CMYK_GROUP, SPOT_BACKDROP + paint + b"0.4 sc " + PAINT_RECT + b" f"),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot stroke over the same spot replaces its tint",
+            document(
+                CMYK_GROUP, SPOT_BACKDROP + paint + b"/Spot CS 0.4 SC 80 w 60 100 m 180 100 l S"
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "spot text over the same spot replaces its tint",
+            document(CMYK_GROUP, SPOT_PAGE + b"0.4 sc " + SPOT_TEXT),
+            SPOT_TEXT_SAMPLES,
+        ),
+        Case(
+            "spot text in a knockout group over the same spot replaces its tint",
             document(
                 CMYK_GROUP,
-                b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f "
-                b"0.4 sc " + PAINT_RECT + b" f",
+                SPOT_PAGE + b"/X10 Do",
+                [knockout_form(b"/On0 gs /Spot cs 0.4 sc " + SPOT_TEXT, isolated=False)],
             ),
-            regions(add(CYAN, spot, ""), light, add(CYAN, light, "")),
-            known=True,
+            SPOT_TEXT_SAMPLES,
         ),
+        Case(
+            "a spot image over the same spot replaces its tint",
+            document(CMYK_GROUP, SPOT_BACKDROP + paint + PLACE, [SPOT_IMAGE]),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot image mask over the same spot replaces its tint",
+            document(CMYK_GROUP, SPOT_BACKDROP + paint + b"0.4 sc " + PLACE, [IMAGE_MASK]),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot shading over the same spot replaces its tint",
+            with_shadings(
+                document(CMYK_GROUP, SPOT_BACKDROP + paint + b"q " + PAINT_RECT + b" W n /Sh sh Q"),
+                b"/Sh " + shading,
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot shading pattern over the same spot replaces its tint",
+            document(
+                CMYK_GROUP,
+                SPOT_BACKDROP + paint + b"/Pattern cs /P scn " + PAINT_RECT + b" f",
+                [b"<< /PatternType 2 /Shading " + shading + b" >>"],
+                resources_extra=b"/Pattern << /P 10 0 R >> ",
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot tiling cell over the same spot replaces its tint",
+            spot_tiling(
+                SPOT_BACKDROP + b"/Pattern cs /T scn " + PAINT_RECT + b" f",
+                b"/On0 gs /Spot cs 0.4 sc 0 0 40 40 re f",
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot tiling cell's plate reaches the page, for the same spot to replace",
+            spot_tiling(
+                b"1 0 0 0 k " + BACKDROP_RECT + b"/Pattern cs /T scn 20 20 160 160 re f "
+                b"/On0 gs /Spot cs 0.4 sc " + PAINT_RECT + b" f",
+                b"/On0 gs /Spot cs 1 sc 0 0 40 40 re f",
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "B in a spot over the same spot replaces its tint",
+            document(
+                CMYK_GROUP, SPOT_BACKDROP + paint + b"0.4 sc /Spot CS 0.4 SC 10 w 60 60 120 80 re B"
+            ),
+            SPOT_REPLACED,
+        ),
+        Case(
+            "a spot over the same spot painted without overprinting replaces its tint",
+            document(
+                CMYK_GROUP,
+                b"1 0 0 0 k " + BACKDROP_RECT + b"/Off gs /Spot cs 1 sc 20 20 160 160 re f "
+                b"/On0 gs 0.4 sc " + PAINT_RECT + b" f",
+            ),
+            # Without overprinting, the full spot erases the cyan under it.
+            regions(SPOT_FULL, SPOT_LIGHT, SPOT_LIGHT),
+        ),
+        Case(
+            "a spot over the same spot replaces its tint on a simulated page",
+            document(b"", SPOT_BACKDROP + paint + b"0.4 sc " + PAINT_RECT + b" f"),
+            SPOT_REPLACED,
+            "simulate",
+        ),
+    ]
+
+
+# A spot over the backdrop's rectangle, which an overprinting process paint keeps.
+SPOT_UNDER = b"/On0 gs /Spot cs 1 sc " + BACKDROP_RECT
+
+
+def spot_erase_cases() -> list[Case]:
+    """A process paint that does not overprint erases a spot under it, whatever paints it
+    (OP false: 0 for a spot colourant the source does not name, Table 146), and one that
+    overprints keeps it (Cb), even when it marks every process component: under overprint
+    mode 0, a gray level, an ICCBased CMYK colour."""
+    erased = regions(SPOT_FULL, MAGENTA, MAGENTA)
+    off = b"/Off gs "
+    magenta_shading = constant_shading(b"/DeviceCMYK", b"0 1 0 0")
+    kept = (0.0, 1.0, 1.0, 0.0)
+    return [
+        Case(
+            "a process fill without overprinting erases a spot",
+            document(CMYK_GROUP, SPOT_UNDER + off + b"0 1 0 0 k " + PAINT_RECT + b" f"),
+            erased,
+        ),
+        Case(
+            "a process stroke without overprinting erases a spot",
+            document(CMYK_GROUP, SPOT_UNDER + off + b"0 1 0 0 K 80 w 60 100 m 180 100 l S"),
+            erased,
+        ),
+        Case(
+            "process text without overprinting erases a spot",
+            document(
+                CMYK_GROUP,
+                b"/On0 gs /Spot cs 1 sc 0 0 200 200 re f " + off + b"0 1 0 0 k " + SPOT_TEXT,
+            ),
+            (((48, 100), MAGENTA), ((190, 190), SPOT_FULL)),
+        ),
+        Case(
+            "a process image without overprinting erases a spot",
+            document(CMYK_GROUP, SPOT_UNDER + off + PLACE, [MAGENTA_IMAGE]),
+            erased,
+        ),
+        Case(
+            "a process image mask without overprinting erases a spot",
+            document(CMYK_GROUP, SPOT_UNDER + off + b"0 1 0 0 k " + PLACE, [IMAGE_MASK]),
+            erased,
+        ),
+        Case(
+            "a process shading without overprinting erases a spot",
+            with_shadings(
+                document(CMYK_GROUP, SPOT_UNDER + off + b"q " + PAINT_RECT + b" W n /Sh sh Q"),
+                b"/Sh " + magenta_shading,
+            ),
+            erased,
+        ),
+        Case(
+            "B without overprinting erases a spot",
+            document(CMYK_GROUP, SPOT_UNDER + off + b"0 1 0 0 k 0 1 0 0 K 10 w 60 60 120 80 re B"),
+            erased,
+        ),
+        Case(
+            "B without overprinting erases a spot where shape is tracked",
+            document(
+                CMYK_GROUP,
+                SPOT_UNDER + b"/X10 Do",
+                [
+                    knockout_form(
+                        off + b"0 1 0 0 k 0 1 0 0 K 10 w 60 60 120 80 re B", isolated=False
+                    )
+                ],
+            ),
+            erased,
+        ),
+        Case(
+            "overprint mode 0 marks every process component and keeps a spot",
+            document(CMYK_GROUP, SPOT_UNDER + b"/On0 gs 0 1 0 0 k " + PAINT_RECT + b" f"),
+            regions(SPOT_FULL, MAGENTA, kept),
+        ),
+        Case(
+            "an overprinting gray level keeps a spot",
+            document(CMYK_GROUP, SPOT_UNDER + b"/On0 gs 0.5 g " + PAINT_RECT + b" f"),
+            regions(SPOT_FULL, (0.0, 0.0, 0.0, 0.5), (0.0, 0.5, 1.0, 0.5)),
+        ),
+        Case(
+            "an overprinting ICCBased CMYK colour keeps a spot",
+            document(CMYK_GROUP, SPOT_UNDER + b"/On0 gs /ICC cs 0 1 0 0 sc " + PAINT_RECT + b" f"),
+            regions(SPOT_FULL, MAGENTA, kept),
+        ),
+    ]
+
+
+def spot_cases() -> list[Case]:
+    """A spot over another spot adds to it, and in a knockout group a paint knocks out a
+    spot an earlier paint of the group left, though not the one under the group."""
+    spot2 = (0.3, 0.0, 0.0, 0.0)
+    half_magenta = (0.0, 0.5, 0.0, 0.0)
+    return [
+        *spot_replace_cases(),
+        *spot_erase_cases(),
         Case(
             "a spot over another spot keeps both",
             document(
                 CMYK_GROUP,
                 b"/On0 gs /Spot cs 1 sc " + BACKDROP_RECT + b"/Spot2 cs 1 sc " + PAINT_RECT + b" f",
             ),
-            regions(spot, spot2, add(spot, spot2, "")),
+            regions(SPOT_FULL, spot2, add(SPOT_FULL, spot2, "")),
         ),
         Case(
-            "a process paint without overprinting erases a spot",
-            document(
-                CMYK_GROUP,
-                b"/On0 gs /Spot cs 1 sc "
+            "a spot over a tiling cell's process paint adds to it",
+            spot_tiling(
+                b"/Pattern cs /T scn "
                 + BACKDROP_RECT
-                + b"/Off gs 0 1 0 0 k "
+                + b"/On0 gs /Spot cs 1 sc "
                 + PAINT_RECT
                 + b" f",
+                b"/Off gs 1 0 0 0 k 0 0 40 40 re f",
             ),
-            regions(spot, MAGENTA, MAGENTA),
+            regions(CYAN, SPOT_FULL, add(CYAN, SPOT_FULL, "")),
+        ),
+        Case(
+            "a half-opaque paint in an isolated knockout group knocks out a spot",
+            document(
+                CMYK_GROUP,
+                # An opaque white backdrop, for the half-opaque paint to composite with in CMYK.
+                b"0 0 0 0 k 0 0 200 200 re f /X10 Do",
+                [
+                    knockout_form(
+                        b"/On0 gs /Spot cs 1 sc "
+                        + BACKDROP_RECT
+                        + b"/Half gs 0 1 0 0 k "
+                        + PAINT_RECT
+                        + b" f",
+                        isolated=True,
+                    )
+                ],
+            ),
+            regions(SPOT_FULL, half_magenta, half_magenta),
+        ),
+        Case(
+            "a half-opaque overprinting paint in a knockout group keeps the spot under it",
+            document(
+                CMYK_GROUP,
+                b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f /X10 Do",
+                [knockout_form(b"/Half gs 0 1 0 0 k " + PAINT_RECT + b" f", isolated=False)],
+            ),
+            regions(SPOT_FULL, (0.0, 1.0, 1.0, 0.0), (0.0, 1.0, 1.0, 0.0)),
         ),
     ]
+
+
+def spot_sames() -> list[Same]:
+    """Pages that must render the same with a spot plate as with the process colour of the
+    spot's alternate, in a strip at the bottom: a tiling cell overprinting the backdrop, in
+    Normal and in Multiply, composites with it either way."""
+    sames = []
+    for state in (b"/On1", b"/Mul"):
+        cell = state + b" gs 0 1 0 0 k 0 0 40 40 re f"
+        content = b"0.5 0 0 0 k " + BACKDROP_RECT + b"%s 0 0 200 20 re f /Pattern cs /T scn "
+        content += PAINT_RECT + b" f"
+        sames.append(
+            Same(
+                f"a tiling cell in {state.decode()[1:]} overprints its backdrop beside a spot",
+                spot_tiling(content.replace(b"%s", b"/On0 gs /Spot2 cs 1 sc"), cell),
+                spot_tiling(content.replace(b"%s", b"/Off gs 0.3 0 0 0 k"), cell),
+            )
+        )
+    return sames
+
+
+def memory_failures() -> list[str]:
+    """At 600 dpi, two small spot fills and spot text in a knockout group cost little more
+    memory than the same paint in a process colorant: a spot plate is as large as the paint
+    on it, not the page."""
+    text = knockout_form(
+        b"/On0 gs /Spot cs 0.4 sc BT /F 40 Tf 30 150 Td (Hi) Tj ET", isolated=False
+    )
+    content = (
+        b"1 0 0 0 k " + BACKDROP_RECT + b"/On0 gs /Spot cs 1 sc 30 30 20 20 re f "
+        b"/Spot2 cs 1 sc 120 120 20 20 re f /Off gs 0 1 0 0 k 35 35 5 5 re f /X10 Do"
+    )
+    process = content.replace(b"/Spot2 cs", b"/Mag cs").replace(b"/Spot cs", b"/Mag cs")
+    peaks = []
+    for page in (
+        document(CMYK_GROUP, content, [text]),
+        document(CMYK_GROUP, process, [text.replace(b"/Spot cs", b"/Mag cs")]),
+    ):
+        with PdfDocument(page) as pdf:
+            rendered = pdf.pages[0].render(RenderOptions())
+            tracemalloc.start()
+            try:
+                rendered.rasterize(scale=600 / 72)
+                peaks.append(tracemalloc.get_traced_memory()[1])
+            finally:
+                tracemalloc.stop()
+    side = round(SIZE * 600 / 72)
+    # The plane of the page the fill erasing a plate records its alpha on, a float each,
+    # and a quarter of the page's RGBA raster: less than a page-sized plate of either spot,
+    # three bytes a pixel, would take.
+    allowed = 4 * side * side + side * side
+    if peaks[0] - peaks[1] > allowed:
+        return [
+            f"spot plates at 600 dpi: peak {peaks[0] / 1e6:.1f} MB against {peaks[1] / 1e6:.1f} "
+            f"MB in process colorants, more than {allowed / 1e6:.1f} MB over"
+        ]
+    return []
 
 
 def text_failures() -> list[str]:
@@ -1185,16 +1517,17 @@ def main(argv: list[str]) -> int:
     failures = []
     for case in cases:
         failures.extend(check_case(case))
-    sames = [*same_cases(), *icc_group_sames()]
+    sames = [*same_cases(), *icc_group_sames(), *spot_sames()]
     for same in sames:
         failures.extend(check_same(same))
     failures.extend(text_failures())
     failures.extend(cyan_shading_failures())
+    failures.extend(memory_failures())
     for failure in failures:
         print(failure)
     if "--mupdf" in argv:
         mupdf_distances(cases)
-    print(f"{len(cases) + len(sames) + 1} overprint pages: {len(failures)} failures")
+    print(f"{len(cases) + len(sames) + 2} overprint pages: {len(failures)} failures")
     return 1 if failures else 0
 
 

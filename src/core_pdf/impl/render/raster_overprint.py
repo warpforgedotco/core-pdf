@@ -10,11 +10,14 @@ holds three additive components, the complements of cyan, magenta and yellow or 
 with a component it does not mark, it paints alone into a transparent layer of its own,
 which gives its colour and alpha at each pixel, soft mask, opacity and clip included; the
 layer then composites onto the group as 11.7.4.3 describes: the special overprinting blend
-mode B(cb, cs) takes cs for a marked component and, for one it does not mark, cb, or for
-a paint whose space names a spot colorant the backdrop's tint with the paint's own (its
-alternate colour's) added, clamped at full; and when the current blend mode is not Normal,
-the result is blended with it, as if the paint were a non-isolated, non-knockout group of
-its own.
+mode B(cb, cs) takes cs for a marked component and cb for one it does not mark; and when the
+current blend mode is not Normal, the result is blended with it, as if the paint were a
+non-isolated, non-knockout group of its own. A paint whose space names a spot colorant
+leaves its alternate colour's tints in the components it does not mark on a spot plate
+(raster_spots), which the group adds to its process components when it ends; with
+overprint off, as a press would print it, it erases the components it does not mark. Such a
+paint takes the layer only on a page that overprints somewhere: elsewhere no paint keeps a
+plate it could replace, and it paints its alternate colour as usual.
 
 In an RGB or gray space, the process components are not CMYK, and every paint marks them
 all (Table 146), so overprinting changes nothing and the paint takes the usual path.
@@ -28,7 +31,16 @@ from typing import TYPE_CHECKING, Any, cast
 lazy import numpy
 
 from core_pdf.impl.base.arrays import UInt8Array, uint8_image_view
-from core_pdf.impl.graphics.overprint import BLACK, CYAN, MAGENTA, SPOT, YELLOW
+from core_pdf.impl.graphics.overprint import (
+    ALL_PROCESS,
+    BLACK,
+    CYAN,
+    MAGENTA,
+    OFF,
+    SPOT,
+    YELLOW,
+    spot_key,
+)
 from core_pdf.impl.render.blend import BLEND_OP_MODES, BlendOp, blend_context
 from core_pdf.impl.render.model import (
     DisplayItem,
@@ -49,9 +61,10 @@ from core_pdf.impl.spec.standards import SemanticContext
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
-# Which of a pass's three components a paint marks, and whether its spot colorants add to
-# the others.
-type Channels = tuple[bool, bool, bool, bool]
+# Which of a pass's three components a paint marks; the plate its spot colorants stand on
+# (graphics.overprint.spot_plate), or 0; and whether it erases the components it does not
+# mark, as a paint naming a spot that does not overprint does.
+type Channels = tuple[bool, bool, bool, int, bool]
 
 
 class OverprintScratch:
@@ -68,8 +81,8 @@ class OverprintScratch:
 
 
 def paint_marks(item: PaintItemBase) -> int | None:
-    """The process components a paint item marks while overprinting, or None for all four:
-    its fill's, or a stroke's."""
+    """The process components a paint item marks while overprinting (graphics.overprint),
+    or None where it does not overprint: its fill's, or a stroke's."""
     if type(item) is PathPaintItem:
         if item.paint_kind is PathPaintKind.STROKE:
             return item.stroke_overprint
@@ -86,8 +99,10 @@ def overprint_channels(self: RasterTarget, item: PaintItemBase) -> Channels | No
     None when it marks them all and paints as usual. A fill and stroke paint apart first
     (raster_dispatch.paint_item)."""
     marks = paint_marks(item)
+    channels = self.marks_channels(marks)
     if (
-        type(item) is ImagePaintItem
+        channels is not None
+        and type(item) is ImagePaintItem
         and marks is not None
         and not marks & SPOT
         and not paints_process_samples(self, item)
@@ -95,7 +110,7 @@ def overprint_channels(self: RasterTarget, item: PaintItemBase) -> Channels | No
         # An image whose tints cannot be painted directly paints its alternate's colour,
         # which would put ink in the components it does not mark: it does not overprint.
         return None
-    return marks_channels(self.space_mode, marks)
+    return channels
 
 
 def paints_process_samples(self: RasterTarget, item: ImagePaintItem) -> bool:
@@ -111,30 +126,29 @@ def paints_process_samples(self: RasterTarget, item: ImagePaintItem) -> bool:
     return self.process_samples(item.source, raster.width * raster.height) is not None
 
 
-def marks_channels(mode: SpaceMode, marks: int | None) -> Channels | None:
-    """The Channels of a paint with marks in a pass of mode, or None when it marks all of
-    the pass's components."""
-    if marks is None:
+def marks_channels(self: RasterTarget, marks: int | None) -> Channels | None:
+    """The Channels of a paint with marks in the current pass, or None when it takes the
+    usual path: it marks all of the pass's components and names no spot, or does not
+    overprint, naming a spot only on a page that overprints nowhere."""
+    if marks is None or marks == ALL_PROCESS or (marks & OFF and not self.overprints):
         return None
-    spot = bool(marks & SPOT)
-    if mode is SpaceMode.CMY:
+    key = spot_key(marks)
+    erase = bool(marks & OFF)
+    if self.space_mode is SpaceMode.CMY:
         cyan, magenta, yellow = bool(marks & CYAN), bool(marks & MAGENTA), bool(marks & YELLOW)
-        if cyan and magenta and yellow:
+        if cyan and magenta and yellow and not key:
             return None
-        return cyan, magenta, yellow, spot
+        return cyan, magenta, yellow, key, erase
     if marks & BLACK:
-        return None
-    return False, False, False, spot
+        return None if not key else (True, True, True, key, erase)
+    return False, False, False, key, erase
 
 
 def fill_stroke_channels(
     self: RasterTarget, item: PathPaintItem
 ) -> tuple[Channels | None, Channels | None]:
     """overprint_channels of a fill and stroke's fill and of its stroke."""
-    return (
-        marks_channels(self.space_mode, item.fill_overprint),
-        marks_channels(self.space_mode, item.stroke_overprint),
-    )
+    return self.marks_channels(item.fill_overprint), self.marks_channels(item.stroke_overprint)
 
 
 def paint_fill_stroke_apart(
@@ -143,11 +157,7 @@ def paint_fill_stroke_apart(
     """Paint a fill and stroke whose fill or stroke overprints in the current pass as its
     fill and then its stroke, each overprinting as its channels say."""
     for kind, channels in ((PathPaintKind.FILL, fill), (PathPaintKind.STROKE, stroke)):
-        part = replace(item, paint_kind=kind)
-        if channels is None:
-            self.paint_display_item(part)
-        else:
-            self.paint_overprinting(part, channels)
+        self.paint_member(replace(item, paint_kind=kind), None, channels)
 
 
 def push_overprint_layer(self: RasterTarget, channels: Channels, blend_mode: str | None) -> None:
@@ -205,13 +215,15 @@ def composite_overprint_layer(
     return the alpha it composited with.
 
     For each component of the pass the special blend mode gives B(cb, cs) = cs where the
-    paint marks it. A component it does not mark keeps cb, when the paint names process
-    colorants alone (channels[3] false); when it names a spot colorant, whose alternate's
-    tints stand for it, it takes the backdrop's tint plus the paint's, clamped:
-    max(cb + cs - 1, 0) on the additive components, cb where the paint's tint is 0. A blend
-    mode other than Normal then blends the backdrop with that, as the implicit
-    group 11.7.4.3 puts the paint in composites with it. The result composites as any
-    blend does (11.3.6): cs (1 - ab) + ab B, weighted by the paint's alpha.
+    paint marks it, and cb where it does not. A blend mode other than Normal then blends
+    the backdrop with that, as the implicit group 11.7.4.3 puts the paint in composites
+    with it. The result composites as any blend does (11.3.6): cs (1 - ab) + ab B, weighted
+    by the paint's alpha. A component the paint does not mark takes for cs its own value
+    when the paint names process colorants alone, and when it names a spot colorant, whose
+    alternate's tints stand for the spot on a plate of its own (raster_spots), a tint of 0;
+    with overprint off (channels[4]), B is that tint of 0 too, which erases the component:
+    "Process colourant not named in source space" is 1.0, additive, with OP false (Table
+    146).
     """
     alpha = layer[..., 3]
     visible = alpha > 0
@@ -222,8 +234,10 @@ def composite_overprint_layer(
     below = backdrop[:, :3] / 255.0
     below_alpha = backdrop[:, 3] / 255.0
     source_alpha = alpha[visible].astype(numpy.float64) / 255.0
-    unmarked = numpy.maximum(below + source - 1.0, 0.0) if channels[3] else below
-    special = numpy.where(numpy.array(channels[:3]), source, unmarked)
+    marked = numpy.array(channels[:3])
+    if channels[3] or channels[4]:
+        source = numpy.where(marked, source, 1.0)
+    special = source if channels[4] else numpy.where(marked, source, below)
     if mode is BlendOp.BACKDROP:
         blended = below
     elif mode is None or mode in {BlendOp.NORMAL, BlendOp.SOURCE, BlendOp.UNSUPPORTED}:
