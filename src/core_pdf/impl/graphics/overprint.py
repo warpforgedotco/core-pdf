@@ -120,10 +120,12 @@ def colorant_marks(kind: str, names: Sequence[str], *, device: bool = True) -> i
             marks |= PROCESS_COLORANTS[name]
         elif name != "None":
             spots.add(name)
+    if spots:
+        # A space naming every process colorant and a spot too replaces the spot's plate;
+        # its alternate's tints, in the process components it marks, stand for the spot.
+        return marks | SPOT | spot_plate(spots) << SPOT_SHIFT
     if marks & ALL_PROCESS == ALL_PROCESS:
         return None
-    if spots:
-        marks |= SPOT | spot_plate(spots) << SPOT_SHIFT
     return marks
 
 

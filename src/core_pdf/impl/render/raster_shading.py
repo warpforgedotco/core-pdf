@@ -754,7 +754,7 @@ def paint_tiling_pattern(
         blend_mode,
         isolated=cell_is_isolated(self, pattern),
         alpha_is_shape=target_data.alpha_is_shape,
-        keeps_plates=overprints_through(target_data),
+        keeps_plates=True,
     )
     try:
         if offsets is not None:
@@ -793,10 +793,18 @@ def paint_tiling_pattern(
     return True
 
 
-def overprints_through(data: PathPaintItem) -> bool:
-    """Whether the fill or stroke data paints a pattern with its overprint parameter on: the
-    pattern's group then keeps the spot plates it does not paint (raster_spots), as the
-    paint itself would ("Spot colourant" with OP true is Cb, ISO 32000-2 Table 146)."""
+def keeps_plates_through(pattern: ShadingPattern | TilingPattern, data: PathPaintItem) -> bool:
+    """Whether the group a fill or stroke data paints pattern through starts from its
+    parent's spot plates (raster_spots), keeping those its paint does not change.
+
+    A shading pattern's colours are the paint's, so its overprint parameter decides: on, the
+    paint keeps the plates it does not name ("Spot colourant" with OP true is Cb, ISO
+    32000-2 Table 146), off, it erases them. A coloured tiling pattern's cell paints with a
+    graphics state of its own (8.7.3.1), so its paints decide, each by its own overprint
+    parameters, and the fill painting it erases nothing itself (our reading; MuPDF's
+    separations agree): its groups always start from the parent's plates."""
+    if isinstance(pattern, TilingPattern):
+        return True
     marks = (
         data.stroke_overprint if data.paint_kind is PathPaintKind.STROKE else data.fill_overprint
     )
@@ -1049,7 +1057,7 @@ def paint_pattern_through(
         isolated=isolated,
         alpha_is_shape=data.alpha_is_shape,
         mask_alpha=mask,
-        keeps_plates=overprints_through(data),
+        keeps_plates=keeps_plates_through(pattern, data),
     )
     group = self.buffer_stack[-1]
     limit = self.paint_limit

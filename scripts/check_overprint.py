@@ -1159,6 +1159,7 @@ def spot_cases() -> list[Case]:
         *spot_replace_cases(),
         *spot_erase_cases(),
         *review_cases(),
+        *second_review_cases(),
         Case(
             "a spot over another spot keeps both",
             document(
@@ -1224,6 +1225,62 @@ def with_spot_pair(data: bytes) -> bytes:
     return data.replace(
         b"/ColorSpace << ", b"/ColorSpace << /SS [/DeviceN [/Spot /Spot2] /DeviceCMYK 10 0 R] ", 1
     )
+
+
+# The DeviceN space of the four process colorants and Spot (tint transform object 10): c m y
+# k s to c, m + s / 2, y + s, k, Spot's alternate added to the process tints.
+PROCESS_AND_SPOT = stream(
+    b"/FunctionType 4 /Domain [0 1 0 1 0 1 0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
+    b"{ dup 0.5 mul 5 -1 roll add 4 1 roll 3 -1 roll add exch }",
+)
+
+
+def with_process_and_spot(data: bytes) -> bytes:
+    """data, a page with object 10 the tint transform PROCESS_AND_SPOT, naming the DeviceN
+    space of Cyan, Magenta, Yellow, Black and Spot CS5."""
+    return data.replace(
+        b"/ColorSpace << ",
+        b"/ColorSpace << /CS5 [/DeviceN [/Cyan /Magenta /Yellow /Black /Spot] /DeviceCMYK 10 0 R] ",
+        1,
+    )
+
+
+def second_review_cases() -> list[Case]:
+    """A DeviceN space naming every process colorant and a spot replaces the spot's plate,
+    its alternate's tints standing for the spot in the process components it marks; and a
+    tiling pattern's cell decides, by its own overprint parameters, what happens to the
+    plates under it, whatever the fill painting the pattern has."""
+    return [
+        Case(
+            "DeviceN naming every process colorant and a spot replaces the spot",
+            with_process_and_spot(
+                document(
+                    CMYK_GROUP,
+                    b"/On0 gs /Spot cs 1 sc 20 20 160 160 re f /CS5 cs 0 0 0 0 0.4 sc "
+                    + PAINT_RECT
+                    + b" f",
+                    [PROCESS_AND_SPOT],
+                )
+            ),
+            regions(SPOT_FULL, SPOT_LIGHT, SPOT_LIGHT),
+        ),
+        Case(
+            "an overprinting tiling cell keeps a spot under a fill without overprinting",
+            spot_tiling(
+                SPOT_UNDER + b"/Off gs /Pattern cs /T scn " + PAINT_RECT + b" f",
+                b"/On0 gs 0 1 0 0 k 0 0 40 40 re f",
+            ),
+            regions(SPOT_FULL, MAGENTA, (0.0, 1.0, 1.0, 0.0)),
+        ),
+        Case(
+            "a shading without overprinting clipped away from a spot leaves it",
+            with_shadings(
+                document(CMYK_GROUP, SPOT_UNDER + b"/Off gs q 120 20 60 160 re W n /Sh sh Q"),
+                b"/Sh " + constant_shading(b"/DeviceCMYK", b"0 1 0 0"),
+            ),
+            ((BACKDROP_ONLY, SPOT_FULL), (OVERLAP, SPOT_FULL), (PAINT_ONLY, MAGENTA)),
+        ),
+    ]
 
 
 def review_cases() -> list[Case]:

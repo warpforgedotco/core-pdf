@@ -46,6 +46,7 @@ lazy import numpy
 from core_pdf.impl.base.arrays import UInt8Array
 from core_pdf.impl.base.types import frozen_setattr
 from core_pdf.impl.render.model import (
+    GlyphBitmapItem,
     ImagePaintItem,
     PaintItemBase,
     PathPaintItem,
@@ -277,19 +278,23 @@ def erases_plates(self: RasterTarget, item: object) -> bool:
     return reaches_plates(self, item, spots)
 
 
+def item_pixel_box(self: RasterTarget, item: PaintItemBase) -> Box | None:
+    """The pixel box item paints inside, None when the clip leaves it nothing: the clip's
+    of its page box for a path (whose box takes in its stroke's pen), an image or a glyph
+    bitmap, whose boxes are on the page; the clip's own box for any other item."""
+    if type(item) is PathPaintItem or type(item) is ImagePaintItem or type(item) is GlyphBitmapItem:
+        bbox = item.page_box(self.scale)
+        if bbox is not None:
+            clipped = self.clip.clipped_pixel_box(bbox)
+            return clipped[1] if clipped is not None else None
+    clipped = self.clip.clipped_pixel_box(self.grid.page_box())
+    return clipped[1] if clipped is not None else None
+
+
 def reaches_plates(self: RasterTarget, item: PaintItemBase, spots: SpotPlates) -> bool:
     """Whether item may paint where spots has a plate."""
-    if type(item) is not PathPaintItem and type(item) is not ImagePaintItem:
-        # Other items' boxes are not all on the page's grid: they may reach any plate.
-        return True
-    # A path's page box takes in its stroke's pen.
-    bbox = item.page_box(self.scale)
-    if bbox is None:
-        return True
-    clipped = self.clip.clipped_pixel_box(bbox)
-    if clipped is None:
-        return False
-    return spots.touches(clipped[1])
+    box = item_pixel_box(self, item)
+    return box is not None and spots.touches(box)
 
 
 def paints_apart(self: RasterTarget, item: PathPaintItem) -> bool:
@@ -328,17 +333,9 @@ def erase_under(self: RasterTarget, item: Any) -> None:
     if spots is None:
         return
     plates = spots.union_box
-    item_box = None
-    if type(item) is PathPaintItem or type(item) is ImagePaintItem:
-        # Their page boxes are on the page's grid, a path's taking in its stroke's pen; any
-        # other item's is found from the window its drawing widens.
-        page_box = item.page_box(self.scale)
-        if page_box is not None:
-            clipped = self.clip.clipped_pixel_box(page_box)
-            if clipped is None:
-                return
-            item_box = clipped[1]
-    if not spots.touches(item_box or (0, 0, self.width, self.height)):
+    # The drawing stays inside the item's box, or the clip's, and the window it widens.
+    item_box = item_pixel_box(self, item)
+    if item_box is None or not spots.touches(item_box):
         return
     page = coverage_page(self)
     sibling, view = self.blank_sibling(self.clip, page)
@@ -346,20 +343,14 @@ def erase_under(self: RasterTarget, item: Any) -> None:
     sibling.paint_window = window
     try:
         sibling.paint_display_item(item)
-        touched = union(item_box, window_box(window))
-        region = intersect(plates, touched or (0, 0, self.width, self.height))
+        region = intersect(plates, union(item_box, window_box(window)))
         if region is None:
             return
         x0, y0, x1, y1 = region
         painted = view[y0:y1, x0:x1, 3].copy()
     finally:
-        # The paint stays inside its box, or the window it widened; without either, the
-        # whole page is cleared.
-        touched = union(item_box, window_box(window))
-        if touched is None:
-            view[...] = 0
-        else:
-            view[touched[1] : touched[3], touched[0] : touched[2]] = 0
+        touched = union(item_box, window_box(window)) or item_box
+        view[touched[1] : touched[3], touched[0] : touched[2]] = 0
     erase_plates(self, group, slice(y0, y1), slice(x0, x1), painted)
 
 
