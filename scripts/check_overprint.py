@@ -68,6 +68,7 @@ EXTGSTATES = (
     b"/Stroke << /OP true /op false /OPM 1 >> "
     b"/Fill << /OP false /op true /OPM 1 >> "
     b"/Half << /OP true /op true /OPM 1 /ca 0.5 >> "
+    b"/HalfOff << /OP false /op false /CA 0.5 /ca 0.5 >> "
     b"/Mul << /OP true /op true /OPM 1 /BM /Multiply >> "
     b"/Masked << /OP true /op true /OPM 1 /CA 0.5 /ca 0.5 "
     b"/SMask << /S /Luminosity /G 7 0 R >> >> "
@@ -1157,6 +1158,7 @@ def spot_cases() -> list[Case]:
     return [
         *spot_replace_cases(),
         *spot_erase_cases(),
+        *review_cases(),
         Case(
             "a spot over another spot keeps both",
             document(
@@ -1204,6 +1206,128 @@ def spot_cases() -> list[Case]:
                 [knockout_form(b"/Half gs 0 1 0 0 k " + PAINT_RECT + b" f", isolated=False)],
             ),
             regions(SPOT_FULL, (0.0, 1.0, 1.0, 0.0), (0.0, 1.0, 1.0, 0.0)),
+        ),
+    ]
+
+
+# The DeviceN space of Spot and Spot2 (tint transform object 10): a b to 0.3 b, a / 2, a, 0,
+# each colorant's own Separation's alternate.
+SPOT_PAIR = stream(
+    b"/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
+    b"{ 0.3 mul exch dup 0.5 mul exch 0 }",
+)
+
+
+def with_spot_pair(data: bytes) -> bytes:
+    """data, a page with object 10 the tint transform SPOT_PAIR, naming the DeviceN space of
+    Spot and Spot2 SS."""
+    return data.replace(
+        b"/ColorSpace << ", b"/ColorSpace << /SS [/DeviceN [/Spot /Spot2] /DeviceCMYK 10 0 R] ", 1
+    )
+
+
+def review_cases() -> list[Case]:
+    """Paints whose spot plates a first version composited wrongly: a half-opaque B where
+    shape is tracked erases once; on a page whose only overprinting paints mark every process
+    component, a spot without overprinting keeps its plate; an overprinting pattern keeps the
+    plates it does not name; a shading under a rotated matrix erases where it paints; a
+    half-opaque glyph in a knockout group erases the group's initial plate, not the one an
+    earlier paint of the group left. Known difference, reported rather than failed: a spot
+    in a Separation does not replace the same spot on a DeviceN plate naming another too."""
+    magenta_shading = constant_shading(b"/DeviceCMYK", b"0 1 0 0")
+    kept = (0.0, 1.0, 1.0, 0.0)
+    erased = regions(SPOT_FULL, MAGENTA, MAGENTA)
+    return [
+        Case(
+            "a half-opaque B where shape is tracked erases a spot once",
+            document(
+                CMYK_GROUP,
+                SPOT_UNDER + b"/X10 Do",
+                [
+                    knockout_form(
+                        b"/HalfOff gs 0 1 0 0 k 0 1 0 0 K 10 w 60 60 120 80 re B", isolated=False
+                    )
+                ],
+            ),
+            ((BACKDROP_ONLY, SPOT_FULL), (OVERLAP, (0.0, 0.75, 0.5, 0.0))),
+        ),
+        Case(
+            "a spot without overprinting keeps its plate where only gray overprints",
+            document(
+                CMYK_GROUP,
+                b"/Off gs /Spot cs 1 sc " + BACKDROP_RECT + b"/On0 gs 0.5 g " + PAINT_RECT + b" f",
+            ),
+            regions(SPOT_FULL, (0.0, 0.0, 0.0, 0.5), (0.0, 0.5, 1.0, 0.5)),
+        ),
+        Case(
+            "an overprinting process shading pattern keeps a spot",
+            document(
+                CMYK_GROUP,
+                SPOT_UNDER + b"/On0 gs /Pattern cs /P scn " + PAINT_RECT + b" f",
+                [b"<< /PatternType 2 /Shading " + magenta_shading + b" >>"],
+                resources_extra=b"/Pattern << /P 10 0 R >> ",
+            ),
+            regions(SPOT_FULL, MAGENTA, kept),
+        ),
+        Case(
+            "an overprinting tiling cell marking every process component keeps a spot",
+            spot_tiling(
+                SPOT_UNDER + b"/On0 gs /Pattern cs /T scn " + PAINT_RECT + b" f",
+                b"/On0 gs 0 1 0 0 k 0 0 40 40 re f",
+            ),
+            regions(SPOT_FULL, MAGENTA, kept),
+        ),
+        Case(
+            "a shading without overprinting under a rotated matrix erases a spot",
+            with_shadings(
+                document(
+                    CMYK_GROUP,
+                    SPOT_UNDER + b"/Off gs q " + PAINT_RECT + b" W n "
+                    b"0.7071 0.7071 -0.7071 0.7071 100 -40 cm /Sh sh Q",
+                ),
+                b"/Sh " + magenta_shading,
+            ),
+            erased,
+        ),
+        Case(
+            "a half-opaque glyph in a knockout group erases the group's initial spot",
+            document(
+                CMYK_GROUP,
+                SPOT_PAGE + b"/X10 Do",
+                [
+                    knockout_form(
+                        b"/On0 gs /Spot cs 0.4 sc 0 0 200 200 re f "
+                        b"/HalfOff gs 0 1 0 0 k " + SPOT_TEXT,
+                        isolated=False,
+                    )
+                ],
+            ),
+            (((48, 100), (0.5, 0.75, 0.5, 0.0)), ((190, 190), add(CYAN, SPOT_LIGHT, ""))),
+        ),
+        Case(
+            # The text object is a knockout group: the second glyph composites with the
+            # plate it started from, the page's, not the first glyph's.
+            "a half-opaque glyph knocks out a spot glyph under it in the text's group",
+            document(
+                CMYK_GROUP,
+                SPOT_PAGE + b"BT /F 150 Tf 30 50 Td /On0 gs /Spot cs 0.4 sc (H) Tj "
+                b"0 0 Td /HalfOff gs 0 1 0 0 k (H) Tj ET",
+            ),
+            (((48, 100), (0.5, 0.75, 0.5, 0.0)), ((190, 190), add(CYAN, SPOT_FULL, ""))),
+        ),
+        Case(
+            "a spot replaces the same spot on a plate it shares with another",
+            with_spot_pair(
+                document(
+                    CMYK_GROUP,
+                    b"/On0 gs /SS cs 1 0 sc 20 20 160 160 re f /Spot cs 0.4 sc "
+                    + PAINT_RECT
+                    + b" f",
+                    [SPOT_PAIR],
+                )
+            ),
+            regions(SPOT_FULL, SPOT_LIGHT, SPOT_LIGHT),
+            known=True,
         ),
     ]
 

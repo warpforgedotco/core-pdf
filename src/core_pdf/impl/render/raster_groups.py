@@ -148,6 +148,21 @@ def composite_group_into(
     group_alpha = group.composite_alpha
     normalized_blend_mode = self.resolved_blend(group.blend_mode, casefold=True)
     if group.overprint is not None:
+        channels = group.overprint
+        if channels[4] and normalized_blend_mode in {None, BlendOp.NORMAL} and child.size >= 64:
+            # A paint naming a spot without overprinting takes its own value for the components
+            # it marks and none for the rest (11.7.4.3, Table 146): Normal compositing of its
+            # layer with those components white. Its colour is kept for its plate.
+            colour = child[..., :3].copy()
+            for index, marked in enumerate(channels[:3]):
+                if not marked:
+                    child[..., index] = 255
+            try:
+                plane = composite_normal_group(destination, child, 1.0, 1.0, True)
+            finally:
+                child[..., :3] = colour
+            assert plane is not None
+            return plane
         return composite_overprint_layer(
             destination,
             child,
@@ -361,7 +376,10 @@ def push_group(
     alpha_is_shape: bool = False,
     track_shape: bool = False,
     mask_alpha: SoftMaskPlane | None = None,
+    keeps_plates: bool = False,
 ) -> None:
+    """Push a group on buffer. keeps_plates: an isolated group starts from its parent's spot
+    plates all the same, as one an overprinting paint paints through does (raster_spots)."""
     parent = self.buffer_stack[-1]
     backdrop = None if isolated else parent.backdrop if parent.knockout else self.pixels
     source_alpha = None
@@ -387,7 +405,7 @@ def push_group(
             alpha_is_shape=alpha_is_shape,
             mask_alpha=mask_alpha,
             painted_boxes=[] if knockout else None,
-            spots=self.child_plates(parent, isolated),
+            spots=self.child_plates(parent, isolated and not keeps_plates),
         )
     )
     self.sync_group_mirrors()

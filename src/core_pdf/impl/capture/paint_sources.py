@@ -121,7 +121,7 @@ def capture_overprint(self: TextState, *, stroke: bool) -> int | None:
         # A shading pattern paints as its shading would with sh (11.6.7): it marks what
         # the shading's colour space, remapped where it paints, names.
         if not isinstance(pattern, model.ShadingPattern):
-            return ALL_PROCESS if on else None
+            return self.overprint_result(None, on=bool(on))
         marks = raw_overprint_marks(
             shading_space(self.capture_shading_dictionary(pattern.dictionary)),
             device=self.capture_device,
@@ -142,6 +142,7 @@ def overprint_result(self: TextState, marks: int | None, *, on: bool) -> int | N
     them, or ALL_PROCESS for all four; off, knockout_marks."""
     if not on:
         return knockout_marks(marks)
+    self.overprint_on = True
     if marks is None:
         return ALL_PROCESS
     self.uses_overprint = True
@@ -256,8 +257,9 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
     )
     cached = self.capture_patterns.get_key(pattern, cache_key, MISSING)
     if not isinstance(cached, MissingObject):
-        if isinstance(cached, TilingPattern) and cached.overprints:
-            self.uses_overprint = True
+        if isinstance(cached, TilingPattern):
+            self.uses_overprint |= cached.overprints
+            self.overprint_on |= cached.overprint_on
         return cached
     result: PatternPaint | None = None
     if isinstance(pattern, model.ShadingPattern):
@@ -286,8 +288,9 @@ def capture_pattern(self: TextState, pattern: object) -> PatternPaint | None:
             )
         finally:
             nested.release()
-        if result is not None and result.overprints:
+        if result is not None:
             # Overprinting in a cell is the page's too, for simulation to see.
-            self.uses_overprint = True
+            self.uses_overprint |= result.overprints
+            self.overprint_on |= result.overprint_on
     pins = tuple(spaces for spaces in (defaults, self.ancestor_spaces) if spaces is not None)
     return self.capture_patterns.put_key(pattern, cache_key, result, pins)

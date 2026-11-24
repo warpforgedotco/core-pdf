@@ -76,6 +76,7 @@ lazy from core_pdf_cythonized._segments import merge_collinear_rows
 lazy from core_pdf_cythonized._serialize import ObjectWriter, collect_references
 lazy from core_pdf_cythonized._shading import shading_blend, shading_t, shading_values
 lazy from core_pdf_cythonized._source_plane import accumulate_source_plane
+lazy from core_pdf_cythonized._spot_plates import composite_spot_plate
 lazy from core_pdf_cythonized._stroke import (
     axis_aligned_polylines,
     short_subpaths,
@@ -148,6 +149,7 @@ __all__ = (
     "composite_knockout_group",
     "composite_masked_normal",
     "composite_nonisolated_blend",
+    "composite_spot_plate",
     "composite_normal_group",
     "cubic_sample_times",
     "decode_arithmetic_generic_template0",

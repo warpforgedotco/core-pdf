@@ -55,12 +55,19 @@ from core_pdf.impl.render.model import (
     SpaceMode,
 )
 from core_pdf.impl.spec.citations import cites
+lazy from core_pdf_cythonized._spot_plates import (
+    ERASED,
+    GROUP,
+    KEPT,
+    NAMED,
+    apply_spot_plate,
+    composite_spot_plate,
+)
 
 if TYPE_CHECKING:
     from core_pdf.impl.render.target import RasterTarget
 
 type Box = tuple[int, int, int, int]
-type FloatArray = numpy.ndarray[Any, numpy.dtype[numpy.float32]]
 
 # A plate that grows takes at least half its size again on each side it grows on, so a
 # plate painted in many small steps is copied a logarithmic number of times.
@@ -115,7 +122,7 @@ class SpotPlates:
     it changed them in, and elsewhere base's, the plates it started from, which it never
     changes; channels components each."""
 
-    __slots__ = ("base", "channels", "own", "union_box")
+    __slots__ = ("base", "channels", "keys", "own", "union_box")
 
     def __init__(self, base: SpotPlates | None, channels: int) -> None:
         self.base = base
@@ -123,12 +130,17 @@ class SpotPlates:
         self.own: dict[int, Plate] = {}
         # The box outside which every plate is empty: base's, and the boxes changed since.
         self.union_box: Box | None = base.union_box if base is not None else None
+        # The numbers of the plates, its own and base's, which base never adds to.
+        self.keys: frozenset[int] = base.keys if base is not None else frozenset()
 
-    def numbers(self) -> set[int]:
-        keys = set(self.own)
-        if self.base is not None:
-            keys |= self.base.numbers()
-        return keys
+    def numbers(self) -> frozenset[int]:
+        return self.keys
+
+    def touches(self, window: Box) -> bool:
+        """Whether a plate may hold ink within window: its box meets it."""
+        if intersect(self.union_box, window) is None:
+            return False
+        return any(intersect(self.box(key), window) is not None for key in self.keys)
 
     def box(self, key: int) -> Box | None:
         """The box outside which plate key is empty."""
@@ -181,6 +193,8 @@ class SpotPlates:
                 data[oy0 - grown[1] : oy1 - grown[1], ox0 - grown[0] : ox1 - grown[0]] = plate.data
             extent = box if plate is None else union(plate.extent, box) or box
             plate = self.own[key] = Plate(grown, data, extent)
+            if key not in self.keys:
+                self.keys = self.keys | {key}
         else:
             plate.extent = union(plate.extent, box) or box
         self.union_box = union(self.union_box, box)
@@ -252,6 +266,14 @@ def erases_plates(self: RasterTarget, item: object) -> bool:
         or not paint_marks_off(item)
     ):
         return False
+    if (
+        type(item) is PathPaintItem
+        and item.paint_kind is PathPaintKind.FILL_STROKE
+        and self.group_source_shape is not None
+    ):
+        # paint_typed_path paints its fill and stroke in a knockout group of their own,
+        # each erasing there, which then composites the plates.
+        return False
     return reaches_plates(self, item, spots)
 
 
@@ -267,10 +289,7 @@ def reaches_plates(self: RasterTarget, item: PaintItemBase, spots: SpotPlates) -
     clipped = self.clip.clipped_pixel_box(bbox)
     if clipped is None:
         return False
-    plates = None
-    for key in spots.numbers():
-        plates = union(plates, spots.box(key))
-    return intersect(plates, clipped[1]) is not None
+    return spots.touches(clipped[1])
 
 
 def paints_apart(self: RasterTarget, item: PathPaintItem) -> bool:
@@ -308,18 +327,18 @@ def erase_under(self: RasterTarget, item: Any) -> None:
     spots = group.spots
     if spots is None:
         return
-    plates = None
-    for key in spots.numbers():
-        plates = union(plates, spots.box(key))
-    page_box = item.page_box(self.scale) if hasattr(item, "page_box") else None
-    clipped = self.clip.clipped_pixel_box(page_box) if page_box is not None else None
-    if page_box is not None and clipped is None:
-        return
-    item_box = clipped[1] if clipped is not None else None
-    region = intersect(
-        plates, item_box if item_box is not None else (0, 0, self.width, self.height)
-    )
-    if region is None:
+    plates = spots.union_box
+    item_box = None
+    if type(item) is PathPaintItem or type(item) is ImagePaintItem:
+        # Their page boxes are on the page's grid, a path's taking in its stroke's pen; any
+        # other item's is found from the window its drawing widens.
+        page_box = item.page_box(self.scale)
+        if page_box is not None:
+            clipped = self.clip.clipped_pixel_box(page_box)
+            if clipped is None:
+                return
+            item_box = clipped[1]
+    if not spots.touches(item_box or (0, 0, self.width, self.height)):
         return
     page = coverage_page(self)
     sibling, view = self.blank_sibling(self.clip, page)
@@ -327,6 +346,10 @@ def erase_under(self: RasterTarget, item: Any) -> None:
     sibling.paint_window = window
     try:
         sibling.paint_display_item(item)
+        touched = union(item_box, window_box(window))
+        region = intersect(plates, touched or (0, 0, self.width, self.height))
+        if region is None:
+            return
         x0, y0, x1, y1 = region
         painted = view[y0:y1, x0:x1, 3].copy()
     finally:
@@ -353,61 +376,67 @@ def erase_plates(
 ) -> None:
     """Scale group's plates within rows and columns by 1 - alpha_s / alpha_r, painted being
     alpha_s, a byte each."""
-    if rows.stop - rows.start > BAND:
-        for band in bands(rows):
-            erase_plates(
-                self,
-                group,
-                slice(rows.start + band.start, rows.start + band.stop),
-                columns,
-                painted[band],
-            )
-        return
     spots = group.spots
     if spots is None:
         return
     window = (columns.start, rows.start, columns.stop, rows.stop)
-    result = group.view[rows, columns, 3].astype(numpy.float32) / 255.0
-    kept = 1.0 - safe_ratio(painted.astype(numpy.float32) / 255.0, result)
+    result = group.view[rows, columns, 3]
     for key in spots.numbers():
         box = intersect(spots.box(key), window)
         if box is None:
             continue
         values = spots.writable(key, box, self.width, self.height)
-        part = kept[
-            box[1] - window[1] : box[3] - window[1], box[0] - window[0] : box[2] - window[0]
-        ]
-        values[...] = numpy.rint(values * part[..., None])
-
-
-def safe_ratio(numerator: FloatArray, denominator: FloatArray) -> FloatArray:
-    """numerator / denominator, 0 where the denominator is 0, clamped to 0 to 1."""
-    ratio = numpy.divide(
-        numerator,
-        denominator,
-        out=numpy.zeros_like(numerator, dtype=numpy.float32),
-        where=denominator > 0.0,
-    )
-    return numpy.clip(ratio, 0.0, 1.0, out=ratio)
+        part = (
+            slice(box[1] - window[1], box[3] - window[1]),
+            slice(box[0] - window[0], box[2] - window[0]),
+        )
+        alpha = result[part]
+        composite_spot_plate(
+            values,
+            values,
+            None,
+            None,
+            None,
+            0,
+            painted[part],
+            alpha,
+            alpha,
+            alpha,
+            alpha,
+            None,
+            None,
+            ERASED,
+        )
 
 
 def involves_plates(
     self: RasterTarget, parent: RasterGroup, group: RasterGroup, rows: slice, columns: slice
 ) -> bool:
     """Whether compositing group onto parent within rows and columns may change parent's
-    plates: a plate of either reaches there, or the paint names a spot."""
+    plates: the paint names a spot, or a plate of either reaches there and the group may
+    change it. An overprinting paint naming no spot keeps them where its backdrop is opaque
+    already, and a group that started from its parent's plates and changed none leaves them,
+    in a knockout parent where its initial backdrop is opaque and the parent has not changed
+    them there (composite_plates)."""
     if self.space_mode is not SpaceMode.CMY and self.space_mode is not SpaceMode.BLACK:
         return False
     channels = group.overprint
     if channels is not None and channels[3]:
         return True
     window = (columns.start, rows.start, columns.stop, rows.stop)
-    for spots in (parent.spots, group.spots):
-        # A group's plates take in those it started from, which a knockout parent's
-        # initial plates are, as well as its own.
-        if spots is not None and intersect(spots.union_box, window) is not None:
-            return True
-    return False
+    spots = parent.spots
+    own = group.spots
+    if (spots is None or not spots.touches(window)) and (own is None or not own.touches(window)):
+        return False
+    keeps = channels is not None and not channels[4]
+    unchanged = channels is None and own is not None and own.base is not None and not own.own
+    if not keeps and not unchanged:
+        return True
+    if not parent.knockout:
+        return not unchanged and int(parent.view[rows, columns, 3].min()) < 255
+    if parent.backdrop is None or changed_in(parent, window):
+        return True
+    return int(self.pixel_view(parent.backdrop)[rows, columns, 3].min()) < 255
 
 
 class KnockoutElement:
@@ -447,10 +476,11 @@ def composite_plates(
     channels = group.overprint
     window = (columns.start, rows.start, columns.stop, rows.stop)
     own = group.spots
-    # A non-isolated group that changed none of the plates it started from leaves its
-    # parent's as they were, and in a knockout group whose initial backdrop is opaque,
+    # A group that started from its parent's plates (a non-isolated one, or one an
+    # overprinting pattern paints through) and changed none of them leaves its parent's as
+    # they were, and in a knockout group whose initial backdrop is opaque,
     # wherever the parent has not changed them since.
-    unchanged = channels is None and group.backdrop is not None and own is not None
+    unchanged = channels is None and own is not None and own.base is not None
     if (
         unchanged
         and own is not None
@@ -514,19 +544,19 @@ def composite_band(
     effective: UInt8Array,
     knockout: KnockoutElement | None,
 ) -> None:
-    """composite_plates within a band of its rows."""
+    """composite_plates within a band of its rows, each plate by composite_spot_plate."""
     window = (columns.start, rows.start, columns.stop, rows.stop)
-    source = numpy.asarray(effective, dtype=numpy.float32) / 255.0
-    result = parent.view[rows, columns, 3].astype(numpy.float32) / 255.0
-    current = before.astype(numpy.float32) / 255.0
+    result = parent.view[rows, columns, 3]
     if knockout is None:
         backdrop_plates = parent.spots
-        backdrop_alpha = current
+        backdrop_alpha = before
         element_alpha = result
+        cover = None
     else:
         backdrop_plates = initial_plates(parent)
-        backdrop_alpha = numpy.asarray(knockout.initial_alpha, dtype=numpy.float32) / 255.0
-        element_alpha = numpy.asarray(knockout.element_alpha, dtype=numpy.float32) / 255.0
+        backdrop_alpha = numpy.asarray(knockout.initial_alpha, dtype=numpy.uint8)
+        element_alpha = numpy.asarray(knockout.element_alpha, dtype=numpy.uint8)
+        cover = numpy.asarray(knockout.shape, dtype=numpy.float32)
     channels = group.overprint
     layer_key = channels[3] if channels is not None else 0
     own = group.spots
@@ -538,30 +568,31 @@ def composite_band(
         keys.add(layer_key)
     if not keys:
         return
-    share = safe_ratio(source, element_alpha)
     # Whether an overprinting paint leaves every plate it does not name as it was: its
     # backdrop was as opaque as the result, so alpha_b / alpha_r is 1. In a knockout group
     # whose initial backdrop is opaque, so are the element and the result, which keeps the
     # initial plate wherever the group has not changed it yet.
     keeps = initial_kept = False
+    marked = 0
+    layer = None
     if channels is not None:
-        kept = numpy.where(element_alpha > 0.0, safe_ratio(backdrop_alpha, element_alpha), 1.0)
+        layer = group.view[rows, columns]
+        marked = sum(1 << index for index, mark in enumerate(channels[:3]) if mark)
         if not channels[4]:
-            opaque = bool(numpy.all(kept >= 1.0))
-            keeps = knockout is None and opaque
-            initial_kept = (
-                knockout is not None and opaque and bool(numpy.all(backdrop_alpha >= 1.0))
-            )
-        tints = layer_tints(group.view[rows, columns], channels, self.space_mode)
-    elif group.backdrop is not None and group.source_alpha is not None:
-        # A non-isolated group started from the backdrop's plates: where it painted, the
-        # share of its paint that survives its opacity and mask.
-        share = safe_ratio(source, group.source_alpha[rows, columns])
-    if knockout is not None:
-        cover = numpy.clip(numpy.asarray(knockout.shape, dtype=numpy.float32), 0.0, 1.0)
-        cover = numpy.maximum(cover, source)
+            if knockout is None:
+                keeps = bool(numpy.array_equal(before, result))
+            else:
+                initial_kept = bool(numpy.all(backdrop_alpha == 255))
+        mode = ERASED if channels[4] else KEPT
+    else:
+        mode = GROUP
+    group_alpha = (
+        group.source_alpha[rows, columns]
+        if channels is None and group.backdrop is not None and group.source_alpha is not None
+        else None
+    )
+    source = numpy.asarray(effective, dtype=numpy.uint8)
     spots = group_plates(self, parent)
-    count = spots.channels
     for key in keys:
         if keeps and key != layer_key:
             continue
@@ -581,8 +612,9 @@ def composite_band(
         box = intersect(box, window)
         if box is None:
             continue
-        if knockout is None and channels is None and own is not None and group.backdrop is not None:
-            # A non-isolated group leaves the plates it did not change as they were.
+        if knockout is None and channels is None and own is not None and own.base is not None:
+            # A group that started from its parent's plates leaves those it did not change
+            # as they were.
             if key not in own.own:
                 continue
             box = intersect(box, own.own[key].extent)
@@ -592,56 +624,42 @@ def composite_band(
             slice(box[1] - window[1], box[3] - window[1]),
             slice(box[0] - window[0], box[2] - window[0]),
         )
-        shape_of = (box[3] - box[1], box[2] - box[0], count)
-        below = plate_values(backdrop_plates, key, box, shape_of)
-        part_share = share[part][..., None]
-        if channels is not None:
-            if key == layer_key:
-                element = below + part_share * (tints[part] - below)
-            elif channels[4]:
-                element = below * (1.0 - part_share)
-            else:
-                element = below * kept[part][..., None]
-        else:
-            inner = plate_values(own, key, box, shape_of)
-            element = below + part_share * (inner - below)
-        if knockout is not None:
-            previous = plate_values(parent.spots, key, box, shape_of)
-            covered = cover[part][..., None]
-            alpha_result = result[part][..., None]
-            numerator = element * element_alpha[part][..., None] + (1.0 - covered) * (
-                previous * current[part][..., None] - below * backdrop_alpha[part][..., None]
-            )
-            combined = numpy.divide(
-                numerator, alpha_result, out=numpy.zeros_like(numerator), where=alpha_result > 0.0
-            )
-            element = numpy.where(covered > 0.0, combined, previous)
+        below = backdrop_plates.read(key, box) if backdrop_plates is not None else None
+        inner = own.read(key, box) if own is not None and channels is None else None
+        previous = (
+            parent.spots.read(key, box)
+            if knockout is not None and parent.spots is not None
+            else None
+        )
+        key_mode = NAMED if key == layer_key else mode
+        if (
+            key_mode != NAMED
+            and (below is None or not below.any())
+            and (inner is None or not inner.any())
+            and (previous is None or not previous.any())
+        ):
+            # Erasing, keeping or compositing empty plates leaves the plate empty: nothing to
+            # write, and the parent's plate stays the one it started from.
+            continue
         values = spots.writable(key, box, self.width, self.height)
-        values[...] = numpy.rint(numpy.clip(element, 0.0, 1.0) * 255.0)
-
-
-def plate_values(
-    spots: SpotPlates | None, key: int, box: Box, shape: tuple[int, int, int]
-) -> FloatArray:
-    """Plate key of spots over box, 0 to 1."""
-    data = spots.read(key, box) if spots is not None else None
-    if data is None:
-        return numpy.zeros(shape, dtype=numpy.float32)
-    return data.astype(numpy.float32) / 255.0
-
-
-def layer_tints(
-    layer: UInt8Array, channels: tuple[bool, bool, bool, int, bool], mode: SpaceMode
-) -> FloatArray:
-    """The ink an overprinting paint's layer gives the pass's components it does not mark,
-    0 to 1, which stand for its spots: its alternate colour's (graphics.overprint)."""
-    if mode is SpaceMode.CMY:
-        tints = 1.0 - layer[..., :3].astype(numpy.float32) / 255.0
-        tints[..., numpy.array(channels[:3])] = 0.0
-        return tints
-    if channels[0]:
-        return numpy.zeros((*layer.shape[:2], 1), dtype=numpy.float32)
-    return 1.0 - layer[..., :1].astype(numpy.float32) / 255.0
+        if knockout is not None and previous is None:
+            previous = numpy.zeros_like(values)
+        composite_spot_plate(
+            values,
+            below,
+            inner,
+            previous,
+            layer[part] if layer is not None else None,
+            marked,
+            source[part],
+            result[part],
+            before[part],
+            backdrop_alpha[part],
+            element_alpha[part],
+            group_alpha[part] if group_alpha is not None else None,
+            cover[part] if cover is not None else None,
+            key_mode,
+        )
 
 
 @cites(
@@ -659,17 +677,17 @@ def apply_plates(group: RasterGroup) -> None:
     frozen_setattr(group, "spots", None)
     view = group.view
     for key in spots.numbers():
-        box = spots.box(key)
+        plate = spots.own.get(key) if spots.base is None else None
+        box = plate.extent if plate is not None else spots.box(key)
         if box is None:
             continue
         x0, y0, x1, y1 = box
-        for top in range(y0, y1, BAND):
-            bottom = min(y1, top + BAND)
-            ink = spots.read(key, (x0, top, x1, bottom))
+        if plate is not None:
+            px0, py0 = plate.box[0], plate.box[1]
+            ink = plate.data[y0 - py0 : y1 - py0, x0 - px0 : x1 - px0]
+        else:
+            ink = spots.read(key, box)
             if ink is None:
                 continue
-            pixels = view[top:bottom, x0:x1]
-            components = pixels[..., :3].astype(numpy.int16)
-            combined = numpy.maximum(components - ink.astype(numpy.int16), 0)
-            visible = pixels[..., 3:4] > 0
-            pixels[..., :3] = numpy.where(visible, combined, components).astype(numpy.uint8)
+        # A pixel without alpha shows no colour, so it may take the ink too.
+        apply_spot_plate(view[y0:y1, x0:x1], ink)

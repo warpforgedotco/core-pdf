@@ -86,14 +86,18 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                 apart = channels
         else:
             overprint = self.overprint_channels(item)
+    # A glyph erasing the spot plates of a knockout group composites them with the group's
+    # initial ones, in its elementary group (raster_spots): it takes no fast path there.
+    erases = self.buffer_stack[-1].spots is not None and self.erases_plates(item)
     if (
         overprint is None
         and apart is None
         and type(item) is PathPaintItem
         and item.edge_array is not None
+        and not (erases and self.buffer_stack[-1].knockout)
         and self.paint_glyph_fill(item)
     ):
-        if self.buffer_stack[-1].spots is not None and self.erases_plates(item):
+        if erases:
             self.erase_under(item)
         return
     if isinstance(item, PaintItemBase):
@@ -131,10 +135,9 @@ def paint_item(self: RasterTarget, item: DisplayItem) -> None:
                 and knockout
                 and mask_alpha is None
                 and overprint is None
+                and not erases
                 and self.knockout_glyph_fill(item)
             ):
-                if self.buffer_stack[-1].spots is not None and self.erases_plates(item):
-                    self.erase_under(item)
                 return
             if not elementary_group:
                 try:

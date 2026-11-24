@@ -351,7 +351,7 @@ def compose_page(
             "group_alpha": (page.resolve_transparency_group_alpha()),
             "group_color_space": group_space,
             "overprint": options.overprint,
-            "overprints": page_program.overprints,
+            "overprints": page_program.overprint_on,
         },
     )
 

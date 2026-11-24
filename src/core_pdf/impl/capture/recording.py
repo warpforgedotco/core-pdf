@@ -371,8 +371,10 @@ class TextState(RecoveringTextState):
     paint_ancestors: DefaultSpaces | None
     ancestor_frames: dict[int, DefaultSpaces | None]
     ancestors_without_cmyk: dict[int, tuple[DefaultSpaces, DefaultSpaces | None]]
-    # Whether a paint overprints some process component (capture_overprint).
+    # Whether a paint overprints some process component (capture_overprint), and whether
+    # one has its overprint parameter on, whatever it marks.
     uses_overprint: bool
+    overprint_on: bool
     text_layout: TextLayout | None
     stream_executor: CaptureStreamExecutor
     stream_executor_type = CaptureStreamExecutor
@@ -425,6 +427,7 @@ class TextState(RecoveringTextState):
         self.ancestor_frames = {}
         self.ancestors_without_cmyk = {}
         self.uses_overprint = False
+        self.overprint_on = False
 
         raster_font_provider = getattr(document, "raster_font_provider", None)
         resolver_context = getattr(document.resolver, "semantic_context", None)
@@ -834,6 +837,7 @@ class TextState(RecoveringTextState):
             ),
             matrix=None if matrix == IDENTITY_MATRIX else matrix,
             overprints=nested.uses_overprint,
+            overprint_on=nested.overprint_on,
         )
 
     @cites(

@@ -20,7 +20,7 @@ from core_pdf.impl.base.geometry import clamp01, normalize_rect, rect_tuple
 from core_pdf.impl.capture.records import CapturedPath, ShadingPattern, TilingPattern
 from core_pdf.impl.graphics.color_spec import ColorSpace
 from core_pdf.impl.graphics.device_profiles import cmyk_components_to_srgb
-from core_pdf.impl.graphics.overprint import paints_tints, process_color, process_indices
+from core_pdf.impl.graphics.overprint import OFF, paints_tints, process_color, process_indices
 from core_pdf.impl.graphics.shading import (
     DEVICE_COMPONENTS,
     FunctionGeometry,
@@ -754,6 +754,7 @@ def paint_tiling_pattern(
         blend_mode,
         isolated=cell_is_isolated(self, pattern),
         alpha_is_shape=target_data.alpha_is_shape,
+        keeps_plates=overprints_through(target_data),
     )
     try:
         if offsets is not None:
@@ -790,6 +791,16 @@ def paint_tiling_pattern(
     finally:
         self.composite_group(self.pop_group())
     return True
+
+
+def overprints_through(data: PathPaintItem) -> bool:
+    """Whether the fill or stroke data paints a pattern with its overprint parameter on: the
+    pattern's group then keeps the spot plates it does not paint (raster_spots), as the
+    paint itself would ("Spot colourant" with OP true is Cb, ISO 32000-2 Table 146)."""
+    marks = (
+        data.stroke_overprint if data.paint_kind is PathPaintKind.STROKE else data.fill_overprint
+    )
+    return marks is not None and not marks & OFF
 
 
 def cell_is_isolated(self: RasterTarget, pattern: TilingPattern) -> bool:
@@ -1038,6 +1049,7 @@ def paint_pattern_through(
         isolated=isolated,
         alpha_is_shape=data.alpha_is_shape,
         mask_alpha=mask,
+        keeps_plates=overprints_through(data),
     )
     group = self.buffer_stack[-1]
     limit = self.paint_limit
